@@ -1,0 +1,30 @@
+# Local secrets. Keep the template tracked.
+.env
+.env.*
+!.env.example
+
+# Backend build/runtime files
+backend/target/
+data/uploads/
+backend/data/uploads/
+uploads/
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local logs, backups, and temporary files
+work/logs/
+outputs/
+*.log
+backup/
+backups/
+*.tmp
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

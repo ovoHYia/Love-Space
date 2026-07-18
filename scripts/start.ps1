@@ -1,0 +1,68 @@
+[CmdletBinding()]
+param(
+    [switch]$Lan
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "common.ps1")
+
+$root = Get-ProjectRoot
+$jar = Join-Path $root "backend\target\love-space-backend-1.0.0.jar"
+Import-ProjectEnv -Path (Join-Path $root ".env")
+
+if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) {
+    throw "Cannot find $jar. Run: powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1"
+}
+
+$java = Find-Executable -Names @("java.exe", "java")
+if ($null -eq $java) {
+    throw "Cannot find Java. Install JDK 17 and configure JAVA_HOME/PATH."
+}
+
+$previousErrorPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$javaVersionOutput = & $java -version 2>&1
+$javaVersionExitCode = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorPreference
+if ($javaVersionExitCode -ne 0) {
+    throw "无法执行 Java：退出码 $javaVersionExitCode"
+}
+$javaVersionText = ($javaVersionOutput | Select-Object -First 1) -join ""
+if ($javaVersionText -notmatch 'version "(?<major>\d+)') {
+    throw "Cannot identify the Java version: $javaVersionText"
+}
+if ([int]$Matches.major -lt 17) {
+    throw "JDK 17 or newer is required. Current version: $javaVersionText"
+}
+
+if ($Lan) {
+    [Environment]::SetEnvironmentVariable("SERVER_ADDRESS", "0.0.0.0", "Process")
+}
+elseif ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SERVER_ADDRESS", "Process"))) {
+    [Environment]::SetEnvironmentVariable("SERVER_ADDRESS", "127.0.0.1", "Process")
+}
+
+[System.IO.Directory]::CreateDirectory((Join-Path $root "data\uploads")) | Out-Null
+
+$port = Get-EnvValue -Name "SERVER_PORT" -Default "8080"
+$listenAddress = Get-EnvValue -Name "SERVER_ADDRESS" -Default "127.0.0.1"
+Write-Host "Starting the Love Space single JAR..." -ForegroundColor Cyan
+if ($listenAddress -eq "0.0.0.0") {
+    Write-Host "LAN mode is enabled. Open http://YOUR-PC-LAN-IP:$port on your phone." -ForegroundColor Yellow
+    Write-Host "Use this only on a trusted private network and allow TCP $port only."
+}
+else {
+    Write-Host "Local URL: http://localhost:$port"
+    Write-Host "For phone access, stop and rerun with .\scripts\start.ps1 -Lan."
+}
+Write-Host "Press Ctrl+C to stop."
+
+Push-Location $root
+try {
+    & $java -jar $jar
+    Assert-LastExitCode -Action "Love Space"
+}
+finally {
+    Pop-Location
+}

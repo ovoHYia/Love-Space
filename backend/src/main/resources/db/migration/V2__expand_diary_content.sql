@@ -1,0 +1,1 @@
+ALTER TABLE diaries MODIFY content LONGTEXT NOT NULL;

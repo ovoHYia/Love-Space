@@ -41,7 +41,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
                 .cors(cors -> {})
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/setup/**", "/api/auth/login", "/api/auth/csrf", "/api/health", "/error").permitAll()
+                        .requestMatchers("/api/setup/**", "/api/auth/login", "/api/auth/reset-password", "/api/auth/csrf", "/api/health", "/error").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
                 .exceptionHandling(errors -> errors

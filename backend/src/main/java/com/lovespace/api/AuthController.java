@@ -2,10 +2,14 @@ package com.lovespace.api;
 
 import com.lovespace.api.dto.ApiDtos.MeResponse;
 import com.lovespace.api.dto.ApiDtos.CsrfResponse;
+import com.lovespace.api.dto.ApiDtos.PasswordResetRequest;
 import com.lovespace.api.error.ApiException;
 import com.lovespace.service.AccountService;
 import com.lovespace.service.LoginAttemptService;
+import jakarta.validation.Valid;
 import jakarta.servlet.http.*;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
@@ -24,10 +28,28 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final AccountService accounts;
     private final LoginAttemptService loginAttempts;
+    private final String passwordResetToken;
     private final SecurityContextRepository contexts = new HttpSessionSecurityContextRepository();
     public AuthController(AuthenticationManager authenticationManager, AccountService accounts,
-                          LoginAttemptService loginAttempts) {
+                          LoginAttemptService loginAttempts,
+                          @org.springframework.beans.factory.annotation.Value("${PASSWORD_RESET_TOKEN:}") String passwordResetToken) {
         this.authenticationManager = authenticationManager; this.accounts = accounts; this.loginAttempts = loginAttempts;
+        this.passwordResetToken = passwordResetToken;
+    }
+
+    @PostMapping("/reset-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetPassword(@Valid @RequestBody PasswordResetRequest request) {
+        if (passwordResetToken.isBlank()) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PASSWORD_RESET_DISABLED",
+                    "服务器未配置恢复口令，请联系管理员设置 PASSWORD_RESET_TOKEN");
+        }
+        byte[] expected = passwordResetToken.getBytes(StandardCharsets.UTF_8);
+        byte[] supplied = request.recoveryToken().getBytes(StandardCharsets.UTF_8);
+        if (!MessageDigest.isEqual(expected, supplied)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_RESET_FAILED", "账号或恢复口令不正确");
+        }
+        accounts.resetPassword(request.username(), request.newPassword());
     }
 
     @GetMapping("/csrf")

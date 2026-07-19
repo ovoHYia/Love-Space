@@ -35,6 +35,7 @@ class LoveSpaceApiIntegrationTest {
     @Autowired MemoryRepository memories;
     @Autowired PasswordEncoder encoder;
     @Value("${SETUP_TOKEN}") String setupToken;
+    @Value("${PASSWORD_RESET_TOKEN}") String passwordResetToken;
     @Value("${app.upload-dir}") String uploadDir;
 
     private MockHttpSession firstSession;
@@ -112,6 +113,20 @@ class LoveSpaceApiIntegrationTest {
                         .param("username", "alice").param("password", "alice-pass-123"))
                 .andExpect(status().isUnauthorized());
         login("alice", "alice-new-pass-123");
+    }
+
+    @Test
+    void passwordRecoveryResetsPasswordAndInvalidatesExistingSession() throws Exception {
+        mvc.perform(post("/api/auth/reset-password").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"alice\",\"recoveryToken\":\"" + passwordResetToken
+                                + "\",\"newPassword\":\"alice-reset-pass-123\"}"))
+                .andExpect(status().isNoContent());
+        mvc.perform(get("/api/auth/me").session(firstSession))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("PASSWORD_CHANGED"));
+        login("alice", "alice-reset-pass-123");
+        mvc.perform(post("/api/auth/reset-password").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"alice\",\"recoveryToken\":\"wrong\",\"newPassword\":\"another-pass-123\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("PASSWORD_RESET_FAILED"));
     }
 
     @Test

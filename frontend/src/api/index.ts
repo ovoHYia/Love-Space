@@ -14,6 +14,7 @@ export const api = {
   updateProfile: (nickname: string) => request<UserProfile>('/profile', { method: 'PUT', body: JSON.stringify({ nickname }) }),
   updateSpaceName: (spaceName: string) => request<CoupleSummary>('/space', { method: 'PUT', body: JSON.stringify({ spaceName }) }),
   changePassword: (currentPassword: string, newPassword: string) => request<void>('/profile/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) }),
+  resetPassword: (username: string, recoveryToken: string, newPassword: string) => request<void>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ username, recoveryToken, newPassword }) }),
   updateAvatar: (avatar: File) => {
     const body = new FormData()
     body.append('avatar', avatar)

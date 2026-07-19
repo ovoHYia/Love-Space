@@ -67,6 +67,18 @@ public class AccountService {
         log.info("Password changed for user {}", user.getUsername());
     }
     @Transactional
+    public void resetPassword(String username, String newPassword) {
+        User user = users.findByUsernameIgnoreCase(username.trim())
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_RESET_FAILED", "账号或恢复口令不正确"));
+        if (newPassword.getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw ApiException.badRequest("新密码的 UTF-8 长度不能超过 72 字节");
+        }
+        user.setPasswordHash(encoder.encode(newPassword));
+        user.setPasswordVersion(user.getPasswordVersion() + 1);
+        users.save(user);
+        log.info("Password reset for user {}", user.getUsername());
+    }
+    @Transactional
     public MoodView setTodayMood(Authentication auth, MoodRequest request) {
         User user = current.user(auth);
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));

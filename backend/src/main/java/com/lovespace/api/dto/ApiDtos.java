@@ -31,6 +31,10 @@ public final class ApiDtos {
     public record PasswordChangeRequest(
             @NotBlank @Size(min = 8, max = 72) String currentPassword,
             @NotBlank @Size(min = 8, max = 72) String newPassword) {}
+    public record PasswordResetRequest(
+            @NotBlank @Size(min = 3, max = 50) String username,
+            @NotBlank @Size(max = 200) String recoveryToken,
+            @NotBlank @Size(min = 8, max = 72) String newPassword) {}
     public record MoodRequest(
             @NotBlank @Size(max = 16) String emoji,
             @NotBlank @Size(max = 30) String label,

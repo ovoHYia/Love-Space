@@ -94,6 +94,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .form-two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .form-two.align-end { align-items: end; }
 .form-error { color: #b5374c; background: #fff0f2; border: 1px solid #f3ccd2; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.5; }
+.back-link, .text-link { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; }
+.back-link { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 0; font-size: 13px; }
+.text-link { align-self: center; padding: 0; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .switch-field { display: flex; align-items: center; gap: 10px; min-height: 53px; cursor: pointer; }
 .switch-field input { position: absolute; opacity: 0; }
 .switch { position: relative; width: 44px; height: 25px; border-radius: 50px; background: #d9cdcf; transition: .2s ease; flex: 0 0 auto; }

@@ -218,6 +218,18 @@ class LoveSpaceApiIntegrationTest {
                 .andExpect(jsonPath("$.todayMoods[0].emoji").value("😊"))
                 .andExpect(jsonPath("$.anniversaries[0].title").value("恋爱纪念日"))
                 .andExpect(jsonPath("$.dueReminders[0].title").value("恋爱纪念日"));
+        User alice = users.findByUsernameIgnoreCase("alice").orElseThrow();
+        Memory first = new Memory();
+        first.setCoupleId(alice.getCouple().getId()); first.setAuthorId(alice.getId()); first.setTitle("当天的回忆");
+        first.setEventAt(LocalDateTime.of(2026, 7, 22, 8, 15)); memories.save(first);
+        Memory second = new Memory();
+        second.setCoupleId(alice.getCouple().getId()); second.setAuthorId(alice.getId()); second.setTitle("另一天的回忆");
+        second.setEventAt(LocalDateTime.of(2026, 7, 23, 8, 15)); memories.save(second);
+        mvc.perform(get("/api/memories").session(firstSession).param("date", "2026-07-22"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].title").value("当天的回忆"));
+        mvc.perform(get("/api/memories").session(firstSession).param("date", "2026-07-24"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
         mvc.perform(get("/api/memories").session(firstSession).param("page", "-1"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_REQUEST"));
     }

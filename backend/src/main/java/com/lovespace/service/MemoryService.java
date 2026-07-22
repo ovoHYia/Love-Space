@@ -6,6 +6,7 @@ import com.lovespace.domain.*;
 import com.lovespace.repository.*;
 import com.lovespace.security.CurrentUserService;
 import jakarta.persistence.criteria.Predicate;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import org.springframework.data.domain.*;
@@ -31,22 +32,10 @@ public class MemoryService {
 
     @Transactional(readOnly = true)
     public PageResponse<MemoryView> list(Authentication auth, int page, int size, String search,
-                                         Integer year, String type) {
+                                         LocalDate date) {
         User user = current.user(auth);
         if (page < 0 || size < 1 || size > 100) throw ApiException.badRequest("分页参数无效");
-        if (year != null && (year < 1900 || year > 3000)) throw ApiException.badRequest("年份参数无效");
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "eventAt", "id"));
-        Set<Long> typedMemoryIds = null;
-        if (type != null && !type.isBlank()) {
-            String normalized = type.trim().toLowerCase(Locale.ROOT);
-            if (!Set.of("image", "video", "audio").contains(normalized)) throw ApiException.badRequest("媒体类型无效");
-            typedMemoryIds = new HashSet<>();
-            for (Media item : media.findByCoupleIdAndMediaTypeIgnoreCase(user.getCouple().getId(), normalized)) {
-                if (item.getMemoryId() != null) typedMemoryIds.add(item.getMemoryId());
-            }
-            if (typedMemoryIds.isEmpty()) return empty(page, size);
-        }
-        Set<Long> ids = typedMemoryIds;
         Specification<Memory> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("coupleId"), user.getCouple().getId()));
@@ -57,11 +46,11 @@ public class MemoryService {
                         cb.like(cb.lower(root.get("description")), pattern, '\\'),
                         cb.like(cb.lower(root.get("location")), pattern, '\\')));
             }
-            if (year != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("eventAt"), LocalDateTime.of(year, 1, 1, 0, 0)));
-                predicates.add(cb.lessThan(root.get("eventAt"), LocalDateTime.of(year + 1, 1, 1, 0, 0)));
+            if (date != null) {
+                LocalDateTime start = date.atStartOfDay();
+                predicates.add(cb.greaterThanOrEqualTo(root.get("eventAt"), start));
+                predicates.add(cb.lessThan(root.get("eventAt"), start.plusDays(1)));
             }
-            if (ids != null) predicates.add(root.get("id").in(ids));
             return cb.and(predicates.toArray(Predicate[]::new));
         };
         Page<Memory> result = memories.findAll(spec, pageable);
@@ -141,7 +130,4 @@ public class MemoryService {
         value.setLocation(AccountService.trimToNull(input.location()));
     }
     private String escapeLike(String text) { return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_"); }
-    private PageResponse<MemoryView> empty(int page, int size) {
-        return new PageResponse<>(List.of(), page, size, 0, 0, page == 0, true);
-    }
 }

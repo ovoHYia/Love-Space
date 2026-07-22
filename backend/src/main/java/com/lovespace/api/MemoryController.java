@@ -4,6 +4,7 @@ import com.lovespace.api.dto.ApiDtos.*;
 import com.lovespace.service.MemoryService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.http.*;
 import org.springframework.security.core.Authentication;
@@ -22,9 +23,8 @@ public class MemoryController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "") @jakarta.validation.constraints.Size(max = 200) String q,
-            @RequestParam(required = false) Integer year,
-            @RequestParam(defaultValue = "") String type) {
-        return memories.list(auth, page, size, q, year, type);
+            @RequestParam(required = false) LocalDate date) {
+        return memories.list(auth, page, size, q, date);
     }
     @GetMapping("/random")
     public MemoryView random(Authentication auth, @RequestParam(required = false) @Positive Long excludeId) {

@@ -32,7 +32,7 @@ public class DashboardService {
         User user = current.user(auth); Long coupleId = user.getCouple().getId();
         List<MoodView> todayMoods = moods.findByCoupleIdAndMoodDateOrderByUserId(coupleId, LocalDate.now(ZoneId.of("Asia/Shanghai")))
                 .stream().map(views::mood).toList();
-        List<MemoryView> recentMemories = memoryService.list(auth, 0, 6, null, null, null).content();
+        List<MemoryView> recentMemories = memoryService.list(auth, 0, 6, null, null).content();
         List<DiaryView> recentDiaries = views.diaries(diaries.findTop4ByCoupleIdOrderByDiaryDateDescCreatedAtDesc(coupleId));
         List<MessageView> recentMessages = views.messages(messages.findTop4ByCoupleIdOrderByCreatedAtDesc(coupleId), user.getId());
         List<AnniversaryView> anniversaries = anniversaryService.list(auth);

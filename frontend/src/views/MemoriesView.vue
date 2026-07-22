@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { CalendarDays, Camera, ChevronDown, ChevronLeft, ChevronRight, FileAudio, FileVideo, Heart as HeartFill, Images, MapPin, Pencil, Plus, RefreshCw, Search, Trash2, UploadCloud, X } from 'lucide-vue-next'
+import { CalendarDays, Camera, FileAudio, FileVideo, Heart as HeartFill, Images, MapPin, Pencil, Plus, RefreshCw, Search, Trash2, UploadCloud, X } from 'lucide-vue-next'
 import { api } from '../api'
 import { errorMessage, mediaUrl, unwrapList } from '../api/client'
 import { useToast } from '../composables/toast'
@@ -24,7 +24,8 @@ const editing = ref<Memory | null>(null)
 const galleryMemory = ref<Memory | null>(null)
 const selectedFiles = ref<File[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
-const filters = reactive({ q: '', year: '', type: '' })
+const dateInput = ref<HTMLInputElement | null>(null)
+const filters = reactive({ q: '', date: '' })
 const form = reactive({ title: '', description: '', eventAt: toLocalDateTimeInput(), location: '' })
 
 const grouped = computed(() => {
@@ -70,22 +71,21 @@ async function loadMore() {
 function memoryQuery(targetPage: number) {
   const query = new URLSearchParams({ page: String(targetPage), size: '20' })
   if (filters.q.trim()) query.set('q', filters.q.trim())
-  if (filters.year) query.set('year', filters.year)
-  if (filters.type) query.set('type', filters.type)
+  if (filters.date) query.set('date', filters.date)
   return query.toString()
 }
 
-function stepYear(delta: number) {
-  const currentYear = new Date().getFullYear()
-  const selectedYear = Number(filters.year) || currentYear
-  filters.year = String(Math.min(3000, Math.max(1900, selectedYear + delta)))
+function clearDate() {
+  if (!filters.date) return
+  filters.date = ''
   load()
 }
 
-function clearYear() {
-  if (!filters.year) return
-  filters.year = ''
-  load()
+function openDatePicker(event: MouseEvent) {
+  if ((event.target as HTMLElement).closest('input, button')) return
+  const input = dateInput.value as (HTMLInputElement & { showPicker?: () => void }) | null
+  input?.focus()
+  input?.showPicker?.()
 }
 
 function applyPage(payload: Awaited<ReturnType<typeof api.memories>>, fallbackPage: number) {
@@ -176,8 +176,7 @@ function formatBytes(bytes: number) { return bytes < 1048576 ? `${Math.max(1, Ma
 
     <form class="filter-bar" role="search" @submit.prevent="load">
       <label class="search-field"><Search :size="18" aria-hidden="true" /><span class="sr-only">搜索回忆</span><input v-model="filters.q" placeholder="搜索标题、文字或地点" /></label>
-      <div class="year-filter"><label class="sr-only" for="memories-year">按年份筛选</label><CalendarDays :size="17" aria-hidden="true" /><input id="memories-year" v-model="filters.year" type="number" min="1900" max="3000" inputmode="numeric" placeholder="所有年份" @change="load" /><span class="year-filter-unit">年</span><button class="year-step" type="button" aria-label="上一年" @click="stepYear(-1)"><ChevronLeft :size="16" /></button><button class="year-step" type="button" aria-label="下一年" @click="stepYear(1)"><ChevronRight :size="16" /></button><button v-if="filters.year" class="year-clear" type="button" aria-label="清除年份" @click="clearYear"><X :size="14" /></button></div>
-      <label class="filter-select"><span class="sr-only">按媒体类型筛选</span><select v-model="filters.type" @change="load"><option value="">全部类型</option><option value="IMAGE">图片</option><option value="VIDEO">视频</option><option value="AUDIO">音频</option></select><ChevronDown class="filter-select-icon" :size="17" aria-hidden="true" /></label>
+      <div class="date-filter" @click="openDatePicker"><CalendarDays :size="17" aria-hidden="true" /><label class="sr-only" for="memories-date">按具体日期筛选</label><input id="memories-date" ref="dateInput" v-model="filters.date" :class="{ empty: !filters.date }" type="date" aria-label="按具体日期筛选" @change="load" /><span v-if="!filters.date" class="date-filter-placeholder">选择日期</span><button v-if="filters.date" class="date-clear" type="button" aria-label="清除日期" @click.stop="clearDate"><X :size="14" /></button></div>
       <button class="button secondary small" type="submit">筛选</button>
     </form>
 

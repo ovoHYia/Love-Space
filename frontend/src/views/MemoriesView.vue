@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { CalendarDays, Camera, FileAudio, FileVideo, Heart as HeartFill, Images, MapPin, Pencil, Plus, RefreshCw, Search, Trash2, UploadCloud, X } from 'lucide-vue-next'
+import { CalendarDays, Camera, ChevronDown, ChevronLeft, ChevronRight, FileAudio, FileVideo, Heart as HeartFill, Images, MapPin, Pencil, Plus, RefreshCw, Search, Trash2, UploadCloud, X } from 'lucide-vue-next'
 import { api } from '../api'
 import { errorMessage, mediaUrl, unwrapList } from '../api/client'
 import { useToast } from '../composables/toast'
@@ -73,6 +73,19 @@ function memoryQuery(targetPage: number) {
   if (filters.year) query.set('year', filters.year)
   if (filters.type) query.set('type', filters.type)
   return query.toString()
+}
+
+function stepYear(delta: number) {
+  const currentYear = new Date().getFullYear()
+  const selectedYear = Number(filters.year) || currentYear
+  filters.year = String(Math.min(3000, Math.max(1900, selectedYear + delta)))
+  load()
+}
+
+function clearYear() {
+  if (!filters.year) return
+  filters.year = ''
+  load()
 }
 
 function applyPage(payload: Awaited<ReturnType<typeof api.memories>>, fallbackPage: number) {
@@ -163,8 +176,8 @@ function formatBytes(bytes: number) { return bytes < 1048576 ? `${Math.max(1, Ma
 
     <form class="filter-bar" role="search" @submit.prevent="load">
       <label class="search-field"><Search :size="18" aria-hidden="true" /><span class="sr-only">搜索回忆</span><input v-model="filters.q" placeholder="搜索标题、文字或地点" /></label>
-      <label><span class="sr-only">按年份筛选</span><input v-model="filters.year" type="number" min="1900" max="3000" inputmode="numeric" placeholder="所有年份" @change="load" /></label>
-      <label><span class="sr-only">按媒体类型筛选</span><select v-model="filters.type" @change="load"><option value="">全部类型</option><option value="IMAGE">图片</option><option value="VIDEO">视频</option><option value="AUDIO">音频</option></select></label>
+      <div class="year-filter"><label class="sr-only" for="memories-year">按年份筛选</label><CalendarDays :size="17" aria-hidden="true" /><input id="memories-year" v-model="filters.year" type="number" min="1900" max="3000" inputmode="numeric" placeholder="所有年份" @change="load" /><span class="year-filter-unit">年</span><button class="year-step" type="button" aria-label="上一年" @click="stepYear(-1)"><ChevronLeft :size="16" /></button><button class="year-step" type="button" aria-label="下一年" @click="stepYear(1)"><ChevronRight :size="16" /></button><button v-if="filters.year" class="year-clear" type="button" aria-label="清除年份" @click="clearYear"><X :size="14" /></button></div>
+      <label class="filter-select"><span class="sr-only">按媒体类型筛选</span><select v-model="filters.type" @change="load"><option value="">全部类型</option><option value="IMAGE">图片</option><option value="VIDEO">视频</option><option value="AUDIO">音频</option></select><ChevronDown class="filter-select-icon" :size="17" aria-hidden="true" /></label>
       <button class="button secondary small" type="submit">筛选</button>
     </form>
 

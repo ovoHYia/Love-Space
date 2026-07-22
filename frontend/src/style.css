@@ -270,6 +270,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .toast-region { top: 10px; right: 10px; width: calc(100vw - 20px); }
 }
 
+/* Keep timeline actions comfortably tappable on narrow phones. */
+@media (max-width: 620px) {
+  .memories-page .memory-title-row .card-actions { gap: 8px; flex: 0 0 auto; }
+  .memories-page .memory-title-row .icon-button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; border-radius: 13px; }
+  .memories-page .memory-title-row .icon-button > svg { width: 21px; height: 21px; }
+}
+
 @media (max-width: 390px) {
   .bottom-nav { left: 5px; right: 5px; }.bottom-nav a { font-size: 7px; }.bottom-nav svg { width: 18px; }
   .mobile-brand strong { max-width: 165px; }

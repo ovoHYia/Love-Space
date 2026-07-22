@@ -178,7 +178,7 @@ function visualUrl(media?: MediaItem) {
           <div class="countdown-pill"><strong>{{ countdownParts(anniversaries[0]).value }}</strong><span>{{ countdownParts(anniversaries[0]).unit }}</span></div>
         </div>
         <p v-if="dueReminders.length" class="reminder-note"><BellRing :size="15" />{{ dueReminders.map(item => item.title).join('、') }} 的提醒已经到啦</p>
-        <EmptyState v-else title="还没有纪念日" description="把那个重要日子加进来，就不会错过啦。"><RouterLink class="button small secondary" to="/anniversaries">添加一个</RouterLink></EmptyState>
+        <EmptyState v-if="!anniversaries.length" title="还没有纪念日" description="把那个重要日子加进来，就不会错过啦。"><RouterLink class="button small secondary" to="/anniversaries">添加一个</RouterLink></EmptyState>
       </section>
     </div>
 

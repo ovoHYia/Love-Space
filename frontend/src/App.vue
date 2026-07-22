@@ -4,9 +4,14 @@ import { RouterView } from 'vue-router'
 import AppToast from './components/AppToast.vue'
 import router from './router'
 import { clearAuth } from './stores/auth'
+import { useToast } from './composables/toast'
 
-function onSessionExpired() {
+const { show } = useToast()
+
+function onSessionExpired(event: Event) {
+  const detail = event instanceof CustomEvent ? event.detail as { code?: string } : undefined
   clearAuth()
+  if (detail?.code === 'PASSWORD_CHANGED') show('密码已修改，请重新登录。', 'info')
   if (router.currentRoute.value.name !== 'login') router.replace({ name: 'login', query: { expired: '1' } })
 }
 

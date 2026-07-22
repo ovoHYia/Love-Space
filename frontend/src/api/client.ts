@@ -71,7 +71,9 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   if (!response.ok) {
     const data = typeof payload === 'object' && payload ? payload as Record<string, unknown> : {}
     if (response.status === 401 && path !== '/auth/login') {
-      window.dispatchEvent(new Event('love-space-unauthenticated'))
+      window.dispatchEvent(new CustomEvent('love-space-unauthenticated', {
+        detail: { code: data.code ? String(data.code) : undefined },
+      }))
     }
     throw new ApiError(
       String(data.message || payload || '请求没有成功，请稍后重试。'),

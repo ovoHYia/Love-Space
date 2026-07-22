@@ -33,10 +33,8 @@ public class DashboardService {
         List<MoodView> todayMoods = moods.findByCoupleIdAndMoodDateOrderByUserId(coupleId, LocalDate.now(ZoneId.of("Asia/Shanghai")))
                 .stream().map(views::mood).toList();
         List<MemoryView> recentMemories = memoryService.list(auth, 0, 6, null, null, null).content();
-        List<DiaryView> recentDiaries = views.diaries(diaries.findByCoupleIdOrderByDiaryDateDescCreatedAtDesc(coupleId)
-                .stream().limit(4).toList());
-        List<MessageView> recentMessages = views.messages(messages.findByCoupleIdOrderByCreatedAtDesc(coupleId)
-                .stream().limit(4).toList(), user.getId());
+        List<DiaryView> recentDiaries = views.diaries(diaries.findTop4ByCoupleIdOrderByDiaryDateDescCreatedAtDesc(coupleId));
+        List<MessageView> recentMessages = views.messages(messages.findTop4ByCoupleIdOrderByCreatedAtDesc(coupleId), user.getId());
         List<AnniversaryView> anniversaries = anniversaryService.list(auth);
         List<AnniversaryView> dueReminders = anniversaries.stream()
                 .filter(item -> item.daysUntil() >= 0 && item.daysUntil() <= item.reminderDays()).toList();

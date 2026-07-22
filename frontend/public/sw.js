@@ -7,7 +7,7 @@ self.addEventListener('install', (event) => {
     await cache.addAll(APP_SHELL)
     const root = await fetch('/')
     const html = await root.clone().text()
-    const assets = [...html.matchAll(/(?:src|href)="([^"]+\\.(?:js|css))"/g)].map((match) => match[1])
+    const assets = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map((match) => match[1])
     await cache.put('/', root)
     await cache.addAll(assets)
     await self.skipWaiting()

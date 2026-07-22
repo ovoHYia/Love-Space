@@ -222,6 +222,27 @@ class LoveSpaceApiIntegrationTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_REQUEST"));
     }
 
+    @Test
+    void dashboardReturnsOnlyFourRecentDiariesAndMessages() throws Exception {
+        for (int index = 1; index <= 5; index++) {
+            String date = String.format("2026-07-%02d", index);
+            mvc.perform(post("/api/diaries").with(csrf()).session(firstSession)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"title\":\"日记 " + index + "\",\"content\":\"内容 " + index
+                                    + "\",\"diaryDate\":\"" + date + "\",\"mood\":\"开心\"}"))
+                    .andExpect(status().isCreated());
+            mvc.perform(post("/api/messages").with(csrf()).session(firstSession)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"content\":\"留言 " + index + "\"}"))
+                    .andExpect(status().isCreated());
+        }
+
+        mvc.perform(get("/api/dashboard").session(firstSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recentDiaries", hasSize(4)))
+                .andExpect(jsonPath("$.recentMessages", hasSize(4)));
+    }
+
     private MockHttpSession login(String username, String password) throws Exception {
         MvcResult result = mvc.perform(post("/api/auth/login").with(csrf())
                         .contentType(MediaType.APPLICATION_FORM_URLENCODED)

@@ -117,7 +117,9 @@ async function changePassword() {
     await api.changePassword(passwordForm.value.currentPassword, passwordForm.value.newPassword)
     passwordForm.value = { currentPassword: '', newPassword: '', confirmPassword: '' }
     passwordOpen.value = false
-    show('密码已更新，请妥善保存。', 'success')
+    show('密码已修改，请重新登录。', 'success')
+    clearAuth()
+    await router.replace({ name: 'login', query: { expired: '1' } })
   } catch (cause) {
     show(errorMessage(cause), 'error')
   } finally {

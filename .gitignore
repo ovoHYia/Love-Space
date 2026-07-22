@@ -17,6 +17,7 @@ frontend/.vite/
 # Local logs, backups, and temporary files
 work/logs/
 outputs/
+graphify-out/
 *.log
 backup/
 backups/

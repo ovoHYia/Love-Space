@@ -22,10 +22,10 @@ const totalPages = ref(1)
 const formOpen = ref(false)
 const editing = ref<Memory | null>(null)
 const galleryMemory = ref<Memory | null>(null)
+const mediaViewer = ref<{ memory: Memory; media: MediaItem } | null>(null)
 const selectedFiles = ref<File[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
-const dateInput = ref<HTMLInputElement | null>(null)
-const filters = reactive({ q: '', date: '' })
+const filters = reactive({ q: '' })
 const form = reactive({ title: '', description: '', eventAt: toLocalDateTimeInput(), location: '' })
 
 const grouped = computed(() => {
@@ -71,21 +71,7 @@ async function loadMore() {
 function memoryQuery(targetPage: number) {
   const query = new URLSearchParams({ page: String(targetPage), size: '20' })
   if (filters.q.trim()) query.set('q', filters.q.trim())
-  if (filters.date) query.set('date', filters.date)
   return query.toString()
-}
-
-function clearDate() {
-  if (!filters.date) return
-  filters.date = ''
-  load()
-}
-
-function openDatePicker(event: MouseEvent) {
-  if ((event.target as HTMLElement).closest('input, button')) return
-  const input = dateInput.value as (HTMLInputElement & { showPicker?: () => void }) | null
-  input?.focus()
-  input?.showPicker?.()
 }
 
 function applyPage(payload: Awaited<ReturnType<typeof api.memories>>, fallbackPage: number) {
@@ -159,6 +145,9 @@ function itemType(item: MediaItem) {
   return 'image'
 }
 function itemUrl(item: MediaItem) { return mediaUrl(item.id || item.mediaId, item.url) }
+function openMediaViewer(memory: Memory, media: MediaItem) {
+  mediaViewer.value = { memory, media }
+}
 function authorOf(memory: Memory): UserProfile | undefined {
   if (memory.author) return memory.author
   return memory.authorNickname ? { id: memory.authorId ?? '', nickname: memory.authorNickname } : undefined
@@ -176,7 +165,6 @@ function formatBytes(bytes: number) { return bytes < 1048576 ? `${Math.max(1, Ma
 
     <form class="filter-bar" role="search" @submit.prevent="load">
       <label class="search-field"><Search :size="18" aria-hidden="true" /><span class="sr-only">搜索回忆</span><input v-model="filters.q" placeholder="搜索标题、文字或地点" /></label>
-      <div class="date-filter" @click="openDatePicker"><CalendarDays :size="17" aria-hidden="true" /><label class="sr-only" for="memories-date">按具体日期筛选</label><input id="memories-date" ref="dateInput" v-model="filters.date" :class="{ empty: !filters.date }" type="date" aria-label="按具体日期筛选" @change="load" /><span v-if="!filters.date" class="date-filter-placeholder">选择日期</span><button v-if="filters.date" class="date-clear" type="button" aria-label="清除日期" @click.stop="clearDate"><X :size="14" /></button></div>
       <button class="button secondary small" type="submit">筛选</button>
     </form>
 
@@ -191,9 +179,9 @@ function formatBytes(bytes: number) { return bytes < 1048576 ? `${Math.max(1, Ma
           <div class="memory-card-inner">
             <div v-if="mediaItems(memory).length" class="memory-media" :class="{ gallery: mediaItems(memory).length > 1 }">
               <template v-for="media in mediaItems(memory).slice(0, 4)" :key="media.id || media.mediaId">
-                <img v-if="itemType(media) === 'image'" :src="itemUrl(media)" :alt="`${memory.title} 的照片`" loading="lazy" />
-                <video v-else-if="itemType(media) === 'video'" :src="itemUrl(media)" controls preload="metadata" :aria-label="`${memory.title} 的视频`"></video>
-                <div v-else class="audio-tile"><FileAudio :size="25" /><span>{{ media.originalName || '一段声音' }}</span><audio :src="itemUrl(media)" controls :aria-label="`${memory.title} 的音频`"></audio></div>
+                <button v-if="itemType(media) === 'image'" class="media-trigger" type="button" :aria-label="`查看${memory.title}的原图`" @click="openMediaViewer(memory, media)"><img :src="itemUrl(media)" :alt="`${memory.title} 的照片`" loading="lazy" draggable="false" /></button>
+                <button v-else-if="itemType(media) === 'video'" class="media-trigger" type="button" :aria-label="`查看${memory.title}的原视频`" @click="openMediaViewer(memory, media)"><video :src="itemUrl(media)" preload="metadata" playsinline aria-hidden="true"></video><span class="media-view-hint" aria-hidden="true">点击查看原视频</span></button>
+                <button v-else class="audio-tile media-trigger" type="button" :aria-label="`查看${memory.title}的原音频`" @click="openMediaViewer(memory, media)"><FileAudio :size="25" /><span>{{ media.originalName || '一段声音' }}</span><small>点击查看原音频</small></button>
               </template>
               <button v-if="mediaItems(memory).length > 4" class="more-media" type="button" @click="galleryMemory = memory">+{{ mediaItems(memory).length - 4 }}</button>
             </div>
@@ -238,6 +226,14 @@ function formatBytes(bytes: number) { return bytes < 1048576 ? `${Math.max(1, Ma
         <video v-else-if="itemType(media) === 'video'" :src="itemUrl(media)" controls preload="metadata" :aria-label="`${galleryMemory.title} 的视频`"></video>
         <audio v-else :src="itemUrl(media)" controls preload="none" :aria-label="`${galleryMemory.title} 的音频`"></audio>
       </template>
+    </div>
+  </BaseModal>
+  <BaseModal v-if="mediaViewer" :title="`查看${mediaViewer.memory.title}的原媒体`" wide @close="mediaViewer = null">
+    <div class="media-viewer">
+      <img v-if="itemType(mediaViewer.media) === 'image'" :src="itemUrl(mediaViewer.media)" :alt="`${mediaViewer.memory.title} 的原图`" />
+      <video v-else-if="itemType(mediaViewer.media) === 'video'" :src="itemUrl(mediaViewer.media)" controls autoplay playsinline preload="metadata" :aria-label="`${mediaViewer.memory.title} 的原视频`"></video>
+      <audio v-else :src="itemUrl(mediaViewer.media)" controls autoplay preload="metadata" :aria-label="`${mediaViewer.memory.title} 的原音频`"></audio>
+      <p v-if="mediaViewer.media.originalName" class="media-viewer-name">{{ mediaViewer.media.originalName }}</p>
     </div>
   </BaseModal>
 </template>

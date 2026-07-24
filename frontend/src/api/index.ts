@@ -1,5 +1,5 @@
 import { download, request } from './client'
-import type { Anniversary, AppNotification, AuthPayload, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, NotificationList, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
+import type { Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, NotificationList, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
 
 export const api = {
   setupStatus: () => request<{ initialized: boolean }>('/setup/status'),
@@ -52,6 +52,10 @@ export const api = {
   completeWish: (id: Wish['id']) => request<Wish>(`/wishes/${id}/complete`, { method: 'PATCH' }),
   reopenWish: (id: Wish['id']) => request<Wish>(`/wishes/${id}/reopen`, { method: 'PATCH' }),
   deleteWish: (id: Wish['id']) => request<void>(`/wishes/${id}`, { method: 'DELETE' }),
+  calendar: (from: string, to: string) => request<CalendarEntry[]>(`/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+  createCalendarEvent: (body: CalendarEventInput) => request<CalendarEntry>('/calendar/events', { method: 'POST', body: JSON.stringify(body) }),
+  updateCalendarEvent: (id: CalendarEntry['id'], body: CalendarEventInput) => request<CalendarEntry>(`/calendar/events/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteCalendarEvent: (id: CalendarEntry['id']) => request<void>(`/calendar/events/${id}`, { method: 'DELETE' }),
   trash: () => request<TrashItem[]>('/trash'),
   restoreTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}/restore`, { method: 'POST' }),
   purgeTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}`, { method: 'DELETE' }),

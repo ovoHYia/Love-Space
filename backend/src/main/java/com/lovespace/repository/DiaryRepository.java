@@ -10,4 +10,6 @@ public interface DiaryRepository extends JpaRepository<Diary, Long> {
     Optional<Diary> findByIdAndCoupleIdAndDeletedBy(Long id, Long coupleId, Long deletedBy);
     List<Diary> findByCoupleIdAndDeletedByOrderByDeletedAtDesc(Long coupleId, Long deletedBy);
     List<Diary> findByCoupleIdOrderById(Long coupleId);
+    List<Diary> findByCoupleIdAndDeletedAtIsNullAndDiaryDateBetweenOrderByDiaryDate(
+            Long coupleId, java.time.LocalDate from, java.time.LocalDate to);
 }

@@ -116,8 +116,35 @@ export interface Wish extends WishInput {
   updatedAt?: string
 }
 
+export type CalendarSource = 'CUSTOM' | 'ANNIVERSARY' | 'WISH' | 'MEMORY' | 'DIARY' | 'LETTER'
+
+export interface CalendarEventInput {
+  title: string
+  description?: string
+  startAt: string
+  endAt?: string | null
+  allDay: boolean
+  category: 'DATE' | 'TRAVEL' | 'FAMILY' | 'PERSONAL' | 'OTHER'
+  location?: string
+}
+
+export interface CalendarEntry {
+  sourceType: CalendarSource
+  id: number | string
+  title: string
+  description?: string | null
+  startAt: string
+  endAt?: string | null
+  allDay: boolean
+  category: string
+  location?: string | null
+  editable: boolean
+  createdBy?: number | string
+  createdByNickname?: string
+}
+
 export interface TrashItem {
-  type: 'MEMORY' | 'DIARY' | 'MESSAGE' | 'ANNIVERSARY' | 'WISH'
+  type: 'MEMORY' | 'DIARY' | 'MESSAGE' | 'ANNIVERSARY' | 'WISH' | 'CALENDAR_EVENT'
   id: number | string
   title: string
   deletedAt: string

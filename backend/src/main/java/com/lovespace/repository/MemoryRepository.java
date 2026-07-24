@@ -6,4 +6,6 @@ public interface MemoryRepository extends JpaRepository<Memory, Long>, JpaSpecif
     java.util.Optional<Memory> findByIdAndCoupleIdAndDeletedBy(Long id, Long coupleId, Long deletedBy);
     java.util.List<Memory> findByCoupleIdAndDeletedByOrderByDeletedAtDesc(Long coupleId, Long deletedBy);
     java.util.List<Memory> findByCoupleIdOrderById(Long coupleId);
+    java.util.List<Memory> findByCoupleIdAndDeletedAtIsNullAndEventAtGreaterThanEqualAndEventAtLessThanOrderByEventAt(
+            Long coupleId, java.time.LocalDateTime startInclusive, java.time.LocalDateTime endExclusive);
 }

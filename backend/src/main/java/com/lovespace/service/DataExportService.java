@@ -32,6 +32,7 @@ public class DataExportService {
     private final LetterMessageRepository messages;
     private final AnniversaryRepository anniversaries;
     private final WishRepository wishes;
+    private final CalendarEventRepository calendarEvents;
     private final NotificationRepository notifications;
     private final MediaStorageService storage;
     private final ObjectMapper objectMapper;
@@ -39,8 +40,9 @@ public class DataExportService {
     public DataExportService(CurrentUserService current, UserRepository users, MoodRepository moods,
                              MemoryRepository memories, MediaRepository media, DiaryRepository diaries,
                              LetterMessageRepository messages, AnniversaryRepository anniversaries,
-                             WishRepository wishes, NotificationRepository notifications,
-                             MediaStorageService storage, ObjectMapper objectMapper) {
+                             WishRepository wishes, CalendarEventRepository calendarEvents,
+                             NotificationRepository notifications, MediaStorageService storage,
+                             ObjectMapper objectMapper) {
         this.current = current;
         this.users = users;
         this.moods = moods;
@@ -50,6 +52,7 @@ public class DataExportService {
         this.messages = messages;
         this.anniversaries = anniversaries;
         this.wishes = wishes;
+        this.calendarEvents = calendarEvents;
         this.notifications = notifications;
         this.storage = storage;
         this.objectMapper = objectMapper;
@@ -171,6 +174,20 @@ public class DataExportService {
                 "createdAt", item.getCreatedAt(),
                 "updatedAt", item.getUpdatedAt(),
                 "deletedAt", item.getDeletedAt())).toList());
+        export.put("calendarEvents", visible(calendarEvents.findByCoupleIdOrderById(coupleId), userId).stream()
+                .map(item -> orderedMap(
+                        "id", item.getId(),
+                        "createdBy", item.getCreatedBy(),
+                        "title", item.getTitle(),
+                        "description", item.getDescription(),
+                        "startAt", item.getStartAt(),
+                        "endAt", item.getEndAt(),
+                        "allDay", item.isAllDay(),
+                        "category", item.getCategory(),
+                        "location", item.getLocation(),
+                        "createdAt", item.getCreatedAt(),
+                        "updatedAt", item.getUpdatedAt(),
+                        "deletedAt", item.getDeletedAt())).toList());
         export.put("notifications", notifications.findByUserIdOrderByCreatedAtAsc(userId).stream().map(item -> orderedMap(
                 "id", item.getId(),
                 "type", item.getType(),

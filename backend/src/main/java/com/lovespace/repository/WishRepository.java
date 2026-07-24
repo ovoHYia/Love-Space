@@ -8,4 +8,6 @@ public interface WishRepository extends JpaRepository<Wish, Long> {
     Optional<Wish> findByIdAndCoupleIdAndDeletedBy(Long id, Long coupleId, Long deletedBy);
     List<Wish> findByCoupleIdAndDeletedByOrderByDeletedAtDesc(Long coupleId, Long deletedBy);
     List<Wish> findByCoupleIdOrderById(Long coupleId);
+    List<Wish> findByCoupleIdAndDeletedAtIsNullAndTargetDateBetweenOrderByTargetDate(
+            Long coupleId, java.time.LocalDate from, java.time.LocalDate to);
 }

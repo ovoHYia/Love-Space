@@ -93,6 +93,19 @@ public final class ApiDtos {
                            String status, Long completedBy, String completedByNickname,
                            LocalDateTime completedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {}
 
+    public record CalendarEventRequest(
+            @NotBlank @Size(max = 120) String title,
+            @Size(max = 1000) String description,
+            @NotNull LocalDateTime startAt,
+            LocalDateTime endAt,
+            boolean allDay,
+            @NotBlank @Pattern(regexp = "DATE|TRAVEL|FAMILY|PERSONAL|OTHER") String category,
+            @Size(max = 200) String location) {}
+    public record CalendarEntryView(String sourceType, Long id, String title, String description,
+                                    LocalDateTime startAt, LocalDateTime endAt, boolean allDay,
+                                    String category, String location, boolean editable,
+                                    Long createdBy, String createdByNickname) {}
+
     public record TrashItemView(String type, Long id, String title, LocalDateTime deletedAt) {}
 
     public record NotificationView(Long id, String type, String title, String body,

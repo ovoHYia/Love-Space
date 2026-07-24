@@ -53,7 +53,7 @@ class DataManagementIntegrationTest {
     @BeforeEach
     void reset() throws Exception {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        for (String table : new String[]{"notifications", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
+        for (String table : new String[]{"notifications", "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
         }
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
@@ -139,6 +139,13 @@ class DataManagementIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"夏日记录\",\"content\":\"一起散步\",\"diaryDate\":\"2026-07-24\"}"))
                 .andExpect(status().isCreated());
+        mvc.perform(post("/api/calendar/events").with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"周末约会","startAt":"2026-07-26T15:00:00",
+                                 "allDay":false,"category":"DATE"}
+                                """))
+                .andExpect(status().isCreated());
         mvc.perform(post("/api/messages").with(csrf()).session(bob)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"未来秘密\",\"deliverAt\":\"2029-01-01T08:00:00\"}"))
@@ -160,6 +167,8 @@ class DataManagementIntegrationTest {
         String json = new String(entries.get("love-space-data.json"), StandardCharsets.UTF_8);
         assertTrue(json.contains("海边"));
         assertTrue(json.contains("夏日记录"));
+        assertTrue(json.contains("周末约会"));
+        assertTrue(json.contains("\"calendarEvents\""));
         assertFalse(json.contains("未来秘密"));
         assertFalse(json.contains("passwordHash"));
         assertFalse(json.contains("alice-pass-123"));

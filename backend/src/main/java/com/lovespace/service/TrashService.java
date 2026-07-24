@@ -21,25 +21,28 @@ public class TrashService {
     private static final String MESSAGE = "MESSAGE";
     private static final String ANNIVERSARY = "ANNIVERSARY";
     private static final String WISH = "WISH";
+    private static final String CALENDAR_EVENT = "CALENDAR_EVENT";
 
     private final MemoryRepository memories;
     private final DiaryRepository diaries;
     private final LetterMessageRepository messages;
     private final AnniversaryRepository anniversaries;
     private final WishRepository wishes;
+    private final CalendarEventRepository calendarEvents;
     private final MediaRepository media;
     private final MediaStorageService storage;
     private final CurrentUserService current;
 
     public TrashService(MemoryRepository memories, DiaryRepository diaries,
                         LetterMessageRepository messages, AnniversaryRepository anniversaries,
-                        WishRepository wishes, MediaRepository media, MediaStorageService storage,
-                        CurrentUserService current) {
+                        WishRepository wishes, CalendarEventRepository calendarEvents,
+                        MediaRepository media, MediaStorageService storage, CurrentUserService current) {
         this.memories = memories;
         this.diaries = diaries;
         this.messages = messages;
         this.anniversaries = anniversaries;
         this.wishes = wishes;
+        this.calendarEvents = calendarEvents;
         this.media = media;
         this.storage = storage;
         this.current = current;
@@ -61,6 +64,8 @@ public class TrashService {
                 .forEach(value -> result.add(view(ANNIVERSARY, value, value.getTitle())));
         wishes.findByCoupleIdAndDeletedByOrderByDeletedAtDesc(coupleId, userId)
                 .forEach(value -> result.add(view(WISH, value, value.getTitle())));
+        calendarEvents.findByCoupleIdAndDeletedByOrderByDeletedAtDesc(coupleId, userId)
+                .forEach(value -> result.add(view(CALENDAR_EVENT, value, value.getTitle())));
         return result.stream()
                 .sorted(Comparator.comparing(TrashItemView::deletedAt).reversed())
                 .toList();
@@ -94,6 +99,7 @@ public class TrashService {
         messages.deleteAll(messages.findByCoupleIdAndDeletedByOrderByDeletedAtDesc(coupleId, userId));
         anniversaries.deleteAll(anniversaries.findByCoupleIdAndDeletedByOrderByDeletedAtDesc(coupleId, userId));
         wishes.deleteAll(wishes.findByCoupleIdAndDeletedByOrderByDeletedAtDesc(coupleId, userId));
+        calendarEvents.deleteAll(calendarEvents.findByCoupleIdAndDeletedByOrderByDeletedAtDesc(coupleId, userId));
     }
 
     private RecoverableContent find(User user, String type, Long id) {
@@ -110,6 +116,8 @@ public class TrashService {
                     .orElseThrow(() -> ApiException.notFound("回收内容不存在"));
             case WISH -> wishes.findByIdAndCoupleIdAndDeletedBy(id, coupleId, userId)
                     .orElseThrow(() -> ApiException.notFound("回收内容不存在"));
+            case CALENDAR_EVENT -> calendarEvents.findByIdAndCoupleIdAndDeletedBy(id, coupleId, userId)
+                    .orElseThrow(() -> ApiException.notFound("回收内容不存在"));
             default -> throw ApiException.badRequest("不支持的回收内容类型");
         };
     }
@@ -121,6 +129,7 @@ public class TrashService {
             case MESSAGE -> messages.save((LetterMessage) value);
             case ANNIVERSARY -> anniversaries.save((Anniversary) value);
             case WISH -> wishes.save((Wish) value);
+            case CALENDAR_EVENT -> calendarEvents.save((CalendarEvent) value);
             default -> throw ApiException.badRequest("不支持的回收内容类型");
         }
     }
@@ -140,6 +149,7 @@ public class TrashService {
             case MESSAGE -> delete(messages, (LetterMessage) value);
             case ANNIVERSARY -> delete(anniversaries, (Anniversary) value);
             case WISH -> delete(wishes, (Wish) value);
+            case CALENDAR_EVENT -> delete(calendarEvents, (CalendarEvent) value);
             default -> throw ApiException.badRequest("不支持的回收内容类型");
         }
     }
@@ -155,7 +165,7 @@ public class TrashService {
     private String type(String rawType) {
         if (rawType == null) throw ApiException.badRequest("回收内容类型不能为空");
         String value = rawType.trim().toUpperCase(Locale.ROOT);
-        if (!List.of(MEMORY, DIARY, MESSAGE, ANNIVERSARY, WISH).contains(value)) {
+        if (!List.of(MEMORY, DIARY, MESSAGE, ANNIVERSARY, WISH, CALENDAR_EVENT).contains(value)) {
             throw ApiException.badRequest("不支持的回收内容类型");
         }
         return value;

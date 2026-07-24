@@ -24,6 +24,7 @@ const typeLabels: Record<TrashItem['type'], string> = {
   MESSAGE: '信笺',
   ANNIVERSARY: '纪念日',
   WISH: '愿望',
+  CALENDAR_EVENT: '共享日程',
 }
 const countText = computed(() => items.value.length ? `${items.value.length} 项待处理` : '回收站为空')
 
@@ -142,7 +143,7 @@ async function emptyTrash() {
       <div class="trash-hint"><Database :size="17" /><span>这里只显示由你删除的内容；恢复后会回到原来的位置。</span></div>
       <LoadingState v-if="loading" label="正在查看回收站…" />
       <div v-else-if="error" class="error-panel" role="alert"><p>{{ error }}</p><button class="button secondary" type="button" @click="load">重新加载</button></div>
-      <EmptyState v-else-if="!items.length" title="回收站空空的" description="删除的回忆、日记、信笺、纪念日和愿望会暂存在这里。" />
+      <EmptyState v-else-if="!items.length" title="回收站空空的" description="删除的回忆、日记、信笺、纪念日、愿望和共享日程会暂存在这里。" />
       <div v-else class="trash-list">
         <article v-for="item in items" :key="key(item)" class="card trash-item">
           <span class="trash-type">{{ typeLabels[item.type] }}</span>

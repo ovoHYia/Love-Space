@@ -11,6 +11,7 @@ import AnniversariesView from '../views/AnniversariesView.vue'
 import WishesView from '../views/WishesView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import DataManagementView from '../views/DataManagementView.vue'
+import CalendarView from '../views/CalendarView.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -21,6 +22,7 @@ const router = createRouter({
     {
       path: '/', component: AppShell, meta: { auth: true }, children: [
         { path: '', name: 'home', component: DashboardView },
+        { path: 'calendar', name: 'calendar', component: CalendarView },
         { path: 'memories', name: 'memories', component: MemoriesView },
         { path: 'diaries', name: 'diaries', component: DiariesView },
         { path: 'letters', name: 'letters', component: LettersView },

@@ -41,6 +41,20 @@ public final class ApiDtos {
             @Size(max = 300) String note) {}
     public record MoodView(Long id, Long userId, LocalDate moodDate, String emoji, String label,
                            String note, LocalDateTime updatedAt) {}
+    public record MoodTrendPoint(LocalDate date, Long userId, String nickname, String emoji,
+                                 String label, String note, int score) {}
+    public record MoodDistributionView(String label, String emoji, long count, int percentage) {}
+    public record MoodPersonSummary(Long userId, String nickname, int recordedDays,
+                                    double averageScore, String dominantLabel, String dominantEmoji) {}
+    public record MonthlyActivitySummary(int memories, int diaries, int letters, int completedWishes) {}
+    public record MonthlyHighlight(String type, Long id, String title, LocalDate date) {}
+    public record MonthlyReportResponse(
+            String month, LocalDate from, LocalDate to, int daysInScope,
+            int totalMoodEntries, int recordedDays, int sharedMoodDays, int longestStreak,
+            int resonanceRate, int coverageRate, String insight,
+            List<MoodTrendPoint> trend, List<MoodDistributionView> distribution,
+            List<MoodPersonSummary> people, MonthlyActivitySummary activities,
+            List<MonthlyHighlight> highlights) {}
 
     public record MemoryRequest(
             @NotBlank @Size(max = 120) String title,

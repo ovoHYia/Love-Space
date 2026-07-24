@@ -1,5 +1,5 @@
 import { download, request } from './client'
-import type { Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, NotificationList, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
+import type { Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, MonthlyReport, NotificationList, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
 
 export const api = {
   setupStatus: () => request<{ initialized: boolean }>('/setup/status'),
@@ -21,6 +21,7 @@ export const api = {
     return request<MediaItem>('/profile/avatar', { method: 'POST', body })
   },
   updateMood: (body: { emoji: string; label: string; note: string }) => request('/moods/today', { method: 'PUT', body: JSON.stringify(body) }),
+  monthlyReport: (month: string) => request<MonthlyReport>(`/reports/monthly?month=${encodeURIComponent(month)}`),
   memories: (query = '') => request<SpringPage<Memory> | Memory[]>(`/memories${query ? `?${query}` : ''}`),
   randomMemory: (excludeId?: Memory['id']) => request<Memory>(`/memories/random${excludeId === undefined ? '' : `?excludeId=${encodeURIComponent(excludeId)}`}`),
   createMemory: (data: { title: string; description: string; eventAt: string; location: string }, files: File[]) => {

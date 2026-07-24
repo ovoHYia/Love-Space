@@ -37,6 +37,23 @@ public interface LetterMessageRepository extends JpaRepository<LetterMessage, Lo
             @Param("userId") Long userId,
             @Param("now") LocalDateTime now);
 
+    @Query("""
+            select m from LetterMessage m
+            where m.coupleId = :coupleId
+              and m.deletedAt is null
+              and m.deliverAt >= :from
+              and m.deliverAt < :to
+              and (m.authorId = :userId
+                   or (m.recipientId = :userId and m.deliverAt <= :now))
+            order by m.deliverAt asc, m.id asc
+            """)
+    List<LetterMessage> findVisibleByCoupleAndUserAndDeliverAtRange(
+            @Param("coupleId") Long coupleId,
+            @Param("userId") Long userId,
+            @Param("now") LocalDateTime now,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
+
     Optional<LetterMessage> findByIdAndCoupleIdAndDeletedAtIsNull(Long id, Long coupleId);
     Optional<LetterMessage> findByIdAndCoupleIdAndDeletedBy(Long id, Long coupleId, Long deletedBy);
     List<LetterMessage> findByCoupleIdAndDeletedByOrderByDeletedAtDesc(Long coupleId, Long deletedBy);

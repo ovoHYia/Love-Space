@@ -24,12 +24,70 @@ export interface AuthPayload {
 export interface Mood {
   id?: number | string
   userId?: number | string
+  moodDate?: string
   emoji: string
   label: string
   note?: string
   user?: UserProfile
   author?: UserProfile
   updatedAt?: string
+}
+
+export interface MoodTrendPoint {
+  date: string
+  userId: number | string
+  nickname: string
+  emoji: string
+  label: string
+  note?: string | null
+  score: number
+}
+
+export interface MoodDistribution {
+  label: string
+  emoji: string
+  count: number
+  percentage: number
+}
+
+export interface MoodPersonSummary {
+  userId: number | string
+  nickname: string
+  recordedDays: number
+  averageScore: number
+  dominantLabel?: string | null
+  dominantEmoji?: string | null
+}
+
+export interface MonthlyHighlight {
+  type: 'MEMORY' | 'DIARY' | 'LETTER' | 'WISH'
+  id: number | string
+  title: string
+  date: string
+}
+
+export interface MonthlyReport {
+  month: string
+  from: string
+  to: string
+  daysInScope: number
+  totalMoodEntries: number
+  recordedDays: number
+  sharedMoodDays: number
+  longestStreak: number
+  resonanceRate: number
+  coverageRate: number
+  insight: string
+  trend: MoodTrendPoint[]
+  distribution: MoodDistribution[]
+  people: MoodPersonSummary[]
+  activities: {
+    memories: number
+    diaries: number
+    letters: number
+    completedWishes: number
+  }
+  highlights: MonthlyHighlight[]
 }
 
 export interface MediaItem {

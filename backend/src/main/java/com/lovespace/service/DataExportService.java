@@ -34,6 +34,7 @@ public class DataExportService {
     private final WishRepository wishes;
     private final CalendarEventRepository calendarEvents;
     private final NotificationRepository notifications;
+    private final NotificationPreferenceRepository notificationPreferences;
     private final MediaStorageService storage;
     private final ObjectMapper objectMapper;
 
@@ -41,7 +42,8 @@ public class DataExportService {
                              MemoryRepository memories, MediaRepository media, DiaryRepository diaries,
                              LetterMessageRepository messages, AnniversaryRepository anniversaries,
                              WishRepository wishes, CalendarEventRepository calendarEvents,
-                             NotificationRepository notifications, MediaStorageService storage,
+                             NotificationRepository notifications, NotificationPreferenceRepository notificationPreferences,
+                             MediaStorageService storage,
                              ObjectMapper objectMapper) {
         this.current = current;
         this.users = users;
@@ -54,6 +56,7 @@ public class DataExportService {
         this.wishes = wishes;
         this.calendarEvents = calendarEvents;
         this.notifications = notifications;
+        this.notificationPreferences = notificationPreferences;
         this.storage = storage;
         this.objectMapper = objectMapper;
     }
@@ -197,6 +200,13 @@ public class DataExportService {
                 "referenceId", item.getReferenceId(),
                 "readAt", item.getReadAt(),
                 "createdAt", item.getCreatedAt())).toList());
+        export.put("notificationPreferences", notificationPreferences.findById(userId)
+                .map(item -> orderedMap(
+                        "anniversaryEnabled", item.isAnniversaryEnabled(),
+                        "letterEnabled", item.isLetterEnabled(),
+                        "wishEnabled", item.isWishEnabled(),
+                        "updatedAt", item.getUpdatedAt()))
+                .orElse(null));
 
         try (ZipOutputStream zip = new ZipOutputStream(output)) {
             zip.putNextEntry(new ZipEntry("love-space-data.json"));

@@ -47,7 +47,7 @@ class NotificationReminderTest {
     @BeforeEach
     void reset() {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        for (String table : new String[]{"notifications", "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
+        for (String table : new String[]{"notification_preferences", "notifications", "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
         }
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
@@ -103,6 +103,79 @@ class NotificationReminderTest {
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/notifications/unread-count").session(bob))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.unreadCount").value(0));
+    }
+
+    @Test
+    void notificationCenterFiltersPagesAndPerformsBatchActions() throws Exception {
+        Notification anniversary = newNotification(aliceId, "ANNIVERSARY_REMINDER", "纪念日提醒", "ANNIVERSARY");
+        Notification letter = newNotification(aliceId, "TIME_CAPSULE_DELIVERED", "时光信到了", "MESSAGE");
+        letter.setReadAt(LocalDateTime.now(ZONE));
+        notifications.save(letter);
+        Notification wish = newNotification(aliceId, "WISH_CREATED", "新的愿望", "WISH");
+
+        MockHttpSession alice = login("alice", "alice-pass-123");
+        mvc.perform(get("/api/notifications").session(alice)
+                        .param("status", "UNREAD").param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.summary.total").value(3))
+                .andExpect(jsonPath("$.summary.unread").value(2));
+        mvc.perform(get("/api/notifications").session(alice)
+                        .param("category", "WISH").param("keyword", "愿望"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(wish.getId()));
+
+        mvc.perform(post("/api/notifications/batch/read").with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ids\":[" + anniversary.getId() + "," + wish.getId() + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.affected").value(2))
+                .andExpect(jsonPath("$.unreadCount").value(0));
+        mvc.perform(post("/api/notifications/batch/unread").with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ids\":[" + anniversary.getId() + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1));
+
+        MockHttpSession bob = login("bob", "bob-pass-123");
+        mvc.perform(delete("/api/notifications/batch").with(csrf()).session(bob)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ids\":[" + anniversary.getId() + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.affected").value(0));
+        mvc.perform(delete("/api/notifications/{id}", letter.getId()).with(csrf()).session(alice))
+                .andExpect(status().isNoContent());
+        mvc.perform(delete("/api/notifications/read").with(csrf()).session(alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.affected").value(1))
+                .andExpect(jsonPath("$.unreadCount").value(1));
+    }
+
+    @Test
+    void notificationPreferencesControlFutureNotificationCreation() throws Exception {
+        MockHttpSession alice = login("alice", "alice-pass-123");
+        mvc.perform(get("/api/notifications/preferences").session(alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.anniversaryEnabled").value(true))
+                .andExpect(jsonPath("$.letterEnabled").value(true))
+                .andExpect(jsonPath("$.wishEnabled").value(true));
+        mvc.perform(put("/api/notifications/preferences").with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"anniversaryEnabled":false,"letterEnabled":true,"wishEnabled":true}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.anniversaryEnabled").value(false))
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty());
+
+        LocalDate today = LocalDate.now(ZONE);
+        newAnniversary(today.plusDays(1), 7);
+        assertEquals(1, notificationService.generateAnniversaryReminders(today));
+        assertEquals(0, notifications.countByUserId(aliceId));
+        assertEquals(1, notifications.countByUserId(bobId));
     }
 
     @Test
@@ -182,6 +255,17 @@ class NotificationReminderTest {
         value.setEventDate(date); value.setType("LOVE"); value.setRecurringYearly(false);
         value.setReminderDays(reminderDays);
         return anniversaries.save(value);
+    }
+    private Notification newNotification(Long userId, String type, String title, String referenceType) {
+        Notification value = new Notification();
+        value.setCoupleId(coupleId);
+        value.setUserId(userId);
+        value.setType(type);
+        value.setTitle(title);
+        value.setBody(title + "的详细内容");
+        value.setReferenceType(referenceType);
+        value.setDedupeKey("TEST:" + type + ":" + title);
+        return notifications.save(value);
     }
     private MockHttpSession login(String username, String password) throws Exception {
         MvcResult result = mvc.perform(post("/api/auth/login").with(csrf())

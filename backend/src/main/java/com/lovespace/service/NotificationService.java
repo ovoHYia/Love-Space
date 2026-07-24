@@ -5,6 +5,7 @@ import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.*;
 import com.lovespace.repository.AnniversaryRepository;
 import com.lovespace.repository.LetterMessageRepository;
+import com.lovespace.repository.NotificationPreferenceRepository;
 import com.lovespace.repository.NotificationRepository;
 import com.lovespace.repository.UserRepository;
 import com.lovespace.security.CurrentUserService;
@@ -14,6 +15,8 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,25 +33,39 @@ public class NotificationService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final NotificationRepository notifications;
+    private final NotificationPreferenceRepository preferences;
     private final AnniversaryRepository anniversaries;
     private final LetterMessageRepository letterMessages;
     private final UserRepository users;
     private final CurrentUserService current;
     private final ViewMapper views;
-    public NotificationService(NotificationRepository notifications, AnniversaryRepository anniversaries,
+    public NotificationService(NotificationRepository notifications, NotificationPreferenceRepository preferences,
+                               AnniversaryRepository anniversaries,
                                LetterMessageRepository letterMessages, UserRepository users,
                                CurrentUserService current, ViewMapper views) {
-        this.notifications = notifications; this.anniversaries = anniversaries;
+        this.notifications = notifications; this.preferences = preferences; this.anniversaries = anniversaries;
         this.letterMessages = letterMessages; this.users = users;
         this.current = current; this.views = views;
     }
 
     @Transactional(readOnly = true)
-    public NotificationListResponse list(Authentication auth) {
+    public NotificationListResponse list(
+            Authentication auth, int page, int size, String status, String category, String keyword) {
         User user = current.user(auth);
-        List<NotificationView> items = notifications.findTop50ByUserIdOrderByCreatedAtDesc(user.getId())
-                .stream().map(views::notification).toList();
-        return new NotificationListResponse(items, notifications.countByUserIdAndReadAtIsNull(user.getId()));
+        String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        Page<Notification> result = notifications.search(
+                user.getId(), status, category, normalizedKeyword, PageRequest.of(page, size));
+        long total = notifications.countByUserId(user.getId());
+        long unread = notifications.countByUserIdAndReadAtIsNull(user.getId());
+        NotificationSummary summary = new NotificationSummary(
+                total, unread, total - unread,
+                notifications.countByUserIdAndReferenceType(user.getId(), REFERENCE_ANNIVERSARY),
+                notifications.countByUserIdAndReferenceType(user.getId(), REFERENCE_MESSAGE),
+                notifications.countByUserIdAndReferenceType(user.getId(), REFERENCE_WISH));
+        return new NotificationListResponse(
+                result.getContent().stream().map(views::notification).toList(),
+                result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages(),
+                result.isFirst(), result.isLast(), unread, summary);
     }
 
     @Transactional(readOnly = true)
@@ -67,9 +84,66 @@ public class NotificationService {
     }
 
     @Transactional
+    public NotificationView markUnread(Authentication auth, Long id) {
+        User user = current.user(auth);
+        Notification value = notifications.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> ApiException.notFound("通知不存在"));
+        value.setReadAt(null);
+        return views.notification(notifications.save(value));
+    }
+
+    @Transactional
     public void markAllRead(Authentication auth) {
         User user = current.user(auth);
         notifications.markAllReadForUser(user.getId(), LocalDateTime.now(ZONE));
+    }
+
+    @Transactional
+    public NotificationBatchResponse markBatch(Authentication auth, List<Long> ids, boolean read) {
+        User user = current.user(auth);
+        int affected = read
+                ? notifications.markReadForUser(user.getId(), ids, LocalDateTime.now(ZONE))
+                : notifications.markUnreadForUser(user.getId(), ids);
+        return batchResponse(user.getId(), affected);
+    }
+
+    @Transactional
+    public void delete(Authentication auth, Long id) {
+        User user = current.user(auth);
+        Notification value = notifications.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> ApiException.notFound("通知不存在"));
+        notifications.delete(value);
+    }
+
+    @Transactional
+    public NotificationBatchResponse deleteBatch(Authentication auth, List<Long> ids) {
+        User user = current.user(auth);
+        return batchResponse(user.getId(), notifications.deleteByUserIdAndIdIn(user.getId(), ids));
+    }
+
+    @Transactional
+    public NotificationBatchResponse deleteRead(Authentication auth) {
+        User user = current.user(auth);
+        return batchResponse(user.getId(), notifications.deleteByUserIdAndReadAtIsNotNull(user.getId()));
+    }
+
+    @Transactional(readOnly = true)
+    public NotificationPreferenceView preferences(Authentication auth) {
+        User user = current.user(auth);
+        return preferences.findById(user.getId())
+                .map(this::preferenceView)
+                .orElseGet(() -> new NotificationPreferenceView(true, true, true, null));
+    }
+
+    @Transactional
+    public NotificationPreferenceView updatePreferences(
+            Authentication auth, NotificationPreferenceRequest request) {
+        User user = current.user(auth);
+        NotificationPreference value = findOrCreatePreferences(user);
+        value.setAnniversaryEnabled(request.anniversaryEnabled());
+        value.setLetterEnabled(request.letterEnabled());
+        value.setWishEnabled(request.wishEnabled());
+        return preferenceView(preferences.save(value));
     }
 
     /**
@@ -89,6 +163,7 @@ public class NotificationService {
             String dedupeKey = REFERENCE_ANNIVERSARY + ":" + anniversary.getId() + ":" + occurrence;
             List<User> members = membersByCouple.computeIfAbsent(anniversary.getCoupleId(), users::findByCoupleIdOrderById);
             for (User member : members) {
+                if (!enabled(member.getId(), REFERENCE_ANNIVERSARY)) continue;
                 if (notifications.existsByUserIdAndDedupeKey(member.getId(), dedupeKey)) continue;
                 notifications.save(reminder(anniversary, member.getId(), dedupeKey, daysUntil, occurrence));
                 created++;
@@ -103,7 +178,8 @@ public class NotificationService {
         for (LetterMessage message : letterMessages
                 .findByScheduledTrueAndNotifiedAtIsNullAndDeletedAtIsNullAndDeliverAtLessThanEqualOrderByDeliverAtAsc(now)) {
             String dedupeKey = "TIME_CAPSULE:" + message.getId();
-            if (!notifications.existsByUserIdAndDedupeKey(message.getRecipientId(), dedupeKey)) {
+            if (enabled(message.getRecipientId(), REFERENCE_MESSAGE)
+                    && !notifications.existsByUserIdAndDedupeKey(message.getRecipientId(), dedupeKey)) {
                 notifications.save(timeCapsuleNotification(message, dedupeKey));
                 created++;
             }
@@ -156,6 +232,7 @@ public class NotificationService {
 
     private void createWishNotification(Wish wish, Long recipientId, String type,
                                         String title, String body, String dedupeKey) {
+        if (!enabled(recipientId, REFERENCE_WISH)) return;
         if (notifications.existsByUserIdAndDedupeKey(recipientId, dedupeKey)) return;
         Notification value = new Notification();
         value.setCoupleId(wish.getCoupleId());
@@ -167,6 +244,35 @@ public class NotificationService {
         value.setReferenceId(wish.getId());
         value.setDedupeKey(dedupeKey);
         notifications.save(value);
+    }
+
+    private NotificationBatchResponse batchResponse(Long userId, long affected) {
+        return new NotificationBatchResponse(
+                affected, notifications.countByUserIdAndReadAtIsNull(userId));
+    }
+
+    private NotificationPreference findOrCreatePreferences(User user) {
+        return preferences.findById(user.getId()).orElseGet(() -> {
+            NotificationPreference value = new NotificationPreference();
+            value.setUserId(user.getId());
+            value.setCoupleId(user.getCouple().getId());
+            return preferences.save(value);
+        });
+    }
+
+    private NotificationPreferenceView preferenceView(NotificationPreference value) {
+        return new NotificationPreferenceView(
+                value.isAnniversaryEnabled(), value.isLetterEnabled(), value.isWishEnabled(),
+                value.getUpdatedAt());
+    }
+
+    private boolean enabled(Long userId, String referenceType) {
+        return preferences.findById(userId).map(value -> switch (referenceType) {
+            case REFERENCE_ANNIVERSARY -> value.isAnniversaryEnabled();
+            case REFERENCE_MESSAGE -> value.isLetterEnabled();
+            case REFERENCE_WISH -> value.isWishEnabled();
+            default -> true;
+        }).orElse(true);
     }
 
     private String reminderBody(long daysUntil, LocalDate occurrence) {

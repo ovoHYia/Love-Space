@@ -53,7 +53,7 @@ class DataManagementIntegrationTest {
     @BeforeEach
     void reset() throws Exception {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        for (String table : new String[]{"notifications", "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
+        for (String table : new String[]{"notification_preferences", "notifications", "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
         }
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");

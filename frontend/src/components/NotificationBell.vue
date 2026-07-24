@@ -13,7 +13,7 @@ import {
 } from '../stores/notifications'
 import type { AppNotification } from '../types'
 
-withDefaults(defineProps<{ variant?: 'sidebar' | 'header' }>(), { variant: 'header' })
+const props = withDefaults(defineProps<{ variant?: 'sidebar' | 'header' }>(), { variant: 'header' })
 
 const { show } = useToast()
 const route = useRoute()
@@ -27,6 +27,10 @@ const loading = computed(() => notificationState.loading)
 const badge = computed(() => (unreadCount.value > 99 ? '99+' : String(unreadCount.value)))
 
 async function toggle() {
+  if (props.variant === 'sidebar') {
+    openCenter()
+    return
+  }
   open.value = !open.value
   if (open.value) {
     try {
@@ -61,6 +65,11 @@ async function readAll() {
   }
 }
 
+function openCenter() {
+  open.value = false
+  if (route.name !== 'notifications') router.push({ name: 'notifications' })
+}
+
 function onDocumentClick(event: MouseEvent) {
   if (!open.value) return
   if (rootEl.value && !rootEl.value.contains(event.target as Node)) open.value = false
@@ -78,14 +87,14 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick, tru
   <div class="notif" :class="variant" ref="rootEl">
     <button
       class="notif-trigger"
-      :class="[variant, { active: open }]"
+      :class="[variant, { active: open || (variant === 'sidebar' && route.name === 'notifications') }]"
       type="button"
       :aria-label="unreadCount ? `通知，有 ${unreadCount} 条未读` : '通知'"
       :aria-expanded="open"
       @click="toggle"
     >
       <component :is="unreadCount ? BellRing : Bell" :size="variant === 'sidebar' ? 20 : 21" aria-hidden="true" />
-      <span v-if="variant === 'sidebar'" class="notif-label">提醒</span>
+      <span v-if="variant === 'sidebar'" class="notif-label">通知中心</span>
       <span v-if="unreadCount" class="notif-badge" :class="{ inline: variant === 'sidebar' }">{{ badge }}</span>
     </button>
 
@@ -113,6 +122,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick, tru
             </li>
           </ul>
         </div>
+        <footer class="notif-footer">
+          <button type="button" @click="openCenter">查看全部通知</button>
+        </footer>
       </div>
     </transition>
   </div>
@@ -134,16 +146,17 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick, tru
 .notif-badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; background: var(--rose, #e05568); color: #fff; font-size: 10px; font-weight: 700; box-shadow: 0 0 0 2px var(--paper, #fffdfb); }
 .notif-badge.inline { position: static; top: auto; right: auto; box-shadow: none; }
 
-.notif-panel { position: absolute; z-index: 60; top: calc(100% + 9px); width: min(320px, 78vw); border: 1px solid var(--line, #efdadd); border-radius: 18px; background: rgba(255, 253, 251, .98); backdrop-filter: blur(18px); box-shadow: 0 18px 44px rgba(76, 46, 55, .2); overflow: hidden; }
+.notif-panel { position: absolute; z-index: 60; top: calc(100% + 9px); width: min(320px, 78vw); max-height: calc(100dvh - 82px); display: flex; flex-direction: column; border: 1px solid var(--line, #efdadd); border-radius: 18px; background: rgba(255, 253, 251, .98); backdrop-filter: blur(18px); box-shadow: 0 18px 44px rgba(76, 46, 55, .2); overflow: hidden; }
 .notif-panel.header { right: 0; }
-.notif-panel.sidebar { left: 0; }
+.notif-panel.sidebar { position: fixed; top: auto; right: auto; bottom: 20px; left: 256px; width: min(360px, calc(100vw - 276px)); max-height: calc(100dvh - 40px); }
 
 .notif-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; border-bottom: 1px solid var(--line, #efdadd); }
 .notif-head strong { font-size: 15px; }
 .notif-readall { display: inline-flex; align-items: center; gap: 4px; border: none; background: none; cursor: pointer; color: var(--rose-dark, #b23f52); font-size: 12px; font-weight: 700; }
 .notif-readall:hover { text-decoration: underline; }
 
-.notif-scroll { max-height: min(60vh, 380px); overflow-y: auto; }
+.notif-scroll { min-height: 0; max-height: min(60vh, 380px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.notif-panel.sidebar .notif-scroll { flex: 1; max-height: none; }
 .notif-empty { margin: 0; padding: 28px 16px; text-align: center; color: var(--muted, #a98d93); font-size: 13px; }
 
 .notif-list { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
@@ -157,6 +170,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick, tru
 .notif-title { font-size: 13px; font-weight: 700; color: #6d545a; }
 .notif-text { font-size: 12px; line-height: 1.5; color: #8a6f75; }
 .notif-time { font-size: 10px; color: var(--muted, #a98d93); }
+.notif-footer { padding: 8px; border-top: 1px solid var(--line, #efdadd); }
+.notif-footer button { width: 100%; padding: 8px; border: 0; border-radius: 10px; background: var(--rose-pale, #fff1f2); color: var(--rose-dark, #b23f52); cursor: pointer; font-size: 11px; font-weight: 800; }
+.notif-footer button:hover { background: #ffe4e7; }
 
 .notif-pop-enter-active, .notif-pop-leave-active { transition: opacity .16s ease, transform .16s ease; }
 .notif-pop-enter-from, .notif-pop-leave-to { opacity: 0; transform: translateY(-6px); }

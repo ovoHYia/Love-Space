@@ -35,7 +35,7 @@ export async function loadNotifications() {
   const version = stateVersion
   notificationState.loading = true
   try {
-    const data = await api.notifications()
+    const data = await api.notifications({ size: 8 })
     if (version !== stateVersion) return
     notificationState.items = data.items || []
     notificationState.unreadCount = data.unreadCount ?? 0

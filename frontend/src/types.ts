@@ -221,7 +221,28 @@ export interface AppNotification {
 
 export interface NotificationList {
   items: AppNotification[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  first: boolean
+  last: boolean
   unreadCount: number
+  summary: {
+    total: number
+    unread: number
+    read: number
+    anniversaries: number
+    letters: number
+    wishes: number
+  }
+}
+
+export interface NotificationPreferences {
+  anniversaryEnabled: boolean
+  letterEnabled: boolean
+  wishEnabled: boolean
+  updatedAt?: string
 }
 
 export interface DashboardPayload {

@@ -240,7 +240,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .account-grid { grid-template-columns: 1fr; max-height: 52vh; overflow-y: auto; padding-right: 4px; }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 860px), (min-width: 861px) and (max-width: 1200px) and (max-height: 600px) and (orientation: landscape) and (pointer: coarse) {
   .side-nav { display: none; }
   .app-column { padding: 0; }
   .mobile-header { position: sticky; z-index: 30; top: 0; min-height: 65px; padding: 10px 17px; display: flex; align-items: center; justify-content: space-between; background: rgba(255,248,244,.9); backdrop-filter: blur(17px); border-bottom: 1px solid rgba(237,220,223,.75); }

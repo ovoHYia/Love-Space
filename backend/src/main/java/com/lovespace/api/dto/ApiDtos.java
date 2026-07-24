@@ -125,8 +125,22 @@ public final class ApiDtos {
     public record NotificationView(Long id, String type, String title, String body,
                                    String referenceType, Long referenceId, LocalDateTime readAt,
                                    LocalDateTime createdAt) {}
-    public record NotificationListResponse(List<NotificationView> items, long unreadCount) {}
+    public record NotificationSummary(long total, long unread, long read,
+                                      long anniversaries, long letters, long wishes) {}
+    public record NotificationListResponse(
+            List<NotificationView> items, int page, int size, long totalElements, int totalPages,
+            boolean first, boolean last, long unreadCount, NotificationSummary summary) {}
     public record UnreadCountResponse(long unreadCount) {}
+    public record NotificationBatchRequest(
+            @NotEmpty @Size(max = 100) List<@NotNull @Positive Long> ids) {}
+    public record NotificationBatchResponse(long affected, long unreadCount) {}
+    public record NotificationPreferenceRequest(
+            @NotNull Boolean anniversaryEnabled,
+            @NotNull Boolean letterEnabled,
+            @NotNull Boolean wishEnabled) {}
+    public record NotificationPreferenceView(
+            boolean anniversaryEnabled, boolean letterEnabled, boolean wishEnabled,
+            LocalDateTime updatedAt) {}
 
     public record DashboardResponse(MeResponse account, List<MoodView> todayMoods,
                                     List<MemoryView> recentMemories, List<DiaryView> recentDiaries,

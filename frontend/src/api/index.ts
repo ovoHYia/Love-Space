@@ -1,5 +1,5 @@
 import { download, request } from './client'
-import type { Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, MonthlyReport, NotificationList, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
+import type { Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, MonthlyReport, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
 
 export const api = {
   setupStatus: () => request<{ initialized: boolean }>('/setup/status'),
@@ -62,8 +62,22 @@ export const api = {
   purgeTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}`, { method: 'DELETE' }),
   emptyTrash: () => request<void>('/trash', { method: 'DELETE' }),
   exportData: () => download('/data/export'),
-  notifications: () => request<NotificationList>('/notifications'),
+  notifications: (query: { page?: number; size?: number; status?: string; category?: string; keyword?: string } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') params.set(key, String(value))
+    })
+    return request<NotificationList>(`/notifications${params.size ? `?${params}` : ''}`)
+  },
   notificationUnreadCount: () => request<{ unreadCount: number }>('/notifications/unread-count'),
   readNotification: (id: AppNotification['id']) => request<AppNotification>(`/notifications/${id}/read`, { method: 'PATCH' }),
+  unreadNotification: (id: AppNotification['id']) => request<AppNotification>(`/notifications/${id}/unread`, { method: 'PATCH' }),
   readAllNotifications: () => request<void>('/notifications/read-all', { method: 'POST' }),
+  readNotifications: (ids: AppNotification['id'][]) => request<{ affected: number; unreadCount: number }>('/notifications/batch/read', { method: 'POST', body: JSON.stringify({ ids }) }),
+  unreadNotifications: (ids: AppNotification['id'][]) => request<{ affected: number; unreadCount: number }>('/notifications/batch/unread', { method: 'POST', body: JSON.stringify({ ids }) }),
+  deleteNotification: (id: AppNotification['id']) => request<void>(`/notifications/${id}`, { method: 'DELETE' }),
+  deleteNotifications: (ids: AppNotification['id'][]) => request<{ affected: number; unreadCount: number }>('/notifications/batch', { method: 'DELETE', body: JSON.stringify({ ids }) }),
+  deleteReadNotifications: () => request<{ affected: number; unreadCount: number }>('/notifications/read', { method: 'DELETE' }),
+  notificationPreferences: () => request<NotificationPreferences>('/notifications/preferences'),
+  updateNotificationPreferences: (body: NotificationPreferences) => request<NotificationPreferences>('/notifications/preferences', { method: 'PUT', body: JSON.stringify(body) }),
 }

@@ -46,7 +46,7 @@ class MonthlyReportIntegrationTest {
     @BeforeEach
     void resetAndInitialize() throws Exception {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        for (String table : new String[]{"notifications", "calendar_events", "wishes", "anniversaries",
+        for (String table : new String[]{"notification_preferences", "notifications", "calendar_events", "wishes", "anniversaries",
                 "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
         }

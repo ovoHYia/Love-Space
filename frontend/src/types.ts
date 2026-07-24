@@ -95,6 +95,22 @@ export interface Anniversary {
   daysUntil?: number
 }
 
+export interface AppNotification {
+  id: number | string
+  type: string
+  title: string
+  body: string
+  referenceType?: string | null
+  referenceId?: number | string | null
+  readAt?: string | null
+  createdAt: string
+}
+
+export interface NotificationList {
+  items: AppNotification[]
+  unreadCount: number
+}
+
 export interface DashboardPayload {
   account?: AuthPayload
   currentUser?: UserProfile

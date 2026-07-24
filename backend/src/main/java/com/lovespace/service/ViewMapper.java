@@ -4,7 +4,6 @@ import com.lovespace.api.dto.ApiDtos.*;
 import com.lovespace.domain.*;
 import com.lovespace.repository.*;
 import java.time.*;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import org.springframework.stereotype.Component;
 
@@ -76,20 +75,10 @@ public class ViewMapper {
     public AnniversaryView anniversary(Anniversary value) {
         return new AnniversaryView(value.getId(), value.getCreatedBy(), value.getTitle(), value.getEventDate(),
                 value.getType(), value.isRecurringYearly(), value.getReminderDays(), value.getNote(),
-                daysUntil(value, LocalDate.now(ZoneId.of("Asia/Shanghai"))), value.getCreatedAt(), value.getUpdatedAt());
+                value.daysUntil(LocalDate.now(ZoneId.of("Asia/Shanghai"))), value.getCreatedAt(), value.getUpdatedAt());
     }
-    private long daysUntil(Anniversary anniversary, LocalDate today) {
-        LocalDate target = anniversary.getEventDate();
-        if (anniversary.isRecurringYearly()) {
-            int safeDay = Math.min(target.getDayOfMonth(), Month.of(target.getMonthValue()).length(Year.isLeap(today.getYear())));
-            target = LocalDate.of(today.getYear(), target.getMonthValue(), safeDay);
-            if (target.isBefore(today)) {
-                int nextYear = today.getYear() + 1;
-                safeDay = Math.min(anniversary.getEventDate().getDayOfMonth(),
-                        Month.of(target.getMonthValue()).length(Year.isLeap(nextYear)));
-                target = LocalDate.of(nextYear, target.getMonthValue(), safeDay);
-            }
-        }
-        return ChronoUnit.DAYS.between(today, target);
+    public NotificationView notification(Notification value) {
+        return new NotificationView(value.getId(), value.getType(), value.getTitle(), value.getBody(),
+                value.getReferenceType(), value.getReferenceId(), value.getReadAt(), value.getCreatedAt());
     }
 }

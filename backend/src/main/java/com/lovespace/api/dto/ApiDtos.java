@@ -81,6 +81,12 @@ public final class ApiDtos {
                                   String note, long daysUntil, LocalDateTime createdAt,
                                   LocalDateTime updatedAt) {}
 
+    public record NotificationView(Long id, String type, String title, String body,
+                                   String referenceType, Long referenceId, LocalDateTime readAt,
+                                   LocalDateTime createdAt) {}
+    public record NotificationListResponse(List<NotificationView> items, long unreadCount) {}
+    public record UnreadCountResponse(long unreadCount) {}
+
     public record DashboardResponse(MeResponse account, List<MoodView> todayMoods,
                                     List<MemoryView> recentMemories, List<DiaryView> recentDiaries,
                                     List<MessageView> recentMessages,

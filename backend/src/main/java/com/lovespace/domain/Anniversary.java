@@ -3,7 +3,10 @@ package com.lovespace.domain;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Month;
+import java.time.Year;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 
 @Entity
@@ -39,6 +42,25 @@ public class Anniversary {
 
     @PrePersist void onCreate() { createdAt = updatedAt = LocalDateTime.now(ZONE); }
     @PreUpdate void onUpdate() { updatedAt = LocalDateTime.now(ZONE); }
+
+    /** The next date this anniversary falls on relative to {@code today}. For recurring
+     *  entries this rolls forward to this year (or next), clamping Feb 29 on non-leap years. */
+    public LocalDate nextOccurrence(LocalDate today) {
+        if (!recurringYearly) return eventDate;
+        LocalDate target = onYear(today.getYear());
+        return target.isBefore(today) ? onYear(today.getYear() + 1) : target;
+    }
+
+    /** Days from {@code today} until the next occurrence (negative if a non-recurring date has passed). */
+    public long daysUntil(LocalDate today) {
+        return ChronoUnit.DAYS.between(today, nextOccurrence(today));
+    }
+
+    private LocalDate onYear(int year) {
+        int safeDay = Math.min(eventDate.getDayOfMonth(), Month.of(eventDate.getMonthValue()).length(Year.isLeap(year)));
+        return LocalDate.of(year, eventDate.getMonthValue(), safeDay);
+    }
+
     public Long getId() { return id; }
     public Long getCoupleId() { return coupleId; }
     public void setCoupleId(Long coupleId) { this.coupleId = coupleId; }

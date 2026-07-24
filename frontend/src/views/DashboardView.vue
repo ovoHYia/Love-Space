@@ -71,6 +71,10 @@ function letterAuthorName(letter: Letter) {
   return letter.authorNickname || letter.author?.nickname || letter.sender?.nickname || '心上人'
 }
 
+function letterPending(letter: Letter) {
+  return Boolean(letter.scheduled && letter.deliverAt && new Date(letter.deliverAt).getTime() > now.value)
+}
+
 function countdownParts(item: Anniversary) {
   const value = item.daysUntil ?? daysUntilAnniversary(item.eventDate, item.recurringYearly)
   if (value === 0) return { value: '今天', unit: '♡' }
@@ -200,7 +204,7 @@ function visualUrl(media?: MediaItem) {
     <div class="dashboard-grid lower-grid">
       <section class="card letter-preview-card">
         <div class="section-heading"><div><p class="eyebrow">A NOTE FOR YOU</p><h2>一封小小信笺</h2></div><RouterLink class="text-button" to="/letters">去信箱 <ArrowRight :size="15" /></RouterLink></div>
-        <div v-if="letters.length" class="mini-letter"><MailHeart :size="25" /><blockquote v-if="letters[0].content">“{{ letters[0].content }}”</blockquote><RouterLink v-else class="sealed-dashboard-letter" to="/letters">有一封信等你亲手拆开</RouterLink><small>{{ letterAuthorName(letters[0]) }} · {{ formatDateTime(letters[0].createdAt) }}</small></div>
+        <div v-if="letters.length" class="mini-letter"><MailHeart :size="25" /><blockquote v-if="letters[0].content">“{{ letters[0].content }}”</blockquote><RouterLink v-else class="sealed-dashboard-letter" to="/letters">有一封信等你亲手拆开</RouterLink><small>{{ letterPending(letters[0]) ? `等待 ${formatDateTime(letters[0].deliverAt)} 送达` : `${letterAuthorName(letters[0])} · ${formatDateTime(letters[0].createdAt)}` }}</small></div>
         <EmptyState v-else title="信箱里安安静静" description="写一句不着急被回复的话，也很浪漫。"><RouterLink class="button small secondary" to="/letters">写一封信</RouterLink></EmptyState>
       </section>
       <section class="card easter-card">

@@ -36,7 +36,10 @@ export const api = {
   updateDiary: (id: Diary['id'], body: Omit<Diary, 'id' | 'author' | 'authorId' | 'createdAt' | 'updatedAt'>) => request<Diary>(`/diaries/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteDiary: (id: Diary['id']) => request<void>(`/diaries/${id}`, { method: 'DELETE' }),
   messages: (page = 0, size = 50) => request<SpringPage<Letter>>(`/messages?page=${page}&size=${size}`),
-  createMessage: (content: string) => request<Letter>('/messages', { method: 'POST', body: JSON.stringify({ content }) }),
+  createMessage: (content: string, deliverAt?: string) => request<Letter>('/messages', {
+    method: 'POST',
+    body: JSON.stringify({ content, deliverAt: deliverAt || null }),
+  }),
   readMessage: (id: Letter['id']) => request<Letter>(`/messages/${id}/read`, { method: 'PATCH' }),
   deleteMessage: (id: Letter['id']) => request<void>(`/messages/${id}`, { method: 'DELETE' }),
   anniversaries: () => request<Anniversary[]>('/anniversaries'),

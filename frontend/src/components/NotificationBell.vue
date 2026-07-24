@@ -46,6 +46,8 @@ async function openItem(item: AppNotification) {
   open.value = false
   if (item.referenceType === 'ANNIVERSARY' && route.name !== 'anniversaries') {
     router.push({ name: 'anniversaries' })
+  } else if (item.referenceType === 'MESSAGE' && route.name !== 'letters') {
+    router.push({ name: 'letters' })
   }
 }
 

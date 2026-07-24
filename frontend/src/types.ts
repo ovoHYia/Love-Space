@@ -76,6 +76,8 @@ export interface Letter {
   read?: boolean
   isRead?: boolean
   readAt?: string | null
+  scheduled?: boolean
+  deliverAt?: string
   author?: UserProfile
   sender?: UserProfile
   authorId?: number | string

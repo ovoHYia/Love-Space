@@ -4,6 +4,7 @@ import com.lovespace.api.dto.ApiDtos.*;
 import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.*;
 import com.lovespace.repository.AnniversaryRepository;
+import com.lovespace.repository.LetterMessageRepository;
 import com.lovespace.repository.NotificationRepository;
 import com.lovespace.repository.UserRepository;
 import com.lovespace.security.CurrentUserService;
@@ -20,17 +21,22 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class NotificationService {
     public static final String TYPE_ANNIVERSARY_REMINDER = "ANNIVERSARY_REMINDER";
+    public static final String TYPE_TIME_CAPSULE_DELIVERED = "TIME_CAPSULE_DELIVERED";
     public static final String REFERENCE_ANNIVERSARY = "ANNIVERSARY";
+    public static final String REFERENCE_MESSAGE = "MESSAGE";
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final NotificationRepository notifications;
     private final AnniversaryRepository anniversaries;
+    private final LetterMessageRepository letterMessages;
     private final UserRepository users;
     private final CurrentUserService current;
     private final ViewMapper views;
     public NotificationService(NotificationRepository notifications, AnniversaryRepository anniversaries,
-                               UserRepository users, CurrentUserService current, ViewMapper views) {
-        this.notifications = notifications; this.anniversaries = anniversaries; this.users = users;
+                               LetterMessageRepository letterMessages, UserRepository users,
+                               CurrentUserService current, ViewMapper views) {
+        this.notifications = notifications; this.anniversaries = anniversaries;
+        this.letterMessages = letterMessages; this.users = users;
         this.current = current; this.views = views;
     }
 
@@ -88,6 +94,22 @@ public class NotificationService {
         return created;
     }
 
+    @Transactional
+    public int generateScheduledLetterNotifications(LocalDateTime now) {
+        int created = 0;
+        for (LetterMessage message : letterMessages
+                .findByScheduledTrueAndNotifiedAtIsNullAndDeliverAtLessThanEqualOrderByDeliverAtAsc(now)) {
+            String dedupeKey = "TIME_CAPSULE:" + message.getId();
+            if (!notifications.existsByUserIdAndDedupeKey(message.getRecipientId(), dedupeKey)) {
+                notifications.save(timeCapsuleNotification(message, dedupeKey));
+                created++;
+            }
+            message.setNotifiedAt(now);
+            letterMessages.save(message);
+        }
+        return created;
+    }
+
     private Notification reminder(Anniversary anniversary, Long userId, String dedupeKey,
                                   long daysUntil, LocalDate occurrence) {
         Notification value = new Notification();
@@ -98,6 +120,19 @@ public class NotificationService {
         value.setBody(reminderBody(daysUntil, occurrence));
         value.setReferenceType(REFERENCE_ANNIVERSARY);
         value.setReferenceId(anniversary.getId());
+        value.setDedupeKey(dedupeKey);
+        return value;
+    }
+
+    private Notification timeCapsuleNotification(LetterMessage message, String dedupeKey) {
+        Notification value = new Notification();
+        value.setCoupleId(message.getCoupleId());
+        value.setUserId(message.getRecipientId());
+        value.setType(TYPE_TIME_CAPSULE_DELIVERED);
+        value.setTitle("一封时光胶囊到了");
+        value.setBody("一封为此刻准备的信已经送达，去亲手拆开吧。");
+        value.setReferenceType(REFERENCE_MESSAGE);
+        value.setReferenceId(message.getId());
         value.setDedupeKey(dedupeKey);
         return value;
     }

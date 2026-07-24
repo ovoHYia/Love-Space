@@ -34,6 +34,7 @@ class NotificationReminderTest {
     @Autowired CoupleRepository couples;
     @Autowired UserRepository users;
     @Autowired AnniversaryRepository anniversaries;
+    @Autowired LetterMessageRepository letterMessages;
     @Autowired NotificationRepository notifications;
     @Autowired NotificationService notificationService;
     @Autowired PasswordEncoder encoder;
@@ -41,6 +42,7 @@ class NotificationReminderTest {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private Long coupleId;
     private Long aliceId;
+    private Long bobId;
 
     @BeforeEach
     void reset() {
@@ -56,7 +58,7 @@ class NotificationReminderTest {
         couples.save(couple);
         coupleId = couple.getId();
         aliceId = newUser(couple, "alice", "小爱", "alice-pass-123").getId();
-        newUser(couple, "bob", "小宝", "bob-pass-123");
+        bobId = newUser(couple, "bob", "小宝", "bob-pass-123").getId();
     }
 
     @Test
@@ -104,6 +106,65 @@ class NotificationReminderTest {
     void notificationsRequireAuthentication() throws Exception {
         mvc.perform(get("/api/notifications"))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    void scheduledLetterIsHiddenUntilDelivery() throws Exception {
+        MockHttpSession alice = login("alice", "alice-pass-123");
+        MockHttpSession bob = login("bob", "bob-pass-123");
+        LocalDateTime deliverAt = LocalDateTime.now(ZONE).plusHours(2).withNano(0);
+
+        String response = mvc.perform(post("/api/messages").with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"两小时后的惊喜\",\"deliverAt\":\"" + deliverAt + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.scheduled").value(true))
+                .andExpect(jsonPath("$.content").value("两小时后的惊喜"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        long messageId = idOf(response);
+
+        mvc.perform(get("/api/messages").session(alice))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].content").value("两小时后的惊喜"));
+        mvc.perform(get("/api/messages").session(bob))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content", hasSize(0)))
+                .andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(patch("/api/messages/{id}/read", messageId).with(csrf()).session(bob))
+                .andExpect(status().isNotFound());
+
+        mvc.perform(post("/api/messages").with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"不能寄往过去\",\"deliverAt\":\""
+                                + LocalDateTime.now(ZONE).minusMinutes(1).withNano(0) + "\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+    }
+
+    @Test
+    void deliveredTimeCapsuleCreatesOneNotificationAndCanBeOpened() throws Exception {
+        LocalDateTime now = LocalDateTime.now(ZONE).withNano(0);
+        LetterMessage capsule = new LetterMessage();
+        capsule.setCoupleId(coupleId); capsule.setAuthorId(aliceId); capsule.setRecipientId(bobId);
+        capsule.setContent("来自过去的一封信"); capsule.setScheduled(true);
+        capsule.setDeliverAt(now.minusMinutes(1));
+        capsule = letterMessages.save(capsule);
+
+        assertEquals(1, notificationService.generateScheduledLetterNotifications(now));
+        assertEquals(0, notificationService.generateScheduledLetterNotifications(now));
+        assertNotNull(letterMessages.findById(capsule.getId()).orElseThrow().getNotifiedAt());
+
+        MockHttpSession bob = login("bob", "bob-pass-123");
+        mvc.perform(get("/api/notifications").session(bob))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.unreadCount").value(1))
+                .andExpect(jsonPath("$.items[0].type").value("TIME_CAPSULE_DELIVERED"))
+                .andExpect(jsonPath("$.items[0].referenceType").value("MESSAGE"))
+                .andExpect(jsonPath("$.items[0].referenceId").value(capsule.getId()));
+        mvc.perform(get("/api/messages").session(bob))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].scheduled").value(true))
+                .andExpect(jsonPath("$.content[0].content").doesNotExist());
+        mvc.perform(patch("/api/messages/{id}/read", capsule.getId()).with(csrf()).session(bob))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").value("来自过去的一封信"))
+                .andExpect(jsonPath("$.readAt").isNotEmpty());
     }
 
     private User newUser(Couple couple, String username, String nickname, String password) {

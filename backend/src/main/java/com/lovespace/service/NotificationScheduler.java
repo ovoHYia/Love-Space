@@ -4,10 +4,12 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(prefix = "app", name = "scheduling-enabled", havingValue = "true", matchIfMissing = true)
 public class NotificationScheduler {
     private static final Logger log = LoggerFactory.getLogger(NotificationScheduler.class);
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
@@ -18,5 +20,11 @@ public class NotificationScheduler {
     public void generateDailyReminders() {
         int created = notifications.generateAnniversaryReminders(LocalDate.now(ZONE));
         if (created > 0) log.info("Generated {} anniversary reminder notification(s)", created);
+    }
+
+    @Scheduled(cron = "0 * * * * *", zone = "Asia/Shanghai")
+    public void deliverScheduledLetters() {
+        int created = notifications.generateScheduledLetterNotifications(java.time.LocalDateTime.now(ZONE));
+        if (created > 0) log.info("Delivered {} scheduled letter notification(s)", created);
     }
 }

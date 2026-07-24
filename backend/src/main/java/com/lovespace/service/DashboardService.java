@@ -5,8 +5,11 @@ import com.lovespace.domain.User;
 import com.lovespace.repository.*;
 import com.lovespace.security.CurrentUserService;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,15 +33,19 @@ public class DashboardService {
     @Transactional(readOnly = true)
     public DashboardResponse dashboard(Authentication auth) {
         User user = current.user(auth); Long coupleId = user.getCouple().getId();
-        List<MoodView> todayMoods = moods.findByCoupleIdAndMoodDateOrderByUserId(coupleId, LocalDate.now(ZoneId.of("Asia/Shanghai")))
+        ZoneId zone = ZoneId.of("Asia/Shanghai");
+        LocalDateTime now = LocalDateTime.now(zone);
+        List<MoodView> todayMoods = moods.findByCoupleIdAndMoodDateOrderByUserId(coupleId, LocalDate.now(zone))
                 .stream().map(views::mood).toList();
         List<MemoryView> recentMemories = memoryService.list(auth, 0, 6, null, null).content();
         List<DiaryView> recentDiaries = views.diaries(diaries.findTop4ByCoupleIdOrderByDiaryDateDescCreatedAtDesc(coupleId));
-        List<MessageView> recentMessages = views.messages(messages.findTop4ByCoupleIdOrderByCreatedAtDesc(coupleId), user.getId());
+        List<MessageView> recentMessages = views.messages(messages.findVisibleByCoupleAndUser(
+                coupleId, user.getId(), now,
+                PageRequest.of(0, 4, Sort.by(Sort.Direction.DESC, "deliverAt"))).getContent(), user.getId());
         List<AnniversaryView> anniversaries = anniversaryService.list(auth);
         List<AnniversaryView> dueReminders = anniversaries.stream()
                 .filter(item -> item.daysUntil() >= 0 && item.daysUntil() <= item.reminderDays()).toList();
         return new DashboardResponse(accounts.me(auth), todayMoods, recentMemories, recentDiaries, recentMessages,
-                anniversaries, dueReminders, messages.countByCoupleIdAndRecipientIdAndReadAtIsNull(coupleId, user.getId()));
+                anniversaries, dueReminders, messages.countUnreadDelivered(coupleId, user.getId(), now));
     }
 }

@@ -64,10 +64,12 @@ public final class ApiDtos {
                             String content, LocalDate diaryDate, String mood,
                             LocalDateTime createdAt, LocalDateTime updatedAt) {}
 
-    public record MessageRequest(@NotBlank @Size(max = 10000) String content) {}
+    public record MessageRequest(@NotBlank @Size(max = 10000) String content,
+                                 LocalDateTime deliverAt) {}
     public record MessageView(Long id, Long authorId, String authorNickname,
                               Long recipientId, String recipientNickname, String content,
-                              LocalDateTime readAt, LocalDateTime createdAt) {}
+                              LocalDateTime readAt, LocalDateTime createdAt,
+                              boolean scheduled, LocalDateTime deliverAt) {}
 
     public record AnniversaryRequest(
             @NotBlank @Size(max = 120) String title,

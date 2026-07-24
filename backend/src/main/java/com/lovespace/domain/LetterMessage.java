@@ -18,6 +18,12 @@ public class LetterMessage {
     private Long recipientId;
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
+    @Column(nullable = false)
+    private boolean scheduled;
+    @Column(name = "deliver_at", nullable = false)
+    private LocalDateTime deliverAt;
+    @Column(name = "notified_at")
+    private LocalDateTime notifiedAt;
     @Column(name = "read_at")
     private LocalDateTime readAt;
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -25,7 +31,11 @@ public class LetterMessage {
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
-    @PrePersist void onCreate() { createdAt = LocalDateTime.now(ZONE); }
+    @PrePersist void onCreate() {
+        createdAt = LocalDateTime.now(ZONE);
+        if (deliverAt == null) deliverAt = createdAt;
+        if (!scheduled && notifiedAt == null) notifiedAt = createdAt;
+    }
     public Long getId() { return id; }
     public Long getCoupleId() { return coupleId; }
     public void setCoupleId(Long coupleId) { this.coupleId = coupleId; }
@@ -35,6 +45,12 @@ public class LetterMessage {
     public void setRecipientId(Long recipientId) { this.recipientId = recipientId; }
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
+    public boolean isScheduled() { return scheduled; }
+    public void setScheduled(boolean scheduled) { this.scheduled = scheduled; }
+    public LocalDateTime getDeliverAt() { return deliverAt; }
+    public void setDeliverAt(LocalDateTime deliverAt) { this.deliverAt = deliverAt; }
+    public LocalDateTime getNotifiedAt() { return notifiedAt; }
+    public void setNotifiedAt(LocalDateTime notifiedAt) { this.notifiedAt = notifiedAt; }
     public LocalDateTime getReadAt() { return readAt; }
     public void setReadAt(LocalDateTime readAt) { this.readAt = readAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }

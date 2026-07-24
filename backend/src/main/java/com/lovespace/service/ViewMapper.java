@@ -65,7 +65,7 @@ public class ViewMapper {
         boolean sealedForViewer = viewerId != null && viewerId.equals(value.getRecipientId()) && value.getReadAt() == null;
         return new MessageView(value.getId(), value.getAuthorId(), names.get(value.getAuthorId()),
                 value.getRecipientId(), names.get(value.getRecipientId()), sealedForViewer ? null : value.getContent(),
-                value.getReadAt(), value.getCreatedAt());
+                value.getReadAt(), value.getCreatedAt(), value.isScheduled(), value.getDeliverAt());
         }).toList();
     }
     private Map<Long, String> userNames(Long coupleId, Set<Long> ids) {

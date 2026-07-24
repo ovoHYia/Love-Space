@@ -23,6 +23,7 @@ import org.springframework.mock.web.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.*;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -130,16 +131,57 @@ class LoveSpaceApiIntegrationTest {
 
     @Test
     void passwordRecoveryResetsPasswordAndInvalidatesExistingSession() throws Exception {
-        mvc.perform(post("/api/auth/reset-password").with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"alice\",\"recoveryToken\":\"" + passwordResetToken
-                                + "\",\"newPassword\":\"alice-reset-pass-123\"}"))
+        mvc.perform(passwordResetRequest("alice", passwordResetToken, "short", "203.0.113.10"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        mvc.perform(get("/api/auth/me").session(firstSession))
+                .andExpect(status().isOk());
+
+        mvc.perform(passwordResetRequest(
+                        "alice", passwordResetToken, "alice-reset-pass-123", "203.0.113.10"))
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/auth/me").session(firstSession))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("PASSWORD_CHANGED"));
         login("alice", "alice-reset-pass-123");
-        mvc.perform(post("/api/auth/reset-password").with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"alice\",\"recoveryToken\":\"wrong\",\"newPassword\":\"another-pass-123\"}"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("PASSWORD_RESET_FAILED"));
+    }
+
+    @Test
+    void passwordRecoveryDoesNotRevealWhetherAccountExists() throws Exception {
+        mvc.perform(passwordResetRequest(
+                        "alice", "wrong-token", "another-pass-123", "203.0.113.20"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PASSWORD_RESET_FAILED"))
+                .andExpect(jsonPath("$.message").value("账号或恢复口令不正确"));
+        mvc.perform(passwordResetRequest(
+                        "nobody", passwordResetToken, "another-pass-123", "203.0.113.20"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PASSWORD_RESET_FAILED"))
+                .andExpect(jsonPath("$.message").value("账号或恢复口令不正确"));
+    }
+
+    @Test
+    void passwordRecoveryLimitsRepeatedFailuresByIdentityAndIp() throws Exception {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(passwordResetRequest(
+                            "alice", "wrong-token", "another-pass-123", "203.0.113.30"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("PASSWORD_RESET_FAILED"));
+        }
+        mvc.perform(passwordResetRequest(
+                        "alice", "wrong-token", "another-pass-123", "203.0.113.30"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("PASSWORD_RESET_RATE_LIMITED"));
+
+        for (int attempt = 0; attempt < 4; attempt++) {
+            mvc.perform(passwordResetRequest(
+                            "unknown" + attempt, "wrong-token", "another-pass-123", "203.0.113.40"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("PASSWORD_RESET_FAILED"));
+        }
+        mvc.perform(passwordResetRequest(
+                        "unknown4", "wrong-token", "another-pass-123", "203.0.113.40"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("PASSWORD_RESET_RATE_LIMITED"));
     }
 
     @Test
@@ -309,6 +351,18 @@ class LoveSpaceApiIntegrationTest {
                         .param("username", username).param("password", password))
                 .andExpect(status().isOk()).andReturn();
         return (MockHttpSession) result.getRequest().getSession(false);
+    }
+    private MockHttpServletRequestBuilder passwordResetRequest(
+            String username, String recoveryToken, String newPassword, String remoteAddress) {
+        String body = "{\"username\":\"" + username + "\",\"recoveryToken\":\"" + recoveryToken
+                + "\",\"newPassword\":\"" + newPassword + "\"}";
+        return post("/api/auth/reset-password").with(csrf())
+                .with(request -> {
+                    request.setRemoteAddr(remoteAddress);
+                    return request;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body);
     }
     private long idOf(String json) {
         Matcher matcher = Pattern.compile("\\\"id\\\":(\\d+)").matcher(json);

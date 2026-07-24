@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Love Space v1.0 代码审查报告</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --border: #e4e7eb;
+    --text: #1f2329;
+    --text-soft: #4e5969;
+    --text-mute: #86909c;
+    --accent: #2b6cb0;
+    --high: #d93025;
+    --med: #e8740c;
+    --low: #1a7f37;
+    --info: #0969da;
+    --ok: #1a7f37;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-mute); font-size: 14px; margin-bottom: 28px; }
+  h2 {
+    font-size: 20px;
+    margin: 36px 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border);
+  }
+  h3 { font-size: 16px; margin: 20px 0 8px; }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin: 20px 0;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .stat-card .num { font-size: 26px; font-weight: 700; line-height: 1.2; }
+  .stat-card .label { color: var(--text-mute); font-size: 13px; margin-top: 4px; }
+  .grade {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .grade-a { background: #e6f4ea; color: var(--ok); }
+  .issue {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--info);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 12px 0;
+  }
+  .issue.high { border-left-color: var(--high); }
+  .issue.med { border-left-color: var(--med); }
+  .issue.low { border-left-color: var(--low); }
+  .issue .head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+  }
+  .badge.high { background: var(--high); }
+  .badge.med { background: var(--med); }
+  .badge.low { background: var(--low); }
+  .badge.ok { background: var(--ok); }
+  .issue .title { font-weight: 600; font-size: 15px; }
+  .issue .loc { font-family: "Consolas", monospace; font-size: 12px; color: var(--text-mute); }
+  .issue p { margin: 6px 0; color: var(--text-soft); }
+  .issue .fix {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #f0f5ff;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .issue .fix strong { color: var(--accent); }
+  code {
+    font-family: "Consolas", "Courier New", monospace;
+    background: #eef1f5;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 13px;
+  }
+  pre {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 12px 14px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 13px;
+    margin: 8px 0;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+  th { background: #f0f2f5; font-weight: 600; }
+  ul { margin: 6px 0; padding-left: 22px; }
+  ul li { margin: 3px 0; color: var(--text-soft); }
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin: 20px 0; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ul { margin: 6px 0; }
+  .meta { color: var(--text-mute); font-size: 13px; }
+  .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-mute); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Love Space v1.0 代码审查报告</h1>
+  <div class="subtitle">Vue 3 + TypeScript 前端 / Spring Boot 4.1.0 (Java 17) 后端 · 审查日期 2026-07-24</div>
+
+  <div class="summary-grid">
+    <div class="stat-card"><div class="num" style="color:var(--ok)">A-</div><div class="label">总体评级</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--high)">1</div><div class="label">高危问题</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--med)">2</div><div class="label">中危问题</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--low)">5</div><div class="label">低危/建议</div></div>
+    <div class="stat-card"><div class="num">~70</div><div class="label">后端 Java 文件</div></div>
+  </div>
+
+  <div class="toc">
+    <strong>目录</strong>
+    <ul>
+      <li><a href="#overview">1. 项目概览</a></li>
+      <li><a href="#security">2. 安全审查（重点）</a></li>
+      <li><a href="#backend">3. 后端代码质量</a></li>
+      <li><a href="#frontend">4. 前端代码质量</a></li>
+      <li><a href="#config">5. 配置与依赖</a></li>
+      <li><a href="#good">6. 做得好的地方</a></li>
+      <li><a href="#priority">7. 修复优先级</a></li>
+    </ul>
+  </div>
+
+  <h2 id="overview">1. 项目概览</h2>
+  <p>双人情侣空间应用，前后端分离架构。功能覆盖日记、信件、纪念日、愿望、回忆相册（含地图）、日历、心情、通知、回收站、数据导出与月报。</p>
+  <table>
+    <tr><th>维度</th><th>说明</th></tr>
+    <tr><td>后端</td><td>Spring Boot 4.1.0 / Java 17 / Spring Security / Spring Data JPA / Flyway / MySQL</td></tr>
+    <tr><td>前端</td><td>Vue 3.5 / TypeScript ~6.0 / Vite 8 / vue-router 4 / Leaflet（无 Pinia、无 axios）</td></tr>
+    <tr><td>分层</td><td>13 Controller · 15 Service · 12 实体 · 10 Repository · 12 Flyway 迁移 · 6 集成测试</td></tr>
+    <tr><td>工程规范</td><td>AGENTS.md 明确编码规范、命名约定、提交规范；.gitignore 完善</td></tr>
+  </table>
+
+  <h2 id="security">2. 安全审查</h2>
+
+  <div class="issue high">
+    <div class="head">
+      <span class="badge high">高危</span>
+      <span class="title">密码重置端点缺少速率限制，存在暴力枚举风险</span>
+      <span class="loc">AuthController.java:40-53 / SecurityConfig.java:44</span>
+    </div>
+    <p><code>/api/auth/reset-password</code> 被 <code>permitAll()</code> 放行，但其 <code>resetPassword</code> 方法<strong>未调用</strong> <code>LoginAttemptService.requireAllowed</code>。虽有 <code>MessageDigest.isEqual</code> 防时序攻击，但攻击者可对 <code>recoveryToken</code> 进行不受限高频尝试。</p>
+    <div class="fix"><strong>修复：</strong>在 <code>resetPassword</code> 入口加入 <code>loginAttempts.requireAllowed(request.username(), request.getRemoteAddr())</code>，失败时调用 <code>loginAttempts.failed(...)</code>，成功后 <code>succeeded(...)</code>。</div>
+  </div>
+
+  <div class="issue med">
+    <div class="head">
+      <span class="badge med">中危</span>
+      <span class="title">密码强度校验缺失，可设置空密码</span>
+      <span class="loc">AccountService.java:53-68, 70-80</span>
+    </div>
+    <p><code>changePassword</code> 与 <code>resetPassword</code> 仅校验新密码 UTF-8 长度 ≤72 字节，<strong>未校验最小长度/复杂度</strong>。<code>encoder.encode("")</code> 会成功，意味着可设置空字符串或 1 位弱口令。</p>
+    <div class="fix"><strong>修复：</strong>在 DTO 上加 <code>@Size(min=8, max=72)</code> 与 <code>@Pattern</code>（要求含字母+数字），或抽取 <code>PasswordPolicy.validate(newPassword)</code> 统一校验。</div>
+  </div>
+
+  <div class="issue low">
+    <div class="head">
+      <span class="badge low">低危</span>
+      <span class="title">SetupController 已初始化后跳过 token 校验</span>
+      <span class="loc">SetupController.java:31</span>
+    </div>
+    <p><code>if (!setup.initialized()) requireSetupToken(...)</code> 意味着系统初始化后再次 POST <code>/api/setup/initialize</code> 不再校验 token。虽然 <code>SetupService.initialize</code> 会抛 conflict，但语义上应统一鉴权。</p>
+    <div class="fix"><strong>修复：</strong>将 <code>requireSetupToken(suppliedToken)</code> 提至 <code>if</code> 之前无条件执行，或至少在已初始化分支返回 409 前也校验 token。</div>
+  </div>
+
+  <div class="issue ok">
+    <div class="head">
+      <span class="badge ok">通过</span>
+      <span class="title">敏感信息保护良好</span>
+    </div>
+    <ul>
+      <li><code>.env</code> 含 <code>DB_PASSWORD</code>、<code>PASSWORD_RESET_TOKEN</code>，但已被 <code>.gitignore</code> 正确排除，<code>git ls-files</code> 确认未跟踪</li>
+      <li>仅 <code>.env.example</code> 入库，符合 AGENTS.md 约定</li>
+      <li>密码使用 <code>BCryptPasswordEncoder(12)</code>，强度足够</li>
+      <li>日志仅记录 username，不泄露密码（AccountService.java:67,79）</li>
+    </ul>
+  </div>
+
+  <h2 id="backend">3. 后端代码质量</h2>
+
+  <div class="issue med">
+    <div class="head">
+      <span class="badge med">中危</span>
+      <span class="title">DashboardService 存在冗余查询与潜在 N+1</span>
+      <span class="loc">DashboardService.java:34-50</span>
+    </div>
+    <p>第 35 行已通过 <code>current.user(auth)</code> 取得 <code>User</code>，第 48 行又调用 <code>accounts.me(auth)</code>（会再次查 user+partner+couple）。此外单事务内连续调用 <code>memoryService.list</code>、<code>anniversaryService.list</code> 等子服务，每个发起独立查询，存在 N+1 倾向。</p>
+    <div class="fix"><strong>修复：</strong>复用已查得的 <code>user</code>，将 <code>accounts.me(auth)</code> 替换为本地 <code>new MeResponse(views.user(user), views.user(partner), views.couple(user.getCouple()))</code>。对子服务查询考虑批量预取。</div>
+  </div>
+
+  <div class="issue low">
+    <div class="head">
+      <span class="badge low">低危</span>
+      <span class="title">LoginAttemptService 内存存储重启即失效</span>
+      <span class="loc">LoginAttemptService.java:26</span>
+    </div>
+    <p>使用 <code>ConcurrentHashMap</code> 内存存储登录失败计数，进程重启锁定状态丢失。类注释已明确"为双人本地应用设计"，可接受，但建议在注释中再强调多实例部署下需替换为 Redis。</p>
+  </div>
+
+  <div class="issue ok">
+    <div class="head">
+      <span class="badge ok">通过</span>
+      <span class="title">分层与安全实践到位</span>
+    </div>
+    <ul>
+      <li>控制器全部经 Service 访问数据，无直连 Repository</li>
+      <li>SQL 全部使用 <code>@Query</code> 命名参数，无字符串拼接，无注入风险</li>
+      <li>18 处 <code>@RequestBody</code> 均带 <code>@Valid</code>，Bean Validation 覆盖完整</li>
+      <li>Service 写方法均有 <code>@Transactional</code></li>
+      <li><code>GlobalExceptionHandler</code> 统一异常处理，含兜底 <code>Exception</code></li>
+      <li>Session fixation 防护（migrateSession）、CSRF Cookie 仓库、CORS 配置完善</li>
+    </ul>
+  </div>
+
+  <h2 id="frontend">4. 前端代码质量</h2>
+
+  <div class="issue low">
+    <div class="head">
+      <span class="badge low">低危</span>
+      <span class="title">4 个组件过大，需拆分</span>
+      <span class="loc">MemoriesView.vue 574行 / NotificationsView.vue 438行 / CalendarView.vue 397行 / ReportsView.vue 347行</span>
+    </div>
+    <p>单一组件承担过多职责。如 <code>MemoriesView.vue</code> 同时管理时间线、地图、相册三块逻辑。</p>
+    <div class="fix"><strong>修复：</strong>按职责拆为子组件（如 <code>MemoryTimeline.vue</code>、<code>MemoryMap.vue</code>、<code>MemoryAlbum.vue</code>），提取可复用 composable。</div>
+  </div>
+
+  <div class="issue low">
+    <div class="head">
+      <span class="badge low">低危</span>
+      <span class="title">AppShell 存在未捕获的 Promise</span>
+      <span class="loc">AppShell.vue:28-29</span>
+    </div>
+    <p><code>handleSync</code> 中 <code>refreshUnreadCount()</code> 与 <code>bootstrapAuth(true)</code> 未 await/未 catch，若 <code>bootstrapAuth</code> 抛错会成为未捕获 rejection。</p>
+    <div class="fix"><strong>修复：</strong><code>await bootstrapAuth(true).catch(() =&gt; {})</code> 或在函数内 try/catch。</div>
+  </div>
+
+  <div class="issue low">
+    <div class="head">
+      <span class="badge low">低危</span>
+      <span class="title">硬编码外部 URL 与魔法数字</span>
+      <span class="loc">MemoriesView.vue:324,321,342 / utils.ts / notifications.ts:69</span>
+    </div>
+    <p>OpenStreetMap 瓦片地址硬编码；字节换算、轮询间隔、地图中心坐标等魔法数字散落。</p>
+    <div class="fix"><strong>修复：</strong>地图 URL 迁至 <code>.env</code>（<code>VITE_MAP_TILE_URL</code>）；魔法数字提为命名常量；<code>formatBytes</code> 迁入 <code>utils.ts</code>。</div>
+  </div>
+
+  <div class="issue ok">
+    <div class="head">
+      <span class="badge ok">通过</span>
+      <span class="title">前端类型安全与防 XSS 优秀</span>
+    </div>
+    <ul>
+      <li>全代码库<strong>零</strong> <code>any</code>/<code>as any</code>/<code>v-html</code> 使用</li>
+      <li>纯 <code>&lt;script setup lang="ts"&gt;</code>，无 Options API 混用</li>
+      <li><code>tsconfig</code> 启用 strict、noUnusedLocals、noUnusedParameters</li>
+      <li>错误处理规范：<code>client.ts</code> 统一 <code>ApiError</code> + <code>errorMessage()</code>，视图层普遍 try/catch</li>
+      <li>CSRF 双重 token 机制完善（client.ts:38-69）</li>
+    </ul>
+  </div>
+
+  <h2 id="config">5. 配置与依赖</h2>
+
+  <div class="issue low">
+    <div class="head">
+      <span class="badge low">低危</span>
+      <span class="title">前端 package.json 缺少 lint/type-check 脚本</span>
+      <span class="loc">frontend/package.json</span>
+    </div>
+    <p>仅 <code>dev</code>/<code>build</code>/<code>preview</code>，无独立 <code>lint</code>、<code>test</code>、<code>type-check</code> 脚本，无 ESLint 配置。AGENTS.md 也注明前端无测试 runner。</p>
+    <div class="fix"><strong>修复：</strong>新增 <code>"type-check": "vue-tsc --noEmit"</code>；引入 ESLint + <code>@vue/eslint-config-typescript</code>；可选加 Vitest。</div>
+  </div>
+
+  <div class="issue low">
+    <div class="head">
+      <span class="badge low">低危</span>
+      <span class="title">会话超时 30 天偏长，上传上限偏大</span>
+      <span class="loc">application.yml:19-20,29</span>
+    </div>
+    <p>session timeout 30d 偏长（双人本地应用可接受，但建议 7d）；multipart 单文件 200MB / 总请求 220MB 偏大，<code>media-total-max-bytes</code> 2GB，注意磁盘与内存压力。</p>
+  </div>
+
+  <div class="issue ok">
+    <div class="head">
+      <span class="badge ok">通过</span>
+      <span class="title">依赖与版本管理</span>
+    </div>
+    <ul>
+      <li>Spring Boot 4.1.0（2026 较新版本），依赖全部继承 parent BOM，无版本硬编码</li>
+      <li>无识别出的已知漏洞依赖版本</li>
+      <li><code>open-in-view:false</code>、<code>ddl-auto:validate</code>、<code>server.address:127.0.0.1</code> 默认安全</li>
+      <li><code>application-prod.yml</code> 启用 forward-headers、cookie secure=true</li>
+    </ul>
+  </div>
+
+  <h2 id="good">6. 做得好的地方</h2>
+  <ul>
+    <li><strong>分层清晰</strong>：Controller → Service → Repository 职责明确，无越层调用</li>
+    <li><strong>安全配置完备</strong>：CSRF、CORS、BCrypt(12)、session fixation、参数化查询、统一异常处理、Bean Validation 全覆盖</li>
+    <li><strong>前端类型严格</strong>：零 any、零 v-html、strict 模式、纯 Composition API</li>
+    <li><strong>工程规范成文</strong>：AGENTS.md 明确约定编码、命名、提交、测试规范</li>
+    <li><strong>密钥管理规范</strong>：.env 正确 gitignore，仅 .env.example 入库</li>
+    <li><strong>Flyway 迁移有序</strong>：V1-V12 顺序命名，每表变更对应迁移</li>
+  </ul>
+
+  <h2 id="priority">7. 修复优先级</h2>
+  <table>
+    <tr><th>优先级</th><th>问题</th><th>文件</th><th>工作量</th></tr>
+    <tr><td><span class="badge high">P0</span></td><td>密码重置端点加速率限制</td><td>AuthController.java:42</td><td>小</td></tr>
+    <tr><td><span class="badge med">P1</span></td><td>密码强度校验（min 长度+复杂度）</td><td>AccountService.java / ApiDtos</td><td>小</td></tr>
+    <tr><td><span class="badge med">P1</span></td><td>DashboardService 冗余查询</td><td>DashboardService.java:48</td><td>小</td></tr>
+    <tr><td><span class="badge low">P2</span></td><td>SetupController 已初始化后鉴权</td><td>SetupController.java:31</td><td>小</td></tr>
+    <tr><td><span class="badge low">P2</span></td><td>拆分 4 个超大组件</td><td>MemoriesView 等</td><td>中</td></tr>
+    <tr><td><span class="badge low">P2</span></td><td>前端加 lint/type-check 脚本</td><td>package.json</td><td>小</td></tr>
+    <tr><td><span class="badge low">P3</span></td><td>魔法数字与硬编码 URL 配置化</td><td>多处</td><td>小</td></tr>
+    <tr><td><span class="badge low">P3</span></td><td>AppShell 未捕获 Promise</td><td>AppShell.vue:28-29</td><td>极小</td></tr>
+  </table>
+
+  <div class="footer">
+    审查范围：backend/ 70 个 Java 文件 + 12 个 Flyway 迁移 + 配置文件；frontend/ views/components/api/stores/router/utils 关键文件。<br>
+    审查方式：自动化结构探索 + 关键文件逐行人工复核（SecurityConfig、AuthController、AccountService、SetupController、LoginAttemptService、DashboardService、client.ts）。<br>
+    未覆盖：前端全部 4844 文件的逐一审查、前端构建实际运行、后端集成测试执行（mvn test）。建议补跑 <code>mvn -f backend/pom.xml test</code> 与 <code>npm run build</code> 验证。
+  </div>
+</div>
+</body>
+</html>

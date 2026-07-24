@@ -32,3 +32,10 @@ app:
   cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   media-max-bytes: ${MEDIA_MAX_BYTES:209715200}
   media-total-max-bytes: ${MEDIA_TOTAL_MAX_BYTES:2147483648}
+  security:
+    password-reset:
+      max-attempts-per-ip: ${PASSWORD_RESET_MAX_ATTEMPTS_PER_IP:20}
+      max-failures-per-identity: ${PASSWORD_RESET_MAX_FAILURES_PER_IDENTITY:5}
+      window-minutes: ${PASSWORD_RESET_WINDOW_MINUTES:15}
+      lock-minutes: ${PASSWORD_RESET_LOCK_MINUTES:15}
+      evict-after-minutes: ${PASSWORD_RESET_EVICT_AFTER_MINUTES:30}

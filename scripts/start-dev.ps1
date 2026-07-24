@@ -14,6 +14,15 @@ $logsDir = Join-Path $root "work\logs"
 
 Import-ProjectEnv -Path (Join-Path $root ".env")
 
+$configuredUploadDir = Get-EnvValue -Name "UPLOAD_DIR" -Default ".\data\uploads"
+if ([System.IO.Path]::IsPathRooted($configuredUploadDir)) {
+    $uploadDir = [System.IO.Path]::GetFullPath($configuredUploadDir)
+}
+else {
+    $uploadDir = [System.IO.Path]::GetFullPath((Join-Path $root $configuredUploadDir))
+}
+[Environment]::SetEnvironmentVariable("UPLOAD_DIR", $uploadDir, "Process")
+
 if (-not (Test-Path -LiteralPath (Join-Path $backendDir "pom.xml") -PathType Leaf)) {
     throw "Cannot find backend/pom.xml."
 }
@@ -63,7 +72,7 @@ if (-not $SkipInstall -and -not (Test-Path -LiteralPath (Join-Path $frontendDir 
 }
 
 [System.IO.Directory]::CreateDirectory($logsDir) | Out-Null
-[System.IO.Directory]::CreateDirectory((Join-Path $root "data\uploads")) | Out-Null
+[System.IO.Directory]::CreateDirectory($uploadDir) | Out-Null
 
 $backendOut = Join-Path $logsDir "backend.out.log"
 $backendErr = Join-Path $logsDir "backend.err.log"
@@ -117,6 +126,7 @@ try {
     Write-Host "Love Space development environment is running." -ForegroundColor Green
     Write-Host "Frontend: http://localhost:$frontendPort"
     Write-Host "Backend:  http://localhost:$backendPort/api/health"
+    Write-Host "Media:    $uploadDir"
     Write-Host "Logs:     $logsDir"
     Write-Host "Press Ctrl+C to stop both services."
 

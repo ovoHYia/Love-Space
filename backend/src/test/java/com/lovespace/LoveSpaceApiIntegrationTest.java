@@ -44,7 +44,7 @@ class LoveSpaceApiIntegrationTest {
     @BeforeEach
     void resetAndInitialize() throws Exception {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        for (String table : new String[]{"notification_preferences", "notifications", "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
+        for (String table : new String[]{"memory_tags", "notification_preferences", "notifications", "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
         }
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
@@ -116,6 +116,19 @@ class LoveSpaceApiIntegrationTest {
     }
 
     @Test
+    void realtimeSyncStreamRequiresLoginAndStartsForAuthenticatedClient() throws Exception {
+        mvc.perform(get("/api/sync/stream").param("clientId", "client_test_123"))
+                .andExpect(status().isUnauthorized());
+        MvcResult stream = mvc.perform(get("/api/sync/stream").session(firstSession)
+                        .param("clientId", "client_test_123"))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andReturn();
+        stream.getRequest().getAsyncContext().complete();
+    }
+
+    @Test
     void passwordRecoveryResetsPasswordAndInvalidatesExistingSession() throws Exception {
         mvc.perform(post("/api/auth/reset-password").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"alice\",\"recoveryToken\":\"" + passwordResetToken
@@ -160,15 +173,35 @@ class LoveSpaceApiIntegrationTest {
     @Test
     void mediaIsProtectedAndCoupleScoped() throws Exception {
         MockMultipartFile data = new MockMultipartFile("data", "", "application/json",
-                "{\"title\":\"海边\",\"description\":\"第一次看海\",\"eventAt\":\"2026-07-01T18:30:00\",\"location\":\"青岛\"}"
+                ("{\"title\":\"海边\",\"description\":\"第一次看海\",\"eventAt\":\"2026-07-01T18:30:00\",\"location\":\"青岛\","
+                        + "\"latitude\":36.0671,\"longitude\":120.3826,\"tags\":[\"旅行\",\"海边\"]}")
                         .getBytes(StandardCharsets.UTF_8));
         MockMultipartFile file = new MockMultipartFile("files", "sea.png", "image/png",
                 new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
         String memory = mvc.perform(multipart("/api/memories").file(data).file(file).with(csrf()).session(firstSession))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.media[0].mediaType").value("image"))
+                .andExpect(jsonPath("$.latitude").value(36.0671))
+                .andExpect(jsonPath("$.tags", containsInAnyOrder("旅行", "海边")))
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         long mediaId = nestedId(memory, "media");
+        MockMultipartFile video = new MockMultipartFile("files", "sunset.mp4", "video/mp4",
+                new byte[]{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 0, 0,
+                        'i', 's', 'o', 'm', 'm', 'p', '4', '2'});
+        mvc.perform(multipart("/api/memories/{id}/media", idOf(memory)).file(video).with(csrf()).session(firstSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.media[?(@.mediaType == 'video')]").isNotEmpty());
+        mvc.perform(get("/api/memories/map").session(secondSession))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].title").value("海边"));
+        mvc.perform(get("/api/memories/tags").session(secondSession))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[?(@.name == '旅行')].memoryCount").value(hasItem(1)));
+        mvc.perform(get("/api/memories").session(secondSession).param("tag", "海边"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get("/api/memories/album").session(secondSession).param("tag", "旅行"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.content[0].memoryTitle").value("海边"))
+                .andExpect(jsonPath("$.content[0].media.mediaType").value("video"))
+                .andExpect(jsonPath("$.content[1].media.mediaType").value("image"));
         mvc.perform(get("/api/memories/random").session(firstSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("海边"));
         User alice = users.findByUsernameIgnoreCase("alice").orElseThrow();
@@ -203,6 +236,21 @@ class LoveSpaceApiIntegrationTest {
         mvc.perform(multipart("/api/memories").file(data).file(spoofed).with(csrf()).session(firstSession))
                 .andExpect(status().isUnsupportedMediaType())
                 .andExpect(jsonPath("$.code").value("INVALID_FILE_CONTENT"));
+
+        MockMultipartFile mislabeledJpeg = new MockMultipartFile("files", "camera.jpg", "image/png",
+                new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE1, 0, 16, 0, 0});
+        mvc.perform(multipart("/api/memories").file(data).file(mislabeledJpeg).with(csrf()).session(firstSession))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.media[0].contentType").value("image/jpeg"))
+                .andExpect(jsonPath("$.media[0].mediaType").value("image"));
+
+        MockMultipartFile genericHeic = new MockMultipartFile("files", "phone.heic", "application/octet-stream",
+                new byte[]{0, 0, 0, 24, 'f', 't', 'y', 'p', 'm', 'i', 'f', '1', 0, 0, 0, 0,
+                        'h', 'e', 'i', 'c', 0, 0, 0, 0});
+        mvc.perform(multipart("/api/memories").file(data).file(genericHeic).with(csrf()).session(firstSession))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.media[0].contentType").value("image/heic"))
+                .andExpect(jsonPath("$.media[0].mediaType").value("image"));
     }
 
     @Test

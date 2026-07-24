@@ -10,6 +10,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.stream.Stream;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
@@ -33,7 +34,7 @@ public class MemoryService {
 
     @Transactional(readOnly = true)
     public PageResponse<MemoryView> list(Authentication auth, int page, int size, String search,
-                                         LocalDate date) {
+                                         LocalDate date, String tag) {
         User user = current.user(auth);
         if (page < 0 || size < 1 || size > 100) throw ApiException.badRequest("分页参数无效");
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "eventAt", "id"));
@@ -53,12 +54,76 @@ public class MemoryService {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("eventAt"), start));
                 predicates.add(cb.lessThan(root.get("eventAt"), start.plusDays(1)));
             }
+            if (tag != null && !tag.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.join("tags")), tag.trim().toLowerCase(Locale.ROOT)));
+                query.distinct(true);
+            }
             return cb.and(predicates.toArray(Predicate[]::new));
         };
         Page<Memory> result = memories.findAll(spec, pageable);
         List<MemoryView> content = views.memories(result.getContent());
         return new PageResponse<>(content, result.getNumber(), result.getSize(), result.getTotalElements(),
                 result.getTotalPages(), result.isFirst(), result.isLast());
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemoryView> map(Authentication auth, String tag) {
+        User user = current.user(auth);
+        Specification<Memory> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("coupleId"), user.getCouple().getId()));
+            predicates.add(cb.isNull(root.get("deletedAt")));
+            predicates.add(cb.isNotNull(root.get("latitude")));
+            predicates.add(cb.isNotNull(root.get("longitude")));
+            if (tag != null && !tag.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.join("tags")), tag.trim().toLowerCase(Locale.ROOT)));
+                query.distinct(true);
+            }
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+        return views.memories(memories.findAll(spec, Sort.by(Sort.Direction.DESC, "eventAt", "id")));
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemoryTagView> tags(Authentication auth) {
+        User user = current.user(auth);
+        Map<String, Long> counts = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        memories.findByCoupleIdAndDeletedAtIsNullOrderByEventAtDesc(user.getCouple().getId()).forEach(memory ->
+                memory.getTags().forEach(tag -> counts.merge(tag, 1L, Long::sum)));
+        return counts.entrySet().stream().map(entry -> new MemoryTagView(entry.getKey(), entry.getValue()))
+                .sorted(Comparator.comparingLong(MemoryTagView::memoryCount).reversed()
+                        .thenComparing(MemoryTagView::name, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<AlbumItemView> album(Authentication auth, int page, int size, String search, String tag) {
+        User user = current.user(auth);
+        if (page < 0 || size < 1 || size > 100) throw ApiException.badRequest("分页参数无效");
+        String keyword = AccountService.trimToNull(search);
+        String selectedTag = AccountService.trimToNull(tag);
+        Map<Long, Memory> memoryById = memories
+                .findByCoupleIdAndDeletedAtIsNullOrderByEventAtDesc(user.getCouple().getId()).stream()
+                .filter(memory -> selectedTag == null || memory.getTags().stream()
+                        .anyMatch(value -> value.equalsIgnoreCase(selectedTag)))
+                .filter(memory -> keyword == null || matches(memory, keyword))
+                .collect(java.util.stream.Collectors.toMap(Memory::getId, value -> value));
+        List<Media> visualMedia = media.findByCoupleIdAndMediaTypeIn(
+                        user.getCouple().getId(), List.of("image", "video")).stream()
+                .filter(item -> item.getMemoryId() != null && memoryById.containsKey(item.getMemoryId()))
+                .sorted(Comparator
+                        .comparing((Media item) -> memoryById.get(item.getMemoryId()).getEventAt()).reversed()
+                        .thenComparing(Media::getId, Comparator.reverseOrder()))
+                .toList();
+        int from = Math.min(page * size, visualMedia.size());
+        int to = Math.min(from + size, visualMedia.size());
+        List<AlbumItemView> content = visualMedia.subList(from, to).stream().map(item -> {
+            Memory memory = memoryById.get(item.getMemoryId());
+            return new AlbumItemView(views.media(item), memory.getId(), memory.getTitle(),
+                    memory.getEventAt(), memory.getLocation(), List.copyOf(memory.getTags()));
+        }).toList();
+        int pages = visualMedia.isEmpty() ? 0 : (int) Math.ceil((double) visualMedia.size() / size);
+        return new PageResponse<>(content, page, size, visualMedia.size(), pages, page == 0, page + 1 >= pages);
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -91,6 +156,34 @@ public class MemoryService {
         if (!memory.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能编辑自己的回忆");
         apply(memory, request);
         return views.memory(memories.save(memory));
+    }
+
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public MemoryView addMedia(Authentication auth, Long id, List<MultipartFile> files) {
+        User user = current.user(auth);
+        Memory memory = ownedMemory(user, id);
+        List<MultipartFile> incoming = files == null ? List.of() : files.stream()
+                .filter(Objects::nonNull).filter(file -> !file.isEmpty()).toList();
+        if (incoming.isEmpty()) throw ApiException.badRequest("请选择要上传的媒体文件");
+        if (media.findByMemoryId(memory.getId()).size() + incoming.size() > 20) {
+            throw ApiException.badRequest("每段回忆最多保存 20 个媒体文件");
+        }
+        List<Media> stored = new ArrayList<>();
+        try {
+            incoming.forEach(file -> stored.add(storage.store(user, memory.getId(), file)));
+            return views.memory(memory);
+        } catch (RuntimeException ex) {
+            stored.forEach(storage::deletePhysical);
+            throw ex;
+        }
+    }
+
+    @Transactional
+    public MemoryView deleteMedia(Authentication auth, Long id, Long mediaId) {
+        User user = current.user(auth);
+        Memory memory = ownedMemory(user, id);
+        storage.delete(user, memory, mediaId);
+        return views.memory(memory);
     }
 
     @Transactional(readOnly = true)
@@ -129,6 +222,31 @@ public class MemoryService {
         value.setDescription(AccountService.trimToNull(input.description()));
         value.setEventAt(input.eventAt());
         value.setLocation(AccountService.trimToNull(input.location()));
+        if ((input.latitude() == null) != (input.longitude() == null)) {
+            throw ApiException.badRequest("地图坐标需要同时提供纬度和经度");
+        }
+        value.setLatitude(input.latitude());
+        value.setLongitude(input.longitude());
+        LinkedHashSet<String> normalizedTags = new LinkedHashSet<>();
+        if (input.tags() != null) {
+            for (String tag : input.tags()) {
+                String normalized = tag == null ? null : tag.trim().replaceAll("\\s+", " ");
+                if (normalized != null && !normalized.isBlank()) normalizedTags.add(normalized);
+            }
+        }
+        if (normalizedTags.size() > 12) throw ApiException.badRequest("每段回忆最多添加 12 个标签");
+        value.setTags(normalizedTags);
+    }
+    private Memory ownedMemory(User user, Long id) {
+        Memory memory = memories.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
+                .orElseThrow(() -> ApiException.notFound("回忆不存在"));
+        if (!memory.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能编辑自己的回忆");
+        return memory;
+    }
+    private boolean matches(Memory memory, String search) {
+        String keyword = search.toLowerCase(Locale.ROOT);
+        return Stream.of(memory.getTitle(), memory.getDescription(), memory.getLocation())
+                .filter(Objects::nonNull).anyMatch(value -> value.toLowerCase(Locale.ROOT).contains(keyword));
     }
     private String escapeLike(String text) { return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_"); }
 }

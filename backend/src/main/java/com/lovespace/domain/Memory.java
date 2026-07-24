@@ -1,9 +1,13 @@
 package com.lovespace.domain;
 
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.util.Set;
 
 @Entity
 @Table(name = "memories")
@@ -22,6 +26,15 @@ public class Memory implements RecoverableContent {
     private LocalDateTime eventAt;
     @Column(length = 200)
     private String location;
+    @Column(precision = 9, scale = 6)
+    private BigDecimal latitude;
+    @Column(precision = 9, scale = 6)
+    private BigDecimal longitude;
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "memory_tags", joinColumns = @JoinColumn(name = "memory_id"))
+    @Column(name = "tag", nullable = false, length = 30)
+    @OrderBy
+    private Set<String> tags = new LinkedHashSet<>();
     @Version
     @Column(nullable = false)
     private Long version;
@@ -51,6 +64,15 @@ public class Memory implements RecoverableContent {
     public void setEventAt(LocalDateTime eventAt) { this.eventAt = eventAt; }
     public String getLocation() { return location; }
     public void setLocation(String location) { this.location = location; }
+    public Double getLatitude() { return latitude == null ? null : latitude.doubleValue(); }
+    public void setLatitude(Double latitude) { this.latitude = latitude == null ? null : BigDecimal.valueOf(latitude); }
+    public Double getLongitude() { return longitude == null ? null : longitude.doubleValue(); }
+    public void setLongitude(Double longitude) { this.longitude = longitude == null ? null : BigDecimal.valueOf(longitude); }
+    public Set<String> getTags() { return tags; }
+    public void setTags(Collection<String> tags) {
+        this.tags.clear();
+        if (tags != null) this.tags.addAll(tags);
+    }
     public Long getVersion() { return version; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

@@ -23,8 +23,24 @@ public class MemoryController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "") @jakarta.validation.constraints.Size(max = 200) String q,
-            @RequestParam(required = false) LocalDate date) {
-        return memories.list(auth, page, size, q, date);
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false) @jakarta.validation.constraints.Size(max = 30) String tag) {
+        return memories.list(auth, page, size, q, date, tag);
+    }
+    @GetMapping("/map")
+    public List<MemoryView> map(Authentication auth,
+            @RequestParam(required = false) @jakarta.validation.constraints.Size(max = 30) String tag) {
+        return memories.map(auth, tag);
+    }
+    @GetMapping("/tags")
+    public List<MemoryTagView> tags(Authentication auth) { return memories.tags(auth); }
+    @GetMapping("/album")
+    public PageResponse<AlbumItemView> album(Authentication auth,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "30") int size,
+            @RequestParam(defaultValue = "") @jakarta.validation.constraints.Size(max = 200) String q,
+            @RequestParam(required = false) @jakarta.validation.constraints.Size(max = 30) String tag) {
+        return memories.album(auth, page, size, q, tag);
     }
     @GetMapping("/random")
     public MemoryView random(Authentication auth, @RequestParam(required = false) @Positive Long excludeId) {
@@ -40,6 +56,16 @@ public class MemoryController {
     public MemoryView update(Authentication auth, @PathVariable @Positive Long id,
                              @Valid @RequestBody MemoryRequest data) {
         return memories.update(auth, id, data);
+    }
+    @PostMapping(value = "/{id}/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public MemoryView addMedia(Authentication auth, @PathVariable @Positive Long id,
+                               @RequestPart("files") List<MultipartFile> files) {
+        return memories.addMedia(auth, id, files);
+    }
+    @DeleteMapping("/{id}/media/{mediaId}")
+    public MemoryView deleteMedia(Authentication auth, @PathVariable @Positive Long id,
+                                  @PathVariable @Positive Long mediaId) {
+        return memories.deleteMedia(auth, id, mediaId);
     }
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

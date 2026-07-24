@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { BarChart3, CalendarDays, CalendarHeart, Feather, Heart, Home, Images, ListTodo, Mails as MailHeart, UserRound } from 'lucide-vue-next'
+import { BarChart3, CalendarDays, CalendarHeart, Feather, Heart, Home, Images, ListTodo, Mails as MailHeart, UserRound, Wifi, WifiOff } from 'lucide-vue-next'
 import BaseAvatar from './BaseAvatar.vue'
 import NotificationBell from './NotificationBell.vue'
-import { authState } from '../stores/auth'
-import { startNotificationPolling, stopNotificationPolling } from '../stores/notifications'
+import { authState, bootstrapAuth } from '../stores/auth'
+import { refreshUnreadCount, startNotificationPolling, stopNotificationPolling } from '../stores/notifications'
+import { realtimeState, startRealtimeSync, stopRealtimeSync } from '../stores/realtime'
 
 const route = useRoute()
+const syncRevision = ref(0)
 const nav = [
   { to: '/', label: '小窝', icon: Home, name: 'home' },
   { to: '/calendar', label: '日历', icon: CalendarDays, name: 'calendar' },
@@ -20,8 +22,23 @@ const nav = [
   { to: '/profile', label: '我们', icon: UserRound, name: 'profile' },
 ]
 
-onMounted(startNotificationPolling)
-onBeforeUnmount(stopNotificationPolling)
+function handleSync(event: Event) {
+  const detail = (event as CustomEvent<{ resource?: string }>).detail
+  syncRevision.value++
+  refreshUnreadCount()
+  if (detail?.resource === 'profile' || detail?.resource === 'space') bootstrapAuth(true)
+}
+
+onMounted(() => {
+  startNotificationPolling()
+  startRealtimeSync()
+  window.addEventListener('love-space:sync', handleSync)
+})
+onBeforeUnmount(() => {
+  stopNotificationPolling()
+  stopRealtimeSync()
+  window.removeEventListener('love-space:sync', handleSync)
+})
 </script>
 
 <template>
@@ -38,6 +55,10 @@ onBeforeUnmount(stopNotificationPolling)
         </RouterLink>
       </nav>
       <NotificationBell variant="sidebar" class="side-notif" />
+      <div class="sync-status" :class="{ online: realtimeState.connected }" :title="realtimeState.connected ? '双端实时同步已连接' : '正在重新连接实时同步'">
+        <Wifi v-if="realtimeState.connected" :size="14" /><WifiOff v-else :size="14" />
+        <span>{{ realtimeState.connected ? '双端同步中' : '同步重连中' }}</span>
+      </div>
       <RouterLink class="side-profile" to="/profile">
         <BaseAvatar :user="authState.user" size="sm" />
         <span><strong>{{ authState.user?.nickname }}</strong><small>和 {{ authState.partner?.nickname || '心上人' }} 的空间</small></span>
@@ -55,7 +76,11 @@ onBeforeUnmount(stopNotificationPolling)
           <RouterLink to="/profile" aria-label="打开个人资料"><BaseAvatar :user="authState.user" size="sm" /></RouterLink>
         </div>
       </header>
-      <main class="page-container"><RouterView /></main>
+      <main class="page-container">
+        <RouterView v-slot="{ Component }">
+          <component :is="Component" :key="`${route.fullPath}-${syncRevision}`" />
+        </RouterView>
+      </main>
       <nav class="bottom-nav" aria-label="主导航">
         <RouterLink v-for="item in nav" :key="item.name" :to="item.to" :class="{ active: route.name === item.name }" :aria-label="item.label">
           <component :is="item.icon" :size="20" aria-hidden="true" />
@@ -69,4 +94,6 @@ onBeforeUnmount(stopNotificationPolling)
 <style scoped>
 .side-notif { margin-top: 6px; }
 .mobile-actions { display: flex; align-items: center; gap: 10px; }
+.sync-status { display: flex; align-items: center; gap: 6px; margin: 8px 10px 0; color: #9b7e84; font-size: 10px; }
+.sync-status.online { color: #6f936c; }
 </style>

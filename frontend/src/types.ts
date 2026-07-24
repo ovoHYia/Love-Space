@@ -98,6 +98,8 @@ export interface MediaItem {
   type?: string
   originalName?: string
   url?: string
+  byteSize?: number
+  createdAt?: string
 }
 
 export interface Memory {
@@ -106,12 +108,38 @@ export interface Memory {
   description?: string
   eventAt: string
   location?: string
+  latitude?: number | null
+  longitude?: number | null
+  tags?: string[]
   createdAt?: string
   author?: UserProfile
   authorId?: number | string
   authorNickname?: string
   media?: MediaItem[]
   files?: MediaItem[]
+  updatedAt?: string
+}
+
+export interface MemoryTag {
+  name: string
+  memoryCount: number
+}
+
+export interface AlbumItem {
+  media: MediaItem
+  memoryId: number | string
+  memoryTitle: string
+  eventAt: string
+  location?: string | null
+  tags: string[]
+}
+
+export interface SyncEvent {
+  action: string
+  resource: string
+  actorId: number | string
+  sourceClientId?: string | null
+  occurredAt: string
 }
 
 export interface Diary {

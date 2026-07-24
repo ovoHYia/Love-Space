@@ -111,6 +111,9 @@ public class DataExportService {
                 "description", item.getDescription(),
                 "eventAt", item.getEventAt(),
                 "location", item.getLocation(),
+                "latitude", item.getLatitude(),
+                "longitude", item.getLongitude(),
+                "tags", List.copyOf(item.getTags()),
                 "createdAt", item.getCreatedAt(),
                 "updatedAt", item.getUpdatedAt(),
                 "deletedAt", item.getDeletedAt())).toList());

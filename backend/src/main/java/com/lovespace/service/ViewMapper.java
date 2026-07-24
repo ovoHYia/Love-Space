@@ -46,7 +46,8 @@ public class ViewMapper {
                 Media::getMemoryId, java.util.stream.Collectors.mapping(this::media, java.util.stream.Collectors.toList())));
         return values.stream().map(value -> new MemoryView(value.getId(), value.getAuthorId(),
                 names.getOrDefault(value.getAuthorId(), "已注销用户"), value.getTitle(), value.getDescription(),
-                value.getEventAt(), value.getLocation(), attachments.getOrDefault(value.getId(), List.of()),
+                value.getEventAt(), value.getLocation(), value.getLatitude(), value.getLongitude(),
+                List.copyOf(value.getTags()), attachments.getOrDefault(value.getId(), List.of()),
                 value.getCreatedAt(), value.getUpdatedAt())).toList();
     }
     public List<DiaryView> diaries(List<Diary> values) {

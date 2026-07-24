@@ -16,6 +16,24 @@ export class ApiError extends Error {
 
 let csrfToken = ''
 let csrfPromise: Promise<string> | null = null
+const CLIENT_ID_KEY = 'love-space-client-id'
+let clientId = ''
+
+export function getClientId() {
+  if (clientId) return clientId
+  try {
+    clientId = sessionStorage.getItem(CLIENT_ID_KEY) || ''
+    if (!clientId) {
+      clientId = typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `client_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      sessionStorage.setItem(CLIENT_ID_KEY, clientId)
+    }
+  } catch {
+    clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  }
+  return clientId
+}
 
 async function ensureCsrfToken() {
   if (csrfToken) return csrfToken
@@ -45,6 +63,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const isForm = init.body instanceof FormData || init.body instanceof URLSearchParams
   if (init.body && !isForm && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   const method = (init.method || 'GET').toUpperCase()
+  headers.set('X-Love-Client-Id', getClientId())
   if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method) && path !== '/auth/csrf') {
     headers.set('X-XSRF-TOKEN', await ensureCsrfToken())
   }

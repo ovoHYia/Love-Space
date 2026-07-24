@@ -37,7 +37,7 @@ public class DashboardService {
         LocalDateTime now = LocalDateTime.now(zone);
         List<MoodView> todayMoods = moods.findByCoupleIdAndMoodDateOrderByUserId(coupleId, LocalDate.now(zone))
                 .stream().map(views::mood).toList();
-        List<MemoryView> recentMemories = memoryService.list(auth, 0, 6, null, null).content();
+        List<MemoryView> recentMemories = memoryService.list(auth, 0, 6, null, null, null).content();
         List<DiaryView> recentDiaries = views.diaries(diaries.findTop4ByCoupleIdAndDeletedAtIsNullOrderByDiaryDateDescCreatedAtDesc(coupleId));
         List<MessageView> recentMessages = views.messages(messages.findVisibleByCoupleAndUser(
                 coupleId, user.getId(), now,

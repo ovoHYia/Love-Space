@@ -1,5 +1,15 @@
 import { download, request } from './client'
-import type { Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, MonthlyReport, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
+import type { AlbumItem, Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, MemoryTag, MonthlyReport, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
+
+export interface MemoryInput {
+  title: string
+  description: string
+  eventAt: string
+  location: string
+  latitude: number | null
+  longitude: number | null
+  tags: string[]
+}
 
 export const api = {
   setupStatus: () => request<{ initialized: boolean }>('/setup/status'),
@@ -23,14 +33,24 @@ export const api = {
   updateMood: (body: { emoji: string; label: string; note: string }) => request('/moods/today', { method: 'PUT', body: JSON.stringify(body) }),
   monthlyReport: (month: string) => request<MonthlyReport>(`/reports/monthly?month=${encodeURIComponent(month)}`),
   memories: (query = '') => request<SpringPage<Memory> | Memory[]>(`/memories${query ? `?${query}` : ''}`),
+  memoryMap: (tag = '') => request<Memory[]>(`/memories/map${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`),
+  memoryTags: () => request<MemoryTag[]>('/memories/tags'),
+  memoryAlbum: (query = '') => request<SpringPage<AlbumItem>>(`/memories/album${query ? `?${query}` : ''}`),
   randomMemory: (excludeId?: Memory['id']) => request<Memory>(`/memories/random${excludeId === undefined ? '' : `?excludeId=${encodeURIComponent(excludeId)}`}`),
-  createMemory: (data: { title: string; description: string; eventAt: string; location: string }, files: File[]) => {
+  createMemory: (data: MemoryInput, files: File[]) => {
     const body = new FormData()
     body.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
     files.forEach((file) => body.append('files', file))
     return request<Memory>('/memories', { method: 'POST', body })
   },
-  updateMemory: (id: Memory['id'], data: { title: string; description: string; eventAt: string; location: string }) => request<Memory>(`/memories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateMemory: (id: Memory['id'], data: MemoryInput) => request<Memory>(`/memories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  addMemoryMedia: (id: Memory['id'], files: File[]) => {
+    const body = new FormData()
+    files.forEach((file) => body.append('files', file))
+    return request<Memory>(`/memories/${id}/media`, { method: 'POST', body })
+  },
+  deleteMemoryMedia: (memoryId: Memory['id'], mediaId: NonNullable<MediaItem['id']>) =>
+    request<Memory>(`/memories/${memoryId}/media/${mediaId}`, { method: 'DELETE' }),
   deleteMemory: (id: Memory['id']) => request<void>(`/memories/${id}`, { method: 'DELETE' }),
   diaries: (authorId?: number | string) => request<Diary[]>(`/diaries${authorId !== undefined ? `?authorId=${encodeURIComponent(authorId)}` : ''}`),
   createDiary: (body: Omit<Diary, 'id' | 'author' | 'authorId' | 'createdAt' | 'updatedAt'>) => request<Diary>('/diaries', { method: 'POST', body: JSON.stringify(body) }),

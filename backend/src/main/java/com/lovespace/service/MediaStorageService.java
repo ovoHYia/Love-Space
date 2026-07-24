@@ -74,7 +74,7 @@ public class MediaStorageService {
     }
 
     public Media store(User owner, Long memoryId, MultipartFile file) {
-        validate(file);
+        String detectedContentType = validate(file);
         long usedBytes = media.totalBytesByCoupleId(owner.getCouple().getId());
         if (file.getSize() > maxTotalBytes - usedBytes) {
             throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "STORAGE_QUOTA_EXCEEDED",
@@ -90,7 +90,7 @@ public class MediaStorageService {
             value.setMemoryId(memoryId);
             value.setStoredName(storedName);
             value.setOriginalName(safeOriginalName(file.getOriginalFilename()));
-            value.setContentType(normalizeContentType(file.getContentType()));
+            value.setContentType(detectedContentType);
             value.setMediaType(ALLOWED_TYPES.get(value.getContentType()));
             value.setByteSize(file.getSize());
             Media saved = media.save(value);
@@ -101,6 +101,16 @@ public class MediaStorageService {
             if (ex instanceof ApiException api) throw api;
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "FILE_STORAGE_ERROR", "保存上传文件失败");
         }
+    }
+
+    @Transactional
+    public void delete(User user, Memory memory, Long mediaId) {
+        if (!memory.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能管理自己回忆中的媒体");
+        Media value = media.findByIdAndCoupleId(mediaId, user.getCouple().getId())
+                .filter(item -> Objects.equals(item.getMemoryId(), memory.getId()))
+                .orElseThrow(() -> ApiException.notFound("媒体不存在"));
+        media.delete(value);
+        deletePhysicalAfterCommit(value);
     }
 
     @Transactional(readOnly = true)
@@ -150,28 +160,31 @@ public class MediaStorageService {
         }
     }
 
-    private void validate(MultipartFile file) {
+    private String validate(MultipartFile file) {
         if (file == null || file.isEmpty()) throw ApiException.badRequest("上传文件不能为空");
         if (file.getSize() > maxBytes) {
             throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "单个文件超过大小限制");
         }
-        String contentType = normalizeContentType(file.getContentType());
-        if (!ALLOWED_TYPES.containsKey(contentType)) {
-            throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE", "仅支持图片、视频和音频文件");
-        }
+        String declaredContentType = normalizeContentType(file.getContentType());
         try (InputStream input = file.getInputStream()) {
-            byte[] header = input.readNBytes(64);
-            if (!hasExpectedSignature(contentType, header)) {
+            byte[] header = input.readNBytes(512);
+            String detectedContentType = detectContentType(header, declaredContentType);
+            if (detectedContentType == null && !ALLOWED_TYPES.containsKey(declaredContentType)) {
+                throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE",
+                        "仅支持图片、视频和音频文件");
+            }
+            if (detectedContentType == null) {
                 throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "INVALID_FILE_CONTENT", "文件内容与声明的类型不符");
             }
+            return detectedContentType;
         } catch (IOException ex) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "FILE_READ_ERROR", "无法读取上传文件");
         }
     }
 
     private void requireImage(MultipartFile file) {
-        validate(file);
-        if (!"image".equals(ALLOWED_TYPES.get(normalizeContentType(file.getContentType())))) {
+        String detectedContentType = validate(file);
+        if (!"image".equals(ALLOWED_TYPES.get(detectedContentType))) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "AVATAR_MUST_BE_IMAGE", "头像必须是图片");
         }
     }
@@ -182,27 +195,51 @@ public class MediaStorageService {
         return (semicolon >= 0 ? value.substring(0, semicolon) : value).trim().toLowerCase(Locale.ROOT);
     }
 
-    private boolean hasExpectedSignature(String contentType, byte[] header) {
-        return switch (contentType) {
-            case "image/jpeg" -> startsWith(header, 0xFF, 0xD8, 0xFF);
-            case "image/png" -> startsWith(header, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
-            case "image/gif" -> asciiAt(header, 0, "GIF87a") || asciiAt(header, 0, "GIF89a");
-            case "image/webp" -> asciiAt(header, 0, "RIFF") && asciiAt(header, 8, "WEBP");
-            case "image/avif" -> isoBaseMedia(header) && (asciiAt(header, 8, "avif") || asciiAt(header, 8, "avis"));
-            case "image/heic" -> isoBaseMedia(header) && (asciiAt(header, 8, "heic") || asciiAt(header, 8, "heix")
-                    || asciiAt(header, 8, "hevc") || asciiAt(header, 8, "hevx") || asciiAt(header, 8, "mif1"));
-            case "video/mp4", "video/quicktime", "audio/mp4", "audio/x-m4a" -> isoBaseMedia(header);
-            case "video/webm", "video/x-matroska", "audio/webm" -> startsWith(header, 0x1A, 0x45, 0xDF, 0xA3);
-            case "audio/mpeg" -> asciiAt(header, 0, "ID3") || (header.length >= 2 && (header[0] & 0xFF) == 0xFF
-                    && (header[1] & 0xE0) == 0xE0);
-            case "audio/wav", "audio/x-wav" -> asciiAt(header, 0, "RIFF") && asciiAt(header, 8, "WAVE");
-            case "audio/ogg" -> asciiAt(header, 0, "OggS");
-            case "audio/aac" -> header.length >= 2 && (header[0] & 0xFF) == 0xFF && (header[1] & 0xF6) == 0xF0;
-            default -> false;
-        };
+    private String detectContentType(byte[] header, String declaredContentType) {
+        if (startsWith(header, 0xFF, 0xD8, 0xFF)) return "image/jpeg";
+        if (startsWith(header, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) return "image/png";
+        if (asciiAt(header, 0, "GIF87a") || asciiAt(header, 0, "GIF89a")) return "image/gif";
+        if (asciiAt(header, 0, "RIFF") && asciiAt(header, 8, "WEBP")) return "image/webp";
+        if (asciiAt(header, 0, "RIFF") && asciiAt(header, 8, "WAVE")) return "audio/wav";
+        if (asciiAt(header, 0, "OggS")) return "audio/ogg";
+        if (header.length >= 2 && (header[0] & 0xFF) == 0xFF && (header[1] & 0xF6) == 0xF0) return "audio/aac";
+        if (asciiAt(header, 0, "ID3") || (header.length >= 2 && (header[0] & 0xFF) == 0xFF
+                && (header[1] & 0xE0) == 0xE0)) return "audio/mpeg";
+        if (startsWith(header, 0x1A, 0x45, 0xDF, 0xA3)) {
+            return switch (declaredContentType) {
+                case "audio/webm" -> "audio/webm";
+                case "video/x-matroska" -> "video/x-matroska";
+                default -> "video/webm";
+            };
+        }
+        if (!isoBaseMedia(header)) return null;
+        if (containsBrand(header, "avif") || containsBrand(header, "avis")) return "image/avif";
+        if (containsAnyBrand(header, "heic", "heix", "hevc", "hevx", "heim", "heis", "heif", "mif1", "msf1")) {
+            return "image/heic";
+        }
+        if (ALLOWED_TYPES.containsKey(declaredContentType)
+                && Set.of("video/mp4", "video/quicktime", "audio/mp4", "audio/x-m4a").contains(declaredContentType)) {
+            return declaredContentType;
+        }
+        if (containsBrand(header, "qt  ")) return "video/quicktime";
+        if (containsAnyBrand(header, "M4A ", "M4B ", "M4P ")) return "audio/mp4";
+        if (containsAnyBrand(header, "isom", "iso2", "mp41", "mp42", "avc1", "dash", "M4V ")) return "video/mp4";
+        return null;
     }
 
     private boolean isoBaseMedia(byte[] header) { return asciiAt(header, 4, "ftyp"); }
+
+    private boolean containsAnyBrand(byte[] header, String... brands) {
+        for (String brand : brands) if (containsBrand(header, brand)) return true;
+        return false;
+    }
+
+    private boolean containsBrand(byte[] header, String brand) {
+        for (int offset = 8; offset + brand.length() <= header.length; offset += 4) {
+            if (asciiAt(header, offset, brand)) return true;
+        }
+        return false;
+    }
 
     private boolean asciiAt(byte[] header, int offset, String value) {
         if (header.length < offset + value.length()) return false;

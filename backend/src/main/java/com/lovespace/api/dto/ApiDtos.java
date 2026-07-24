@@ -60,12 +60,19 @@ public final class ApiDtos {
             @NotBlank @Size(max = 120) String title,
             @Size(max = 10000) String description,
             @NotNull LocalDateTime eventAt,
-            @Size(max = 200) String location) {}
+            @Size(max = 200) String location,
+            @DecimalMin("-90.0") @DecimalMax("90.0") Double latitude,
+            @DecimalMin("-180.0") @DecimalMax("180.0") Double longitude,
+            @Size(max = 12) List<@NotBlank @Size(max = 30) String> tags) {}
     public record MediaView(Long id, String originalName, String contentType, String mediaType,
                             long byteSize, String url, LocalDateTime createdAt) {}
     public record MemoryView(Long id, Long authorId, String authorNickname, String title,
                              String description, LocalDateTime eventAt, String location,
+                             Double latitude, Double longitude, List<String> tags,
                              List<MediaView> media, LocalDateTime createdAt, LocalDateTime updatedAt) {}
+    public record MemoryTagView(String name, long memoryCount) {}
+    public record AlbumItemView(MediaView media, Long memoryId, String memoryTitle,
+                                LocalDateTime eventAt, String location, List<String> tags) {}
     public record PageResponse<T>(List<T> content, int page, int size, long totalElements,
                                   int totalPages, boolean first, boolean last) {}
 

@@ -19,6 +19,7 @@ public interface MediaRepository extends JpaRepository<Media, Long> {
     List<Media> findByMemoryIdIn(Collection<Long> memoryIds);
     List<Media> findByMemoryId(Long memoryId);
     List<Media> findByCoupleIdAndMediaTypeIgnoreCase(Long coupleId, String mediaType);
+    List<Media> findByCoupleIdAndMediaTypeIn(Long coupleId, Collection<String> mediaTypes);
     List<Media> findByCoupleIdOrderById(Long coupleId);
     @Query("select coalesce(sum(m.byteSize), 0) from Media m where m.coupleId = :coupleId")
     long totalBytesByCoupleId(@Param("coupleId") Long coupleId);

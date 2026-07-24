@@ -5,8 +5,8 @@
 
 # Backend build/runtime files
 backend/target/
-data/uploads/
-backend/data/uploads/
+data/
+backend/data/
 uploads/
 
 # Frontend dependencies and build output
@@ -21,9 +21,22 @@ work/
 outputs/
 graphify-out/
 *.log
+*.pid
 backup/
 backups/
 *.tmp
+*.bak
+*.backup
+
+# Local databases and certificate/key material
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
 
 # Editors and operating systems
 .idea/

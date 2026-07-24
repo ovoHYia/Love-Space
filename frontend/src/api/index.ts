@@ -1,5 +1,5 @@
-import { request } from './client'
-import type { Anniversary, AppNotification, AuthPayload, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, NotificationList, SpringPage, UserProfile, Wish, WishInput } from '../types'
+import { download, request } from './client'
+import type { Anniversary, AppNotification, AuthPayload, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, NotificationList, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
 
 export const api = {
   setupStatus: () => request<{ initialized: boolean }>('/setup/status'),
@@ -52,6 +52,11 @@ export const api = {
   completeWish: (id: Wish['id']) => request<Wish>(`/wishes/${id}/complete`, { method: 'PATCH' }),
   reopenWish: (id: Wish['id']) => request<Wish>(`/wishes/${id}/reopen`, { method: 'PATCH' }),
   deleteWish: (id: Wish['id']) => request<void>(`/wishes/${id}`, { method: 'DELETE' }),
+  trash: () => request<TrashItem[]>('/trash'),
+  restoreTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}/restore`, { method: 'POST' }),
+  purgeTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}`, { method: 'DELETE' }),
+  emptyTrash: () => request<void>('/trash', { method: 'DELETE' }),
+  exportData: () => download('/data/export'),
   notifications: () => request<NotificationList>('/notifications'),
   notificationUnreadCount: () => request<{ unreadCount: number }>('/notifications/unread-count'),
   readNotification: (id: AppNotification['id']) => request<AppNotification>(`/notifications/${id}/read`, { method: 'PATCH' }),

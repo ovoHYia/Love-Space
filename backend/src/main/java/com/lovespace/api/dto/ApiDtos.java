@@ -93,6 +93,8 @@ public final class ApiDtos {
                            String status, Long completedBy, String completedByNickname,
                            LocalDateTime completedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {}
 
+    public record TrashItemView(String type, Long id, String title, LocalDateTime deletedAt) {}
+
     public record NotificationView(Long id, String type, String title, String body,
                                    String referenceType, Long referenceId, LocalDateTime readAt,
                                    LocalDateTime createdAt) {}

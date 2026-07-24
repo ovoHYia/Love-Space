@@ -116,6 +116,13 @@ export interface Wish extends WishInput {
   updatedAt?: string
 }
 
+export interface TrashItem {
+  type: 'MEMORY' | 'DIARY' | 'MESSAGE' | 'ANNIVERSARY' | 'WISH'
+  id: number | string
+  title: string
+  deletedAt: string
+}
+
 export interface AppNotification {
   id: number | string
   type: string

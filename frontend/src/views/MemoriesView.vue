@@ -127,11 +127,11 @@ async function save() {
 }
 
 async function remove(memory: Memory) {
-  if (!window.confirm(`确定删除“${memory.title}”吗？这段回忆和其中的媒体将无法恢复。`)) return
+  if (!window.confirm(`确定将“${memory.title}”和其中的媒体移入回收站吗？`)) return
   try {
     await api.deleteMemory(memory.id)
     memories.value = memories.value.filter((item) => item.id !== memory.id)
-    show('这段回忆已删除。', 'success')
+    show('这段回忆已移入回收站。', 'success')
   } catch (cause) {
     show(errorMessage(cause), 'error')
   }

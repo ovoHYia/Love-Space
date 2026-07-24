@@ -82,7 +82,7 @@ public class NotificationService {
     public int generateAnniversaryReminders(LocalDate today) {
         Map<Long, List<User>> membersByCouple = new HashMap<>();
         int created = 0;
-        for (Anniversary anniversary : anniversaries.findAll()) {
+        for (Anniversary anniversary : anniversaries.findByDeletedAtIsNull()) {
             long daysUntil = anniversary.daysUntil(today);
             if (daysUntil < 0 || daysUntil > anniversary.getReminderDays()) continue;
             LocalDate occurrence = anniversary.nextOccurrence(today);
@@ -101,7 +101,7 @@ public class NotificationService {
     public int generateScheduledLetterNotifications(LocalDateTime now) {
         int created = 0;
         for (LetterMessage message : letterMessages
-                .findByScheduledTrueAndNotifiedAtIsNullAndDeliverAtLessThanEqualOrderByDeliverAtAsc(now)) {
+                .findByScheduledTrueAndNotifiedAtIsNullAndDeletedAtIsNullAndDeliverAtLessThanEqualOrderByDeliverAtAsc(now)) {
             String dedupeKey = "TIME_CAPSULE:" + message.getId();
             if (!notifications.existsByUserIdAndDedupeKey(message.getRecipientId(), dedupeKey)) {
                 notifications.save(timeCapsuleNotification(message, dedupeKey));

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { Camera, Heart, KeyRound, LogOut, RefreshCw, Save, ShieldCheck, UserRound } from 'lucide-vue-next'
+import { RouterLink, useRouter } from 'vue-router'
+import { ArchiveRestore, Camera, Download, Heart, KeyRound, LogOut, RefreshCw, Save, ShieldCheck, UserRound } from 'lucide-vue-next'
 import { api } from '../api'
 import { ApiError, errorMessage } from '../api/client'
 import { useToast } from '../composables/toast'
@@ -168,6 +168,11 @@ async function changePassword() {
           <div class="safety-note"><ShieldCheck :size="20" /><p><strong>回忆由服务器保存</strong><span>退出登录不会删除任何内容，换设备登录也能继续查看。</span></p></div>
         </section>
       </div>
+
+      <section class="card account-actions-card">
+        <div><span class="account-icon"><ArchiveRestore :size="20" /></span><p><strong>数据与回收站</strong><span>导出你的空间数据，或者恢复最近删除的内容。</span></p></div>
+        <RouterLink class="button secondary" to="/data-management"><Download :size="17" />管理数据</RouterLink>
+      </section>
 
       <section class="card account-actions-card">
         <div><span class="account-icon"><LogOut :size="20" /></span><p><strong>暂时离开小屋</strong><span>退出后需要重新输入账号和密码，所有回忆都会保留。</span></p></div>

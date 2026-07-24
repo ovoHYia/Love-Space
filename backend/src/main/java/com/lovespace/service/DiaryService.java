@@ -5,6 +5,8 @@ import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.*;
 import com.lovespace.repository.DiaryRepository;
 import com.lovespace.security.CurrentUserService;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DiaryService {
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private final DiaryRepository diaries;
     private final CurrentUserService current;
     private final ViewMapper views;
@@ -22,8 +25,8 @@ public class DiaryService {
     public List<DiaryView> list(Authentication auth, Long authorId) {
         User user = current.user(auth);
         List<Diary> result;
-        if (authorId == null) result = diaries.findByCoupleIdOrderByDiaryDateDescCreatedAtDesc(user.getCouple().getId());
-        else result = diaries.findByCoupleIdAndAuthorIdOrderByDiaryDateDescCreatedAtDesc(user.getCouple().getId(), authorId);
+        if (authorId == null) result = diaries.findByCoupleIdAndDeletedAtIsNullOrderByDiaryDateDescCreatedAtDesc(user.getCouple().getId());
+        else result = diaries.findByCoupleIdAndAuthorIdAndDeletedAtIsNullOrderByDiaryDateDescCreatedAtDesc(user.getCouple().getId(), authorId);
         return views.diaries(result);
     }
     @Transactional
@@ -41,10 +44,13 @@ public class DiaryService {
     }
     @Transactional
     public void delete(Authentication auth, Long id) {
-        User user = current.user(auth); diaries.delete(owned(user, id));
+        User user = current.user(auth);
+        Diary value = owned(user, id);
+        value.moveToTrash(user.getId(), LocalDateTime.now(ZONE));
+        diaries.save(value);
     }
     private Diary owned(User user, Long id) {
-        Diary value = diaries.findByIdAndCoupleId(id, user.getCouple().getId())
+        Diary value = diaries.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("日记不存在"));
         if (!value.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能修改或删除自己的日记");
         return value;

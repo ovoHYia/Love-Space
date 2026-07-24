@@ -106,11 +106,11 @@ async function send() {
 }
 
 async function remove(letter: Letter) {
-  if (!window.confirm('确定收回这封信笺吗？删除后无法恢复。')) return
+  if (!window.confirm('确定将这封信笺移入回收站吗？')) return
   try {
     await api.deleteMessage(letter.id)
     letters.value = letters.value.filter((item) => item.id !== letter.id)
-    show('这封信笺已经收回。', 'success')
+    show('这封信笺已移入回收站。', 'success')
   } catch (cause) {
     show(errorMessage(cause), 'error')
   }

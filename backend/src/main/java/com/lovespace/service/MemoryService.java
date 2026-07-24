@@ -8,6 +8,7 @@ import com.lovespace.security.CurrentUserService;
 import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
@@ -39,6 +40,7 @@ public class MemoryService {
         Specification<Memory> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("coupleId"), user.getCouple().getId()));
+            predicates.add(cb.isNull(root.get("deletedAt")));
             if (search != null && !search.isBlank()) {
                 String pattern = "%" + escapeLike(search.trim().toLowerCase(Locale.ROOT)) + "%";
                 predicates.add(cb.or(
@@ -84,7 +86,7 @@ public class MemoryService {
     @Transactional
     public MemoryView update(Authentication auth, Long id, MemoryRequest request) {
         User user = current.user(auth);
-        Memory memory = memories.findByIdAndCoupleId(id, user.getCouple().getId())
+        Memory memory = memories.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("回忆不存在"));
         if (!memory.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能编辑自己的回忆");
         apply(memory, request);
@@ -96,7 +98,9 @@ public class MemoryService {
         User user = current.user(auth);
         Specification<Memory> scope = (root, query, cb) -> {
             Predicate couple = cb.equal(root.get("coupleId"), user.getCouple().getId());
-            return excludeId == null ? couple : cb.and(couple, cb.notEqual(root.get("id"), excludeId));
+            Predicate active = cb.isNull(root.get("deletedAt"));
+            return excludeId == null ? cb.and(couple, active)
+                    : cb.and(couple, active, cb.notEqual(root.get("id"), excludeId));
         };
         long total = memories.count(scope);
         if (total == 0) {
@@ -113,14 +117,11 @@ public class MemoryService {
     @Transactional
     public void delete(Authentication auth, Long id) {
         User user = current.user(auth);
-        Memory memory = memories.findByIdAndCoupleId(id, user.getCouple().getId())
+        Memory memory = memories.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("回忆不存在"));
         if (!memory.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能删除自己的回忆");
-        List<Media> attachments = media.findByMemoryId(id);
-        media.deleteAll(attachments);
-        memories.delete(memory);
-        memories.flush();
-        attachments.forEach(storage::deletePhysicalAfterCommit);
+        memory.moveToTrash(user.getId(), LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
+        memories.save(memory);
     }
 
     private void apply(Memory value, MemoryRequest input) {

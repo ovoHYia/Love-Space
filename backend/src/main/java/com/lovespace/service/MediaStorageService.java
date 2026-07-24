@@ -106,7 +106,7 @@ public class MediaStorageService {
     @Transactional(readOnly = true)
     public MediaDownload load(Authentication auth, Long id) {
         User user = current.user(auth);
-        Media value = media.findByIdAndCoupleId(id, user.getCouple().getId())
+        Media value = media.findAccessibleByIdAndCoupleId(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("媒体不存在"));
         Path path = safeResolve(value.getStoredName());
         if (!Files.isRegularFile(path)) throw ApiException.notFound("媒体文件不存在");
@@ -115,6 +115,11 @@ public class MediaStorageService {
 
     public void deletePhysical(Media value) {
         deletePath(safeResolve(value.getStoredName()));
+    }
+
+    public Optional<Resource> loadForExport(Media value) {
+        Path path = safeResolve(value.getStoredName());
+        return Files.isRegularFile(path) ? Optional.of(new FileSystemResource(path.toFile())) : Optional.empty();
     }
 
     public void deletePhysicalAfterCommit(Media value) {

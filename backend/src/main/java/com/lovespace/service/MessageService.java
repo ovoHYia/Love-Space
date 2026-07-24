@@ -50,7 +50,7 @@ public class MessageService {
     @Transactional
     public MessageView markRead(Authentication auth, Long id) {
         User user = current.user(auth);
-        LetterMessage value = messages.findByIdAndCoupleId(id, user.getCouple().getId())
+        LetterMessage value = messages.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("留言不存在"));
         if (!value.getRecipientId().equals(user.getId())) throw ApiException.forbidden("只有收件人可以标记已读");
         LocalDateTime now = LocalDateTime.now(ZONE);
@@ -61,9 +61,10 @@ public class MessageService {
     @Transactional
     public void delete(Authentication auth, Long id) {
         User user = current.user(auth);
-        LetterMessage value = messages.findByIdAndCoupleId(id, user.getCouple().getId())
+        LetterMessage value = messages.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("留言不存在"));
         if (!value.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能删除自己的留言");
-        messages.delete(value);
+        value.moveToTrash(user.getId(), LocalDateTime.now(ZONE));
+        messages.save(value);
     }
 }

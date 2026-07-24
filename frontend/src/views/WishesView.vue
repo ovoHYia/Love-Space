@@ -138,11 +138,11 @@ async function reopen(item: Wish) {
 }
 
 async function remove(item: Wish) {
-  if (!window.confirm(`确定删除愿望“${item.title}”吗？删除后无法恢复。`)) return
+  if (!window.confirm(`确定将愿望“${item.title}”移入回收站吗？`)) return
   workingId.value = item.id
   try {
     await api.deleteWish(item.id)
-    show('这个愿望已经移出清单。', 'success')
+    show('这个愿望已移入回收站。', 'success')
     await load()
   } catch (cause) {
     show(errorMessage(cause), 'error')

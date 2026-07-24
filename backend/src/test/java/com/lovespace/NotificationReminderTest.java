@@ -66,6 +66,9 @@ class NotificationReminderTest {
         LocalDate today = LocalDate.now(ZONE);
         newAnniversary(today.plusDays(3), 7);    // within the reminder window
         newAnniversary(today.plusDays(30), 7);   // outside the reminder window
+        Anniversary deleted = newAnniversary(today.plusDays(2), 7);
+        deleted.moveToTrash(aliceId, LocalDateTime.now(ZONE));
+        anniversaries.save(deleted);
 
         assertEquals(2, notificationService.generateAnniversaryReminders(today), "两位成员应各生成一条");
         assertEquals(0, notificationService.generateAnniversaryReminders(today), "重复运行不应再生成");
@@ -173,12 +176,12 @@ class NotificationReminderTest {
         user.setPasswordHash(encoder.encode(password));
         return users.save(user);
     }
-    private void newAnniversary(LocalDate date, int reminderDays) {
+    private Anniversary newAnniversary(LocalDate date, int reminderDays) {
         Anniversary value = new Anniversary();
         value.setCoupleId(coupleId); value.setCreatedBy(aliceId); value.setTitle("恋爱纪念日");
         value.setEventDate(date); value.setType("LOVE"); value.setRecurringYearly(false);
         value.setReminderDays(reminderDays);
-        anniversaries.save(value);
+        return anniversaries.save(value);
     }
     private MockHttpSession login(String username, String password) throws Exception {
         MvcResult result = mvc.perform(post("/api/auth/login").with(csrf())

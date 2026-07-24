@@ -87,11 +87,11 @@ async function save() {
 }
 
 async function remove(diary: Diary) {
-  if (!window.confirm(`确定删除“${diary.title}”吗？删除后无法恢复。`)) return
+  if (!window.confirm(`确定将“${diary.title}”移入回收站吗？`)) return
   try {
     await api.deleteDiary(diary.id)
     diaries.value = diaries.value.filter((item) => item.id !== diary.id)
-    show('这篇日记已删除。', 'success')
+    show('这篇日记已移入回收站。', 'success')
   } catch (cause) {
     show(errorMessage(cause), 'error')
   }

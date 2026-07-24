@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
     List<Notification> findTop50ByUserIdOrderByCreatedAtDesc(Long userId);
+    List<Notification> findByUserIdOrderByCreatedAtAsc(Long userId);
     long countByUserIdAndReadAtIsNull(Long userId);
     boolean existsByUserIdAndDedupeKey(Long userId, String dedupeKey);
     Optional<Notification> findByIdAndUserId(Long id, Long userId);

@@ -8,7 +8,7 @@ import java.util.Objects;
 
 @Entity
 @Table(name = "wishes")
-public class Wish {
+public class Wish implements RecoverableContent {
     public static final String STATUS_ACTIVE = "ACTIVE";
     public static final String STATUS_COMPLETED = "COMPLETED";
 
@@ -39,6 +39,10 @@ public class Wish {
     private LocalDateTime createdAt;
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+    @Column(name = "deleted_by")
+    private Long deletedBy;
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
@@ -67,6 +71,10 @@ public class Wish {
     public Long getVersion() { return version; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public Long getDeletedBy() { return deletedBy; }
+    public void setDeletedBy(Long deletedBy) { this.deletedBy = deletedBy; }
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
 
     @Override public boolean equals(Object o) {
         if (this == o) return true;

@@ -5,6 +5,8 @@ import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.*;
 import com.lovespace.repository.AnniversaryRepository;
 import com.lovespace.security.CurrentUserService;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import org.springframework.security.core.Authentication;
@@ -13,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AnniversaryService {
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private final AnniversaryRepository anniversaries;
     private final CurrentUserService current;
     private final ViewMapper views;
@@ -22,7 +25,7 @@ public class AnniversaryService {
     @Transactional(readOnly = true)
     public List<AnniversaryView> list(Authentication auth) {
         User user = current.user(auth);
-        return anniversaries.findByCoupleIdOrderByEventDateAsc(user.getCouple().getId()).stream()
+        return anniversaries.findByCoupleIdAndDeletedAtIsNullOrderByEventDateAsc(user.getCouple().getId()).stream()
                 .map(views::anniversary)
                 .sorted(Comparator.comparingInt((AnniversaryView item) -> item.daysUntil() < 0 ? 1 : 0)
                         .thenComparingLong(item -> item.daysUntil() < 0
@@ -42,10 +45,13 @@ public class AnniversaryService {
     }
     @Transactional
     public void delete(Authentication auth, Long id) {
-        User user = current.user(auth); anniversaries.delete(find(user, id));
+        User user = current.user(auth);
+        Anniversary value = find(user, id);
+        value.moveToTrash(user.getId(), LocalDateTime.now(ZONE));
+        anniversaries.save(value);
     }
     private Anniversary find(User user, Long id) {
-        return anniversaries.findByIdAndCoupleId(id, user.getCouple().getId())
+        return anniversaries.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("纪念日不存在"));
     }
     private void apply(Anniversary value, AnniversaryRequest input) {

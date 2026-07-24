@@ -84,11 +84,11 @@ async function save() {
 }
 
 async function remove(item: Anniversary) {
-  if (!window.confirm(`确定删除“${item.title}”吗？`)) return
+  if (!window.confirm(`确定将“${item.title}”移入回收站吗？`)) return
   try {
     await api.deleteAnniversary(item.id)
     anniversaries.value = anniversaries.value.filter((entry) => entry.id !== item.id)
-    show('这个纪念日已删除。', 'success')
+    show('这个纪念日已移入回收站。', 'success')
   } catch (cause) {
     show(errorMessage(cause), 'error')
   }

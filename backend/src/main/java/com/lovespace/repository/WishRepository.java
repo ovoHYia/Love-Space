@@ -3,6 +3,9 @@ import com.lovespace.domain.Wish;
 import java.util.*;
 import org.springframework.data.jpa.repository.JpaRepository;
 public interface WishRepository extends JpaRepository<Wish, Long> {
-    List<Wish> findByCoupleIdOrderByCreatedAtDesc(Long coupleId);
-    Optional<Wish> findByIdAndCoupleId(Long id, Long coupleId);
+    List<Wish> findByCoupleIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long coupleId);
+    Optional<Wish> findByIdAndCoupleIdAndDeletedAtIsNull(Long id, Long coupleId);
+    Optional<Wish> findByIdAndCoupleIdAndDeletedBy(Long id, Long coupleId, Long deletedBy);
+    List<Wish> findByCoupleIdAndDeletedByOrderByDeletedAtDesc(Long coupleId, Long deletedBy);
+    List<Wish> findByCoupleIdOrderById(Long coupleId);
 }

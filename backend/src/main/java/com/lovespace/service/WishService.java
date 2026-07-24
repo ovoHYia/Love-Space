@@ -30,7 +30,7 @@ public class WishService {
     @Transactional(readOnly = true)
     public List<WishView> list(Authentication auth) {
         User user = current.user(auth);
-        List<Wish> values = wishes.findByCoupleIdOrderByCreatedAtDesc(user.getCouple().getId()).stream()
+        List<Wish> values = wishes.findByCoupleIdAndDeletedAtIsNullOrderByCreatedAtDesc(user.getCouple().getId()).stream()
                 .sorted(Comparator.comparingInt((Wish item) -> Wish.STATUS_ACTIVE.equals(item.getStatus()) ? 0 : 1)
                         .thenComparing(Wish::getTargetDate, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(Wish::getCreatedAt, Comparator.reverseOrder()))
@@ -86,11 +86,13 @@ public class WishService {
     @Transactional
     public void delete(Authentication auth, Long id) {
         User user = current.user(auth);
-        wishes.delete(find(user, id));
+        Wish value = find(user, id);
+        value.moveToTrash(user.getId(), LocalDateTime.now(ZONE));
+        wishes.save(value);
     }
 
     private Wish find(User user, Long id) {
-        return wishes.findByIdAndCoupleId(id, user.getCouple().getId())
+        return wishes.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("愿望不存在"));
     }
 

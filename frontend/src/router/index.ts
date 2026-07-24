@@ -10,6 +10,7 @@ import LettersView from '../views/LettersView.vue'
 import AnniversariesView from '../views/AnniversariesView.vue'
 import WishesView from '../views/WishesView.vue'
 import ProfileView from '../views/ProfileView.vue'
+import DataManagementView from '../views/DataManagementView.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -26,6 +27,7 @@ const router = createRouter({
         { path: 'anniversaries', name: 'anniversaries', component: AnniversariesView },
         { path: 'wishes', name: 'wishes', component: WishesView },
         { path: 'profile', name: 'profile', component: ProfileView },
+        { path: 'data-management', name: 'data-management', component: DataManagementView },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

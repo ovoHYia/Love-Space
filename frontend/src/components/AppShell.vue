@@ -4,12 +4,17 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { BarChart3, CalendarDays, CalendarHeart, Feather, Heart, Home, Images, ListTodo, Mails as MailHeart, UserRound, Wifi, WifiOff } from 'lucide-vue-next'
 import BaseAvatar from './BaseAvatar.vue'
 import NotificationBell from './NotificationBell.vue'
+import { useToast } from '../composables/toast'
 import { authState, bootstrapAuth } from '../stores/auth'
 import { refreshUnreadCount, startNotificationPolling, stopNotificationPolling } from '../stores/notifications'
 import { realtimeState, startRealtimeSync, stopRealtimeSync } from '../stores/realtime'
 
 const route = useRoute()
+const { show } = useToast()
 const syncRevision = ref(0)
+const authRetryDelays = [1000, 3000]
+let authRefreshPromise: Promise<void> | null = null
+let mounted = false
 const nav = [
   { to: '/', label: '小窝', icon: Home, name: 'home' },
   { to: '/calendar', label: '日历', icon: CalendarDays, name: 'calendar' },
@@ -22,19 +27,51 @@ const nav = [
   { to: '/profile', label: '我们', icon: UserRound, name: 'profile' },
 ]
 
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
+}
+
+async function refreshAuthAfterSync() {
+  if (authRefreshPromise) return authRefreshPromise
+
+  const refreshTask = (async () => {
+    for (let attempt = 0; attempt <= authRetryDelays.length; attempt++) {
+      try {
+        await bootstrapAuth(true)
+        return
+      } catch {
+        if (attempt === authRetryDelays.length || !mounted) break
+        await delay(authRetryDelays[attempt])
+      }
+    }
+    if (mounted) show('账号信息同步失败，请稍后刷新页面重试。', 'error')
+  })()
+
+  authRefreshPromise = refreshTask
+  try {
+    await refreshTask
+  } finally {
+    if (authRefreshPromise === refreshTask) authRefreshPromise = null
+  }
+}
+
 function handleSync(event: Event) {
   const detail = (event as CustomEvent<{ resource?: string }>).detail
   syncRevision.value++
-  refreshUnreadCount()
-  if (detail?.resource === 'profile' || detail?.resource === 'space') bootstrapAuth(true)
+  void refreshUnreadCount()
+  if (detail?.resource === 'profile' || detail?.resource === 'space') {
+    void refreshAuthAfterSync()
+  }
 }
 
 onMounted(() => {
+  mounted = true
   startNotificationPolling()
   startRealtimeSync()
   window.addEventListener('love-space:sync', handleSync)
 })
 onBeforeUnmount(() => {
+  mounted = false
   stopNotificationPolling()
   stopRealtimeSync()
   window.removeEventListener('love-space:sync', handleSync)

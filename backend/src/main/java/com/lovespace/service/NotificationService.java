@@ -22,8 +22,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class NotificationService {
     public static final String TYPE_ANNIVERSARY_REMINDER = "ANNIVERSARY_REMINDER";
     public static final String TYPE_TIME_CAPSULE_DELIVERED = "TIME_CAPSULE_DELIVERED";
+    public static final String TYPE_WISH_CREATED = "WISH_CREATED";
+    public static final String TYPE_WISH_COMPLETED = "WISH_COMPLETED";
     public static final String REFERENCE_ANNIVERSARY = "ANNIVERSARY";
     public static final String REFERENCE_MESSAGE = "MESSAGE";
+    public static final String REFERENCE_WISH = "WISH";
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final NotificationRepository notifications;
@@ -110,6 +113,20 @@ public class NotificationService {
         return created;
     }
 
+    @Transactional
+    public void notifyWishCreated(Wish wish, Long recipientId, String actorName) {
+        createWishNotification(wish, recipientId, TYPE_WISH_CREATED,
+                "新的共同愿望", actorName + " 添加了愿望「" + wish.getTitle() + "」",
+                "WISH_CREATED:" + wish.getId());
+    }
+
+    @Transactional
+    public void notifyWishCompleted(Wish wish, Long recipientId, String actorName) {
+        createWishNotification(wish, recipientId, TYPE_WISH_COMPLETED,
+                "共同愿望完成啦", actorName + " 完成了愿望「" + wish.getTitle() + "」",
+                "WISH_COMPLETED:" + wish.getId() + ":" + wish.getCompletedAt());
+    }
+
     private Notification reminder(Anniversary anniversary, Long userId, String dedupeKey,
                                   long daysUntil, LocalDate occurrence) {
         Notification value = new Notification();
@@ -135,6 +152,21 @@ public class NotificationService {
         value.setReferenceId(message.getId());
         value.setDedupeKey(dedupeKey);
         return value;
+    }
+
+    private void createWishNotification(Wish wish, Long recipientId, String type,
+                                        String title, String body, String dedupeKey) {
+        if (notifications.existsByUserIdAndDedupeKey(recipientId, dedupeKey)) return;
+        Notification value = new Notification();
+        value.setCoupleId(wish.getCoupleId());
+        value.setUserId(recipientId);
+        value.setType(type);
+        value.setTitle(title);
+        value.setBody(body);
+        value.setReferenceType(REFERENCE_WISH);
+        value.setReferenceId(wish.getId());
+        value.setDedupeKey(dedupeKey);
+        notifications.save(value);
     }
 
     private String reminderBody(long daysUntil, LocalDate occurrence) {

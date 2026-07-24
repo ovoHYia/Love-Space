@@ -47,7 +47,7 @@ class NotificationReminderTest {
     @BeforeEach
     void reset() {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        for (String table : new String[]{"notifications", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
+        for (String table : new String[]{"notifications", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
         }
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");

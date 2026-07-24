@@ -48,6 +48,8 @@ async function openItem(item: AppNotification) {
     router.push({ name: 'anniversaries' })
   } else if (item.referenceType === 'MESSAGE' && route.name !== 'letters') {
     router.push({ name: 'letters' })
+  } else if (item.referenceType === 'WISH' && route.name !== 'wishes') {
+    router.push({ name: 'wishes' })
   }
 }
 

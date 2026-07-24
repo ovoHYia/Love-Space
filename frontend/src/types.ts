@@ -97,6 +97,25 @@ export interface Anniversary {
   daysUntil?: number
 }
 
+export interface WishInput {
+  title: string
+  description?: string
+  category: 'TRAVEL' | 'DATE' | 'FOOD' | 'MOVIE' | 'OTHER'
+  targetDate?: string
+}
+
+export interface Wish extends WishInput {
+  id: number | string
+  createdBy: number | string
+  createdByNickname: string
+  status: 'ACTIVE' | 'COMPLETED'
+  completedBy?: number | string | null
+  completedByNickname?: string | null
+  completedAt?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
 export interface AppNotification {
   id: number | string
   type: string

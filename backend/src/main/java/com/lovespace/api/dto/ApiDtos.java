@@ -83,6 +83,16 @@ public final class ApiDtos {
                                   String note, long daysUntil, LocalDateTime createdAt,
                                   LocalDateTime updatedAt) {}
 
+    public record WishRequest(
+            @NotBlank @Size(max = 120) String title,
+            @Size(max = 1000) String description,
+            @NotBlank @Pattern(regexp = "TRAVEL|DATE|FOOD|MOVIE|OTHER") String category,
+            LocalDate targetDate) {}
+    public record WishView(Long id, Long createdBy, String createdByNickname,
+                           String title, String description, String category, LocalDate targetDate,
+                           String status, Long completedBy, String completedByNickname,
+                           LocalDateTime completedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {}
+
     public record NotificationView(Long id, String type, String title, String body,
                                    String referenceType, Long referenceId, LocalDateTime readAt,
                                    LocalDateTime createdAt) {}

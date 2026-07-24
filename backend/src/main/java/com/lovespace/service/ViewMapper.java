@@ -77,6 +77,23 @@ public class ViewMapper {
                 value.getType(), value.isRecurringYearly(), value.getReminderDays(), value.getNote(),
                 value.daysUntil(LocalDate.now(ZoneId.of("Asia/Shanghai"))), value.getCreatedAt(), value.getUpdatedAt());
     }
+    public WishView wish(Wish value) {
+        return wishes(List.of(value)).get(0);
+    }
+    public List<WishView> wishes(List<Wish> values) {
+        if (values.isEmpty()) return List.of();
+        Set<Long> ids = values.stream()
+                .flatMap(value -> java.util.stream.Stream.of(value.getCreatedBy(), value.getCompletedBy()))
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        Map<Long, String> names = userNames(values.get(0).getCoupleId(), ids);
+        return values.stream().map(value -> new WishView(value.getId(), value.getCreatedBy(),
+                names.getOrDefault(value.getCreatedBy(), "已注销用户"),
+                value.getTitle(), value.getDescription(), value.getCategory(), value.getTargetDate(),
+                value.getStatus(), value.getCompletedBy(),
+                value.getCompletedBy() == null ? null : names.getOrDefault(value.getCompletedBy(), "已注销用户"),
+                value.getCompletedAt(), value.getCreatedAt(), value.getUpdatedAt())).toList();
+    }
     public NotificationView notification(Notification value) {
         return new NotificationView(value.getId(), value.getType(), value.getTitle(), value.getBody(),
                 value.getReferenceType(), value.getReferenceId(), value.getReadAt(), value.getCreatedAt());

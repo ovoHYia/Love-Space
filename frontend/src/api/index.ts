@@ -1,5 +1,5 @@
 import { request } from './client'
-import type { Anniversary, AppNotification, AuthPayload, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, NotificationList, SpringPage, UserProfile } from '../types'
+import type { Anniversary, AppNotification, AuthPayload, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, NotificationList, SpringPage, UserProfile, Wish, WishInput } from '../types'
 
 export const api = {
   setupStatus: () => request<{ initialized: boolean }>('/setup/status'),
@@ -46,6 +46,12 @@ export const api = {
   createAnniversary: (body: Omit<Anniversary, 'id' | 'daysUntil'>) => request<Anniversary>('/anniversaries', { method: 'POST', body: JSON.stringify(body) }),
   updateAnniversary: (id: Anniversary['id'], body: Omit<Anniversary, 'id' | 'daysUntil'>) => request<Anniversary>(`/anniversaries/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteAnniversary: (id: Anniversary['id']) => request<void>(`/anniversaries/${id}`, { method: 'DELETE' }),
+  wishes: () => request<Wish[]>('/wishes'),
+  createWish: (body: WishInput) => request<Wish>('/wishes', { method: 'POST', body: JSON.stringify(body) }),
+  updateWish: (id: Wish['id'], body: WishInput) => request<Wish>(`/wishes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  completeWish: (id: Wish['id']) => request<Wish>(`/wishes/${id}/complete`, { method: 'PATCH' }),
+  reopenWish: (id: Wish['id']) => request<Wish>(`/wishes/${id}/reopen`, { method: 'PATCH' }),
+  deleteWish: (id: Wish['id']) => request<void>(`/wishes/${id}`, { method: 'DELETE' }),
   notifications: () => request<NotificationList>('/notifications'),
   notificationUnreadCount: () => request<{ unreadCount: number }>('/notifications/unread-count'),
   readNotification: (id: AppNotification['id']) => request<AppNotification>(`/notifications/${id}/read`, { method: 'PATCH' }),

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { CalendarHeart, Feather, Heart, Home, Images, Mails as MailHeart, UserRound } from 'lucide-vue-next'
+import { CalendarHeart, Feather, Heart, Home, Images, ListTodo, Mails as MailHeart, UserRound } from 'lucide-vue-next'
 import BaseAvatar from './BaseAvatar.vue'
 import NotificationBell from './NotificationBell.vue'
 import { authState } from '../stores/auth'
@@ -14,6 +14,7 @@ const nav = [
   { to: '/diaries', label: '日记', icon: Feather, name: 'diaries' },
   { to: '/letters', label: '信笺', icon: MailHeart, name: 'letters' },
   { to: '/anniversaries', label: '日子', icon: CalendarHeart, name: 'anniversaries' },
+  { to: '/wishes', label: '愿望', icon: ListTodo, name: 'wishes' },
   { to: '/profile', label: '我们', icon: UserRound, name: 'profile' },
 ]
 

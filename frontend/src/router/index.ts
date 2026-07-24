@@ -8,6 +8,7 @@ import MemoriesView from '../views/MemoriesView.vue'
 import DiariesView from '../views/DiariesView.vue'
 import LettersView from '../views/LettersView.vue'
 import AnniversariesView from '../views/AnniversariesView.vue'
+import WishesView from '../views/WishesView.vue'
 import ProfileView from '../views/ProfileView.vue'
 
 const router = createRouter({
@@ -23,6 +24,7 @@ const router = createRouter({
         { path: 'diaries', name: 'diaries', component: DiariesView },
         { path: 'letters', name: 'letters', component: LettersView },
         { path: 'anniversaries', name: 'anniversaries', component: AnniversariesView },
+        { path: 'wishes', name: 'wishes', component: WishesView },
         { path: 'profile', name: 'profile', component: ProfileView },
       ],
     },

@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { CalendarHeart, Feather, Heart, Home, Images, Mails as MailHeart, UserRound } from 'lucide-vue-next'
 import BaseAvatar from './BaseAvatar.vue'
+import NotificationBell from './NotificationBell.vue'
 import { authState } from '../stores/auth'
+import { startNotificationPolling, stopNotificationPolling } from '../stores/notifications'
 
 const route = useRoute()
 const nav = [
@@ -13,6 +16,9 @@ const nav = [
   { to: '/anniversaries', label: '日子', icon: CalendarHeart, name: 'anniversaries' },
   { to: '/profile', label: '我们', icon: UserRound, name: 'profile' },
 ]
+
+onMounted(startNotificationPolling)
+onBeforeUnmount(stopNotificationPolling)
 </script>
 
 <template>
@@ -28,6 +34,7 @@ const nav = [
           <span>{{ item.label }}</span>
         </RouterLink>
       </nav>
+      <NotificationBell variant="sidebar" class="side-notif" />
       <RouterLink class="side-profile" to="/profile">
         <BaseAvatar :user="authState.user" size="sm" />
         <span><strong>{{ authState.user?.nickname }}</strong><small>和 {{ authState.partner?.nickname || '心上人' }} 的空间</small></span>
@@ -40,7 +47,10 @@ const nav = [
           <span class="brand-mark"><Heart :size="17" fill="currentColor" /></span>
           <span><strong>{{ authState.spaceName }}</strong><small>Love Space</small></span>
         </RouterLink>
-        <RouterLink to="/profile" aria-label="打开个人资料"><BaseAvatar :user="authState.user" size="sm" /></RouterLink>
+        <div class="mobile-actions">
+          <NotificationBell variant="header" />
+          <RouterLink to="/profile" aria-label="打开个人资料"><BaseAvatar :user="authState.user" size="sm" /></RouterLink>
+        </div>
       </header>
       <main class="page-container"><RouterView /></main>
       <nav class="bottom-nav" aria-label="主导航">
@@ -52,3 +62,8 @@ const nav = [
     </div>
   </div>
 </template>
+
+<style scoped>
+.side-notif { margin-top: 6px; }
+.mobile-actions { display: flex; align-items: center; gap: 10px; }
+</style>

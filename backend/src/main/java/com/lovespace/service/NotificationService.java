@@ -1,0 +1,109 @@
+package com.lovespace.service;
+
+import com.lovespace.api.dto.ApiDtos.*;
+import com.lovespace.api.error.ApiException;
+import com.lovespace.domain.*;
+import com.lovespace.repository.AnniversaryRepository;
+import com.lovespace.repository.NotificationRepository;
+import com.lovespace.repository.UserRepository;
+import com.lovespace.security.CurrentUserService;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class NotificationService {
+    public static final String TYPE_ANNIVERSARY_REMINDER = "ANNIVERSARY_REMINDER";
+    public static final String REFERENCE_ANNIVERSARY = "ANNIVERSARY";
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+
+    private final NotificationRepository notifications;
+    private final AnniversaryRepository anniversaries;
+    private final UserRepository users;
+    private final CurrentUserService current;
+    private final ViewMapper views;
+    public NotificationService(NotificationRepository notifications, AnniversaryRepository anniversaries,
+                               UserRepository users, CurrentUserService current, ViewMapper views) {
+        this.notifications = notifications; this.anniversaries = anniversaries; this.users = users;
+        this.current = current; this.views = views;
+    }
+
+    @Transactional(readOnly = true)
+    public NotificationListResponse list(Authentication auth) {
+        User user = current.user(auth);
+        List<NotificationView> items = notifications.findTop50ByUserIdOrderByCreatedAtDesc(user.getId())
+                .stream().map(views::notification).toList();
+        return new NotificationListResponse(items, notifications.countByUserIdAndReadAtIsNull(user.getId()));
+    }
+
+    @Transactional(readOnly = true)
+    public UnreadCountResponse unreadCount(Authentication auth) {
+        User user = current.user(auth);
+        return new UnreadCountResponse(notifications.countByUserIdAndReadAtIsNull(user.getId()));
+    }
+
+    @Transactional
+    public NotificationView markRead(Authentication auth, Long id) {
+        User user = current.user(auth);
+        Notification value = notifications.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> ApiException.notFound("通知不存在"));
+        if (value.getReadAt() == null) value.setReadAt(LocalDateTime.now(ZONE));
+        return views.notification(notifications.save(value));
+    }
+
+    @Transactional
+    public void markAllRead(Authentication auth) {
+        User user = current.user(auth);
+        notifications.markAllReadForUser(user.getId(), LocalDateTime.now(ZONE));
+    }
+
+    /**
+     * Scans every anniversary and, for each one whose next occurrence falls within its reminder
+     * window, creates a reminder for both members of the couple. The (user_id, dedupe_key) pair
+     * keeps this idempotent, so it can run daily without producing duplicates. Returns the number
+     * of notifications created.
+     */
+    @Transactional
+    public int generateAnniversaryReminders(LocalDate today) {
+        Map<Long, List<User>> membersByCouple = new HashMap<>();
+        int created = 0;
+        for (Anniversary anniversary : anniversaries.findAll()) {
+            long daysUntil = anniversary.daysUntil(today);
+            if (daysUntil < 0 || daysUntil > anniversary.getReminderDays()) continue;
+            LocalDate occurrence = anniversary.nextOccurrence(today);
+            String dedupeKey = REFERENCE_ANNIVERSARY + ":" + anniversary.getId() + ":" + occurrence;
+            List<User> members = membersByCouple.computeIfAbsent(anniversary.getCoupleId(), users::findByCoupleIdOrderById);
+            for (User member : members) {
+                if (notifications.existsByUserIdAndDedupeKey(member.getId(), dedupeKey)) continue;
+                notifications.save(reminder(anniversary, member.getId(), dedupeKey, daysUntil, occurrence));
+                created++;
+            }
+        }
+        return created;
+    }
+
+    private Notification reminder(Anniversary anniversary, Long userId, String dedupeKey,
+                                  long daysUntil, LocalDate occurrence) {
+        Notification value = new Notification();
+        value.setCoupleId(anniversary.getCoupleId());
+        value.setUserId(userId);
+        value.setType(TYPE_ANNIVERSARY_REMINDER);
+        value.setTitle(anniversary.getTitle());
+        value.setBody(reminderBody(daysUntil, occurrence));
+        value.setReferenceType(REFERENCE_ANNIVERSARY);
+        value.setReferenceId(anniversary.getId());
+        value.setDedupeKey(dedupeKey);
+        return value;
+    }
+
+    private String reminderBody(long daysUntil, LocalDate occurrence) {
+        if (daysUntil == 0) return "今天就是这个重要的日子啦，记得好好庆祝 ❤️";
+        return "还有 " + daysUntil + " 天（" + occurrence + "），一起期待吧。";
+    }
+}

@@ -32,6 +32,7 @@ app:
   cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   media-max-bytes: ${MEDIA_MAX_BYTES:209715200}
   media-total-max-bytes: ${MEDIA_TOTAL_MAX_BYTES:2147483648}
+  media-min-free-bytes: ${MEDIA_MIN_FREE_BYTES:67108864}
   security:
     password-reset:
       max-attempts-per-ip: ${PASSWORD_RESET_MAX_ATTEMPTS_PER_IP:20}

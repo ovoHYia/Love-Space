@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -38,23 +39,28 @@ public class MediaStorageService {
     private final Path root;
     private final long maxBytes;
     private final long maxTotalBytes;
+    private final long minFreeBytes;
     private final MediaRepository media;
+    private final CoupleRepository couples;
     private final UserRepository users;
     private final CurrentUserService current;
     private final ViewMapper views;
+    private final MediaFileSystem fileSystem;
 
     public MediaStorageService(@Value("${app.upload-dir:./data/uploads}") String uploadDir,
                                @Value("${app.media-max-bytes:52428800}") long maxBytes,
                                @Value("${app.media-total-max-bytes:2147483648}") long maxTotalBytes,
-                               MediaRepository media, UserRepository users,
-                               CurrentUserService current, ViewMapper views) {
+                               @Value("${app.media-min-free-bytes:67108864}") long minFreeBytes,
+                               MediaRepository media, CoupleRepository couples, UserRepository users,
+                               CurrentUserService current, ViewMapper views, MediaFileSystem fileSystem) {
         this.root = Path.of(uploadDir).toAbsolutePath().normalize();
-        this.maxBytes = maxBytes; this.maxTotalBytes = maxTotalBytes;
-        this.media = media; this.users = users; this.current = current; this.views = views;
+        this.maxBytes = maxBytes; this.maxTotalBytes = maxTotalBytes; this.minFreeBytes = minFreeBytes;
+        this.media = media; this.couples = couples; this.users = users;
+        this.current = current; this.views = views; this.fileSystem = fileSystem;
     }
 
     @PostConstruct
-    void initializeDirectory() throws IOException { Files.createDirectories(root); }
+    void initializeDirectory() throws IOException { fileSystem.createDirectories(root); }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public MediaView updateAvatar(Authentication auth, MultipartFile file) {
@@ -73,19 +79,25 @@ public class MediaStorageService {
         return views.media(stored);
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
     public Media store(User owner, Long memoryId, MultipartFile file) {
         String detectedContentType = validate(file);
-        long usedBytes = media.totalBytesByCoupleId(owner.getCouple().getId());
+        Long coupleId = owner.getCouple().getId();
+        couples.findByIdForUpdate(coupleId)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.CONFLICT, "STORAGE_OWNER_MISSING", "情侣空间不存在"));
+        long usedBytes = media.totalBytesByCoupleId(coupleId);
         if (file.getSize() > maxTotalBytes - usedBytes) {
             throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "STORAGE_QUOTA_EXCEEDED",
                     "情侣空间的媒体存储额度已满");
         }
+        requireDiskCapacity(file.getSize());
         String storedName = UUID.randomUUID().toString();
         Path target = safeResolve(storedName);
         try (InputStream input = file.getInputStream()) {
-            Files.copy(input, target);
+            fileSystem.copy(input, target);
             Media value = new Media();
-            value.setCoupleId(owner.getCouple().getId());
+            value.setCoupleId(coupleId);
             value.setOwnerId(owner.getId());
             value.setMemoryId(memoryId);
             value.setStoredName(storedName);
@@ -97,8 +109,11 @@ public class MediaStorageService {
             deleteOnRollback(target);
             return saved;
         } catch (IOException | RuntimeException ex) {
-            try { Files.deleteIfExists(target); } catch (IOException ignored) { }
+            try { fileSystem.deleteIfExists(target); } catch (IOException ignored) { }
             if (ex instanceof ApiException api) throw api;
+            if (ex instanceof IOException && hasInsufficientDiskSpace(file.getSize())) {
+                throw insufficientStorage();
+            }
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "FILE_STORAGE_ERROR", "保存上传文件失败");
         }
     }
@@ -119,7 +134,7 @@ public class MediaStorageService {
         Media value = media.findAccessibleByIdAndCoupleId(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("媒体不存在"));
         Path path = safeResolve(value.getStoredName());
-        if (!Files.isRegularFile(path)) throw ApiException.notFound("媒体文件不存在");
+        if (!fileSystem.isRegularFile(path)) throw ApiException.notFound("媒体文件不存在");
         return new MediaDownload(value, new FileSystemResource(path.toFile()));
     }
 
@@ -129,7 +144,7 @@ public class MediaStorageService {
 
     public Optional<Resource> loadForExport(Media value) {
         Path path = safeResolve(value.getStoredName());
-        return Files.isRegularFile(path) ? Optional.of(new FileSystemResource(path.toFile())) : Optional.empty();
+        return fileSystem.isRegularFile(path) ? Optional.of(new FileSystemResource(path.toFile())) : Optional.empty();
     }
 
     public void deletePhysicalAfterCommit(Media value) {
@@ -154,10 +169,38 @@ public class MediaStorageService {
 
     private void deletePath(Path path) {
         try {
-            Files.deleteIfExists(path);
+            fileSystem.deleteIfExists(path);
         } catch (IOException ex) {
             log.warn("Could not delete media file {}. It can be removed during maintenance.", path.getFileName(), ex);
         }
+    }
+
+    private void requireDiskCapacity(long incomingBytes) {
+        try {
+            long usableBytes = fileSystem.usableSpace(root);
+            if (incomingBytes > usableBytes || minFreeBytes > usableBytes - incomingBytes) {
+                throw insufficientStorage();
+            }
+        } catch (ApiException ex) {
+            throw ex;
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "STORAGE_CHECK_FAILED",
+                    "无法检查服务器存储空间");
+        }
+    }
+
+    private boolean hasInsufficientDiskSpace(long incomingBytes) {
+        try {
+            long usableBytes = fileSystem.usableSpace(root);
+            return incomingBytes > usableBytes || minFreeBytes > usableBytes - incomingBytes;
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
+    private ApiException insufficientStorage() {
+        return new ApiException(HttpStatus.INSUFFICIENT_STORAGE, "INSUFFICIENT_STORAGE",
+                "服务器存储空间不足，请联系管理员");
     }
 
     private String validate(MultipartFile file) {

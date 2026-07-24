@@ -10,6 +10,12 @@ $ErrorActionPreference = "Stop"
 $root = Get-ProjectRoot
 $jar = Join-Path $root "backend\target\love-space-backend-1.0.0.jar"
 Import-ProjectEnv -Path (Join-Path $root ".env")
+$activeProfiles = Get-EnvValue -Name "SPRING_PROFILES_ACTIVE"
+$isProduction = @($activeProfiles -split "\s*,\s*") -contains "prod"
+
+if ($isProduction -and $Lan) {
+    throw "生产环境禁止使用 -Lan；请保持 Spring Boot 仅监听回环地址，并通过 HTTPS 反向代理提供服务。"
+}
 
 if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) {
     throw "Cannot find $jar. Run: powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1"
@@ -47,6 +53,9 @@ elseif ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SERV
 
 $port = Get-EnvValue -Name "SERVER_PORT" -Default "8080"
 $listenAddress = Get-EnvValue -Name "SERVER_ADDRESS" -Default "127.0.0.1"
+if ($isProduction -and $listenAddress -notin @("127.0.0.1", "::1", "localhost")) {
+    throw "生产环境 SERVER_ADDRESS 必须是回环地址，当前值：$listenAddress"
+}
 Write-Host "Starting the Love Space single JAR..." -ForegroundColor Cyan
 if ($listenAddress -eq "0.0.0.0") {
     Write-Host "LAN mode is enabled. Open http://YOUR-PC-LAN-IP:$port on your phone." -ForegroundColor Yellow

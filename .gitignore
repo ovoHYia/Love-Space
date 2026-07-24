@@ -15,6 +15,7 @@ frontend/dist/
 frontend/.vite/
 
 # Local logs, backups, and temporary files
+.workbuddy/
 work/logs/
 outputs/
 graphify-out/

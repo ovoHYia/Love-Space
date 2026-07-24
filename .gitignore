@@ -16,7 +16,8 @@ frontend/.vite/
 
 # Local logs, backups, and temporary files
 .workbuddy/
-work/logs/
+work/
+启动LoveSpace.ps1
 outputs/
 graphify-out/
 *.log

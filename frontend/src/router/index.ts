@@ -14,6 +14,7 @@ import DataManagementView from '../views/DataManagementView.vue'
 import CalendarView from '../views/CalendarView.vue'
 import ReportsView from '../views/ReportsView.vue'
 import NotificationsView from '../views/NotificationsView.vue'
+import GamesView from '../views/GamesView.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -28,6 +29,7 @@ const router = createRouter({
         { path: 'reports', name: 'reports', component: ReportsView },
         { path: 'notifications', name: 'notifications', component: NotificationsView },
         { path: 'memories', name: 'memories', component: MemoriesView },
+        { path: 'games', name: 'games', component: GamesView },
         { path: 'diaries', name: 'diaries', component: DiariesView },
         { path: 'letters', name: 'letters', component: LettersView },
         { path: 'anniversaries', name: 'anniversaries', component: AnniversariesView },

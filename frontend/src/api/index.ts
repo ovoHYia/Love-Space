@@ -1,5 +1,5 @@
 import { download, jsonRequest, request } from './client'
-import type { AlbumItem, Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, Letter, MediaItem, Memory, MemoryTag, MonthlyReport, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
+import type { AlbumItem, Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, GameSession, GameStroke, GameType, Letter, MediaItem, Memory, MemoryTag, MonthlyReport, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
 
 export interface MemoryInput {
   title: string
@@ -97,4 +97,13 @@ export const api = {
   deleteReadNotifications: () => request<{ affected: number; unreadCount: number }>('/notifications/read', { method: 'DELETE' }),
   notificationPreferences: () => request<NotificationPreferences>('/notifications/preferences'),
   updateNotificationPreferences: (body: NotificationPreferences) => jsonRequest<NotificationPreferences>('/notifications/preferences', 'PUT', body),
+  games: () => request<GameSession[]>('/games'),
+  game: (id: GameSession['id']) => request<GameSession>(`/games/${id}`),
+  createGame: (gameType: GameType) => jsonRequest<GameSession>('/games', 'POST', { gameType }),
+  answerGame: (id: GameSession['id'], answer: string) => jsonRequest<GameSession>(`/games/${id}/answer`, 'POST', { answer }),
+  addGameStrokes: (id: GameSession['id'], strokes: GameStroke[]) => jsonRequest<GameSession>(`/games/${id}/strokes`, 'POST', { strokes }),
+  clearGameCanvas: (id: GameSession['id']) => request<GameSession>(`/games/${id}/canvas`, { method: 'DELETE' }),
+  guessGame: (id: GameSession['id'], guess: string) => jsonRequest<GameSession>(`/games/${id}/guess`, 'POST', { guess }),
+  nextGameRound: (id: GameSession['id']) => request<GameSession>(`/games/${id}/next`, { method: 'POST' }),
+  finishGame: (id: GameSession['id']) => request<GameSession>(`/games/${id}/finish`, { method: 'PATCH' }),
 }

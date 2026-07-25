@@ -53,7 +53,7 @@ class DataManagementIntegrationTest {
     @BeforeEach
     void reset() throws Exception {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        for (String table : new String[]{"memory_tags", "notification_preferences", "notifications", "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
+        for (String table : new String[]{"game_sessions", "memory_tags", "notification_preferences", "notifications", "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media", "memories", "moods", "users", "couples"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
         }
         jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
@@ -150,6 +150,10 @@ class DataManagementIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"未来秘密\",\"deliverAt\":\"2029-01-01T08:00:00\"}"))
                 .andExpect(status().isCreated());
+        mvc.perform(post("/api/games").with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"gameType\":\"DRAW_GUESS\"}"))
+                .andExpect(status().isCreated());
 
         MvcResult started = mvc.perform(get("/api/data/export").session(alice))
                 .andExpect(request().asyncStarted())
@@ -169,6 +173,9 @@ class DataManagementIntegrationTest {
         assertTrue(json.contains("夏日记录"));
         assertTrue(json.contains("周末约会"));
         assertTrue(json.contains("\"calendarEvents\""));
+        assertTrue(json.contains("\"games\""));
+        assertTrue(json.contains("DRAW_GUESS"));
+        assertFalse(json.contains("奶茶"));
         assertFalse(json.contains("未来秘密"));
         assertFalse(json.contains("passwordHash"));
         assertFalse(json.contains("alice-pass-123"));

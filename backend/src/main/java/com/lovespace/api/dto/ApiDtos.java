@@ -149,6 +149,29 @@ public final class ApiDtos {
             boolean anniversaryEnabled, boolean letterEnabled, boolean wishEnabled,
             LocalDateTime updatedAt) {}
 
+    public record GameCreateRequest(
+            @NotBlank @Pattern(regexp = "TACIT_QUIZ|DRAW_GUESS") String gameType) {}
+    public record GameAnswerRequest(@NotBlank @Size(max = 80) String answer) {}
+    public record GameGuessRequest(@NotBlank @Size(max = 80) String guess) {}
+    public record GamePointRequest(
+            @DecimalMin("0.0") @DecimalMax("1.0") double x,
+            @DecimalMin("0.0") @DecimalMax("1.0") double y) {}
+    public record GameStrokeRequest(
+            @NotBlank @Pattern(regexp = "^#[0-9A-Fa-f]{6}$") String color,
+            @DecimalMin("1.0") @DecimalMax("24.0") double width,
+            @NotEmpty @Size(max = 120) List<@Valid GamePointRequest> points) {}
+    public record GameStrokeBatchRequest(
+            @NotEmpty @Size(max = 12) List<@Valid GameStrokeRequest> strokes) {}
+    public record GameGuessView(Long userId, String nickname, String text,
+                                boolean correct, LocalDateTime createdAt) {}
+    public record GameSessionView(
+            Long id, String gameType, String status, Long createdBy, String createdByNickname,
+            int roundNumber, Long currentTurnUserId, String prompt, List<String> options,
+            String myAnswer, String partnerAnswer, boolean answersRevealed, Boolean matched,
+            int score, String secretWord, List<GameStrokeRequest> strokes,
+            List<GameGuessView> guesses, boolean roundComplete,
+            LocalDateTime createdAt, LocalDateTime updatedAt, LocalDateTime finishedAt) {}
+
     public record DashboardResponse(MeResponse account, List<MoodView> todayMoods,
                                     List<MemoryView> recentMemories, List<DiaryView> recentDiaries,
                                     List<MessageView> recentMessages,

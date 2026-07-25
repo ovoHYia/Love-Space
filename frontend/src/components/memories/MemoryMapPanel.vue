@@ -3,16 +3,20 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as L from 'leaflet'
 import { MapPin, Pencil } from 'lucide-vue-next'
 import EmptyState from '../EmptyState.vue'
+import { useToast } from '../../composables/toast'
 import type { Memory } from '../../types'
 import { formatDate } from '../../utils'
-import { createMemoryMarkerIcon, createMemoryTileLayer, MEMORY_MAP_CENTER } from '../../utils/memoryMap'
+import { createMemoryMarkerIcon, createMemoryTileLayer, MEMORY_MAP_CENTER, synchronizeMapSize } from '../../utils/memoryMap'
 
 const props = defineProps<{ memories: Memory[] }>()
 const emit = defineEmits<{ create: []; edit: [memory: Memory] }>()
+const { show } = useToast()
 const mapElement = ref<HTMLElement | null>(null)
 const selected = ref<Memory | null>(props.memories[0] || null)
 let map: L.Map | null = null
 let layer: L.LayerGroup | null = null
+let stopMapSizeSync: (() => void) | null = null
+let tileFailureShown = false
 
 onMounted(renderMap)
 onBeforeUnmount(destroyMap)
@@ -30,7 +34,12 @@ function renderMap() {
   if (!mapElement.value || !props.memories.length) return
   if (!map) {
     map = L.map(mapElement.value, { zoomControl: true }).setView(MEMORY_MAP_CENTER, 4)
-    createMemoryTileLayer().addTo(map)
+    createMemoryTileLayer(() => {
+      if (tileFailureShown) return
+      tileFailureShown = true
+      show('地图底图加载失败，请切换网络后重试；已保存的地点不会丢失。', 'error')
+    }).addTo(map)
+    stopMapSizeSync = synchronizeMapSize(map, mapElement.value)
     layer = L.layerGroup().addTo(map)
   }
   layer?.clearLayers()
@@ -45,7 +54,6 @@ function renderMap() {
     marker.addTo(layer!)
   })
   if (bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [45, 45], maxZoom: 14 })
-  window.setTimeout(() => map?.invalidateSize(), 0)
 }
 
 function focus(memory: Memory) {
@@ -54,9 +62,12 @@ function focus(memory: Memory) {
 }
 
 function destroyMap() {
+  stopMapSizeSync?.()
+  stopMapSizeSync = null
   map?.remove()
   map = null
   layer = null
+  tileFailureShown = false
 }
 </script>
 

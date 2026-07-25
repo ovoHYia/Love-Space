@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { BarChart3, CalendarDays, CalendarHeart, Feather, Heart, Home, Images, ListTodo, Mails as MailHeart, UserRound, Wifi, WifiOff } from 'lucide-vue-next'
+import { BarChart3, CalendarDays, CalendarHeart, Feather, Gamepad2, Heart, Home, Images, ListTodo, Mails as MailHeart, UserRound, Wifi, WifiOff } from 'lucide-vue-next'
 import BaseAvatar from './BaseAvatar.vue'
 import NotificationBell from './NotificationBell.vue'
 import { useToast } from '../composables/toast'
@@ -20,6 +20,7 @@ const nav = [
   { to: '/calendar', label: '日历', icon: CalendarDays, name: 'calendar' },
   { to: '/reports', label: '月报', icon: BarChart3, name: 'reports' },
   { to: '/memories', label: '回忆', icon: Images, name: 'memories' },
+  { to: '/games', label: '一起玩', icon: Gamepad2, name: 'games' },
   { to: '/diaries', label: '日记', icon: Feather, name: 'diaries' },
   { to: '/letters', label: '信笺', icon: MailHeart, name: 'letters' },
   { to: '/anniversaries', label: '日子', icon: CalendarHeart, name: 'anniversaries' },
@@ -57,8 +58,9 @@ async function refreshAuthAfterSync() {
 
 function handleSync(event: Event) {
   const detail = (event as CustomEvent<{ resource?: string }>).detail
-  syncRevision.value++
   void refreshUnreadCount()
+  if (detail?.resource === 'games') return
+  syncRevision.value++
   if (detail?.resource === 'profile' || detail?.resource === 'space') {
     void refreshAuthAfterSync()
   }

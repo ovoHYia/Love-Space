@@ -59,6 +59,7 @@ if ($isProduction -and $listenAddress -notin @("127.0.0.1", "::1", "localhost"))
 Write-Host "Starting the Love Space single JAR..." -ForegroundColor Cyan
 if ($listenAddress -eq "0.0.0.0") {
     Write-Host "LAN mode is enabled. Open http://YOUR-PC-LAN-IP:$port on your phone." -ForegroundColor Yellow
+    Write-Host "手机浏览器定位需要 HTTPS；当前 LAN HTTP 模式下请手动点击地图选点，或改用 HTTPS 反向代理。" -ForegroundColor Yellow
     Write-Host "Use this only on a trusted private network and allow TCP $port only."
 }
 else {

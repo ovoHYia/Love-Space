@@ -9,6 +9,7 @@ Love Space 是一个面向两个人的私密共享空间，用来记录和管理
 - 日历、纪念日、月报和愿望清单
 - 回忆、相册、地图、标签和媒体上传
 - 日记、信笺和通知中心
+- 双人游戏中心、默契问答和你画我猜
 - 个人资料、头像、密码修改与数据导出
 - 回收站和数据恢复
 - CSRF 防护、会话认证、账号/密码恢复限流
@@ -152,6 +153,8 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 
 生产环境不要使用 `-Lan`，也不要把 Spring Boot 的 8080 端口直接暴露到公网。应由 Nginx、Caddy 或其他反向代理监听 443，并将请求转发到 `127.0.0.1:8080`。前端静态资源已经打进 JAR，反向代理可以直接代理应用入口和 `/api` 请求。
 
+手机浏览器的网页定位要求 HTTPS 安全上下文。`start.ps1 -Lan` 提供的局域网 HTTP 地址只适合临时联调，手机端可浏览页面和手动点击地图选点，但浏览器可能直接拒绝自动定位。
+
 示意拓扑：
 
 ```text
@@ -171,6 +174,9 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 - `MEDIA_MAX_BYTES`、`MEDIA_TOTAL_MAX_BYTES`：上传配额
 - `CORS_ALLOWED_ORIGINS`：允许的前端来源
 - `VITE_API_BASE_URL`：前端 API 基础路径
+- `VITE_MAP_TILE_URL`、`VITE_MAP_TILE_ATTRIBUTION`：地图瓦片服务地址及署名；部署网络无法访问默认服务时可替换
+
+`VITE_*` 变量会在前端构建时写入静态资源。修改地图瓦片地址后必须重新执行 `scripts/build.ps1` 并重新部署 JAR，仅重启服务不会生效。若只有部分浏览器显示空白地图，可先在该浏览器直接打开 `https://tile.openstreetmap.org/0/0/0.png`：无法打开通常表示设备网络、DNS 或浏览器隐私策略拦截了第三方瓦片域名，此时应换用部署网络可达且授权条款允许的瓦片服务。
 
 密码恢复口令应使用随机生成值，并通过 [scripts/rotate-password-reset-token.ps1](scripts/rotate-password-reset-token.ps1) 轮换。不要把真实 `.env`、数据库、上传文件、日志、构建产物或证书私钥提交到仓库。
 

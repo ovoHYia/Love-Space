@@ -47,7 +47,7 @@ class MediaStorageConcurrencyIntegrationTest {
     @BeforeEach
     void reset() throws Exception {
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        for (String table : new String[]{"memory_tags", "notification_preferences", "notifications",
+        for (String table : new String[]{"game_sessions", "memory_tags", "notification_preferences", "notifications",
                 "calendar_events", "wishes", "anniversaries", "messages", "diaries", "media",
                 "memories", "moods", "users", "couples"}) {
             jdbc.execute("TRUNCATE TABLE " + table);

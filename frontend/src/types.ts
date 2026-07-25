@@ -132,6 +132,52 @@ export interface SyncEvent {
   occurredAt: string
 }
 
+export type GameType = 'TACIT_QUIZ' | 'DRAW_GUESS'
+export type GameStatus = 'ACTIVE' | 'FINISHED'
+
+export interface GamePoint {
+  x: number
+  y: number
+}
+
+export interface GameStroke {
+  color: string
+  width: number
+  points: GamePoint[]
+}
+
+export interface GameGuess {
+  userId: number | string
+  nickname: string
+  text: string
+  correct: boolean
+  createdAt: string
+}
+
+export interface GameSession {
+  id: number | string
+  gameType: GameType
+  status: GameStatus
+  createdBy: number | string
+  createdByNickname: string
+  roundNumber: number
+  currentTurnUserId?: number | string | null
+  prompt?: string | null
+  options: string[]
+  myAnswer?: string | null
+  partnerAnswer?: string | null
+  answersRevealed: boolean
+  matched?: boolean | null
+  score: number
+  secretWord?: string | null
+  strokes: GameStroke[]
+  guesses: GameGuess[]
+  roundComplete: boolean
+  createdAt: string
+  updatedAt: string
+  finishedAt?: string | null
+}
+
 export interface Diary {
   id: number | string
   title: string

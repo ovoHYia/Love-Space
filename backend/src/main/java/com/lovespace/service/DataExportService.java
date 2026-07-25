@@ -35,6 +35,7 @@ public class DataExportService {
     private final CalendarEventRepository calendarEvents;
     private final NotificationRepository notifications;
     private final NotificationPreferenceRepository notificationPreferences;
+    private final GameSessionRepository gameSessions;
     private final MediaStorageService storage;
     private final ObjectMapper objectMapper;
 
@@ -43,6 +44,7 @@ public class DataExportService {
                              LetterMessageRepository messages, AnniversaryRepository anniversaries,
                              WishRepository wishes, CalendarEventRepository calendarEvents,
                              NotificationRepository notifications, NotificationPreferenceRepository notificationPreferences,
+                             GameSessionRepository gameSessions,
                              MediaStorageService storage,
                              ObjectMapper objectMapper) {
         this.current = current;
@@ -57,6 +59,7 @@ public class DataExportService {
         this.calendarEvents = calendarEvents;
         this.notifications = notifications;
         this.notificationPreferences = notificationPreferences;
+        this.gameSessions = gameSessions;
         this.storage = storage;
         this.objectMapper = objectMapper;
     }
@@ -80,7 +83,7 @@ public class DataExportService {
                         entry -> entry.getValue().orElseThrow(), (left, right) -> left, LinkedHashMap::new));
 
         Map<String, Object> export = new LinkedHashMap<>();
-        export.put("formatVersion", 1);
+        export.put("formatVersion", 2);
         export.put("generatedAt", now);
         export.put("space", orderedMap(
                 "id", coupleId,
@@ -210,6 +213,17 @@ public class DataExportService {
                         "wishEnabled", item.isWishEnabled(),
                         "updatedAt", item.getUpdatedAt()))
                 .orElse(null));
+        export.put("games", gameSessions.findByCoupleIdOrderById(coupleId).stream().map(item -> orderedMap(
+                "id", item.getId(),
+                "gameType", item.getGameType(),
+                "status", item.getStatus(),
+                "createdBy", item.getCreatedBy(),
+                "currentTurnUserId", item.getCurrentTurnUserId(),
+                "roundNumber", item.getRoundNumber(),
+                "stateJson", GameSession.STATUS_FINISHED.equals(item.getStatus()) ? item.getStateJson() : null,
+                "createdAt", item.getCreatedAt(),
+                "updatedAt", item.getUpdatedAt(),
+                "finishedAt", item.getFinishedAt())).toList());
 
         try (ZipOutputStream zip = new ZipOutputStream(output)) {
             zip.putNextEntry(new ZipEntry("love-space-data.json"));

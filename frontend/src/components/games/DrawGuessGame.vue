@@ -15,6 +15,7 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const color = ref('#c95868')
 const width = ref(5)
 const tool = ref<'DRAW' | 'ERASE'>('DRAW')
+const eraserPreview = ref<{ x: number; y: number; size: number } | null>(null)
 const guess = ref('')
 const busy = ref(false)
 const syncing = ref(false)
@@ -22,6 +23,7 @@ const currentStroke = ref<GameStroke | null>(null)
 const pendingStrokes: GameStroke[] = []
 const MAX_STROKE_POINTS = 480
 const MAX_BATCH_STROKES = 12
+const TOUCH_ERASER_OFFSET = 44
 let observer: ResizeObserver | null = null
 let activePointerId: number | null = null
 
@@ -29,6 +31,7 @@ const isDrawer = computed(() => sameId(props.session.currentTurnUserId, authStat
 const canDraw = computed(() => props.session.status === 'ACTIVE' && isDrawer.value && !props.session.roundComplete)
 const canGuess = computed(() => props.session.status === 'ACTIVE' && !isDrawer.value && !props.session.roundComplete)
 const drawerName = computed(() => isDrawer.value ? authState.user?.nickname : authState.partner?.nickname || 'TA')
+const eraserWidth = computed(() => Math.max(width.value, 14))
 
 onMounted(() => {
   observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resizeCanvas)
@@ -39,8 +42,12 @@ onBeforeUnmount(() => {
   observer?.disconnect()
   activePointerId = null
   currentStroke.value = null
+  eraserPreview.value = null
 })
 watch(() => props.session.strokes, () => void nextTick(redraw), { deep: true })
+watch(tool, (value) => {
+  if (value !== 'ERASE') eraserPreview.value = null
+})
 
 function resizeCanvas() {
   const element = canvas.value
@@ -80,11 +87,14 @@ function drawStroke(context: CanvasRenderingContext2D, stroke: GameStroke, rect:
   context.restore()
 }
 
-function pointFrom(event: PointerEvent): GamePoint {
+function pointFrom(event: PointerEvent, drawingTool: GameStroke['tool']): GamePoint {
   const rect = canvas.value!.getBoundingClientRect()
+  const touchOffset = drawingTool === 'ERASE' && event.pointerType === 'touch'
+    ? TOUCH_ERASER_OFFSET
+    : 0
   return {
     x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+    y: Math.max(0, Math.min(1, (event.clientY - rect.top - touchOffset) / rect.height)),
   }
 }
 
@@ -93,19 +103,22 @@ function startDrawing(event: PointerEvent) {
   event.preventDefault()
   activePointerId = event.pointerId
   canvas.value.setPointerCapture(event.pointerId)
+  const startPoint = pointFrom(event, tool.value)
   currentStroke.value = {
     tool: tool.value,
     color: color.value,
-    width: tool.value === 'ERASE' ? Math.max(width.value, 14) : width.value,
-    points: [pointFrom(event)],
+    width: tool.value === 'ERASE' ? eraserWidth.value : width.value,
+    points: [startPoint],
   }
+  updateEraserPreview(event, startPoint)
   redraw()
 }
 
 function continueDrawing(event: PointerEvent) {
   if (event.pointerId !== activePointerId || !currentStroke.value || !canvas.value) return
   event.preventDefault()
-  const next = pointFrom(event)
+  const next = pointFrom(event, currentStroke.value.tool)
+  updateEraserPreview(event, next)
   const previous = currentStroke.value.points.at(-1)
   if (previous && Math.hypot(next.x - previous.x, next.y - previous.y) < 0.002) return
   currentStroke.value.points.push(next)
@@ -120,6 +133,7 @@ function endDrawing(event: PointerEvent) {
   event.preventDefault()
   const stroke = { ...currentStroke.value, points: compactPoints(currentStroke.value.points) }
   currentStroke.value = null
+  eraserPreview.value = null
   releaseActivePointer(event.pointerId)
   pendingStrokes.push(stroke)
   redraw()
@@ -130,8 +144,22 @@ function cancelDrawing(event: PointerEvent) {
   if (event.pointerId !== activePointerId) return
   event.preventDefault()
   currentStroke.value = null
+  eraserPreview.value = null
   releaseActivePointer(event.pointerId)
   redraw()
+}
+
+function updateEraserPreview(event: PointerEvent, point: GamePoint) {
+  if (event.pointerType !== 'touch' || currentStroke.value?.tool !== 'ERASE' || !canvas.value) {
+    eraserPreview.value = null
+    return
+  }
+  const rect = canvas.value.getBoundingClientRect()
+  eraserPreview.value = {
+    x: point.x * rect.width,
+    y: point.y * rect.height,
+    size: currentStroke.value.width,
+  }
 }
 
 function releaseActivePointer(pointerId: number) {
@@ -229,6 +257,17 @@ async function nextRound() {
         @pointerup="endDrawing"
         @pointercancel="cancelDrawing"
       ></canvas>
+      <span
+        v-if="eraserPreview"
+        class="eraser-preview"
+        :style="{
+          left: `${eraserPreview.x}px`,
+          top: `${eraserPreview.y}px`,
+          width: `${eraserPreview.size}px`,
+          height: `${eraserPreview.size}px`,
+        }"
+        aria-hidden="true"
+      ></span>
       <span v-if="syncing" class="canvas-sync"><LoaderCircle class="spin" :size="13" />同步画笔</span>
     </div>
 
@@ -237,6 +276,10 @@ async function nextRound() {
       <button v-for="value in ['#c95868', '#374151', '#4f7c67', '#4169a1', '#e69a35']" :key="value" type="button" class="color-button" :class="{ active: tool === 'DRAW' && color === value }" :style="{ background: value }" :aria-label="`选择颜色 ${value}`" @click="color = value; tool = 'DRAW'"></button>
       <input v-model.number="width" type="range" min="2" max="24" :aria-label="tool === 'ERASE' ? '橡皮擦粗细' : '画笔粗细'" />
       <button class="tool-button" :class="{ active: tool === 'ERASE' }" type="button" @click="tool = 'ERASE'"><Eraser :size="16" />橡皮</button>
+      <span v-if="tool === 'ERASE'" class="eraser-size" aria-live="polite">
+        <i :style="{ width: `${eraserWidth}px`, height: `${eraserWidth}px` }"></i>
+        <small>{{ eraserWidth }} px</small>
+      </span>
       <button class="text-button" type="button" :disabled="busy || syncing" @click="clearCanvas"><Trash2 :size="16" />清空</button>
     </div>
 
@@ -264,15 +307,21 @@ async function nextRound() {
 .draw-score { min-width: 75px; display: grid; grid-template-columns: auto auto; align-items: center; justify-content: center; gap: 3px 6px; padding: 10px; border-radius: 15px; background: var(--sage-pale); color: #587052; }.draw-score small { grid-column: 1 / -1; text-align: center; font-size: 9px; }
 .canvas-shell { position: relative; overflow: hidden; border: 1px solid #e6d9d4; border-radius: 18px; background-color: #fffdfa; background-image: linear-gradient(#f4ece7 1px, transparent 1px), linear-gradient(90deg, #f4ece7 1px, transparent 1px); background-size: 24px 24px; box-shadow: inset 0 0 25px rgba(104,75,66,.04); }
 canvas { width: 100%; height: clamp(280px, 48dvh, 520px); display: block; touch-action: pan-y; }.drawable { cursor: crosshair; touch-action: none; }.drawable.erasing { cursor: cell; }
+.eraser-preview { position: absolute; z-index: 2; box-sizing: border-box; pointer-events: none; transform: translate(-50%, -50%); border: 2px solid rgba(55,65,81,.9); border-radius: 50%; background: rgba(255,255,255,.38); box-shadow: 0 0 0 2px rgba(255,255,255,.8), 0 2px 7px rgba(55,65,81,.22); }
+.eraser-preview::after { position: absolute; top: 100%; left: 50%; width: 2px; height: 30px; content: ''; transform: translateX(-50%); background: linear-gradient(rgba(55,65,81,.65), rgba(55,65,81,.08)); }
 .canvas-sync { position: absolute; right: 10px; top: 10px; display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 999px; background: rgba(255,255,255,.9); color: var(--muted); font-size: 9px; }
 .draw-tools { min-height: 45px; display: flex; align-items: center; gap: 8px; padding: 7px 9px; overflow-x: auto; border-radius: 13px; background: #f8f2ef; color: var(--muted); }
 .draw-tools .color-button { width: 28px; height: 28px; flex: 0 0 auto; border: 3px solid white; border-radius: 50%; cursor: pointer; box-shadow: 0 0 0 1px #d8cbc7; }.draw-tools .color-button.active { box-shadow: 0 0 0 2px var(--rose); }
 .draw-tools .tool-button { min-height: 31px; display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; padding: 5px 8px; border: 1px solid #ddcfca; border-radius: 9px; background: white; color: var(--muted); cursor: pointer; white-space: nowrap; }.draw-tools .tool-button.active { border-color: var(--rose); background: #fff0f2; color: var(--rose-dark); }
+.eraser-size { display: none; align-items: center; gap: 5px; flex: 0 0 auto; min-width: 52px; color: var(--muted); }.eraser-size i { box-sizing: border-box; display: block; flex: 0 0 auto; border: 2px solid #59616e; border-radius: 50%; background: rgba(255,255,255,.65); }.eraser-size small { white-space: nowrap; font-size: 9px; }
 .draw-tools input { min-width: 80px; flex: 1; }.draw-tools .text-button { white-space: nowrap; }
 .guess-form { display: flex; gap: 9px; }.guess-form input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: 13px; padding: 11px 13px; background: white; }
 .guess-history { display: flex; flex-wrap: wrap; gap: 6px; }.guess-history p { display: flex; align-items: center; gap: 5px; margin: 0; padding: 6px 9px; border-radius: 999px; background: #f5efec; color: var(--muted); font-size: 10px; }.guess-history p.correct { background: var(--sage-pale); color: #557050; }.guess-history strong { color: var(--ink); }
 .round-complete { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: 15px; background: linear-gradient(135deg, #fff0f2, #fff8e7); color: var(--rose-dark); }.round-complete > div { display: flex; align-items: center; gap: 9px; }.round-complete span { display: flex; flex-direction: column; }.round-complete small { margin-top: 2px; color: var(--muted); }
 .spin { animation: spin 1s linear infinite; }
+@media (hover: none), (pointer: coarse) {
+  .eraser-size { display: inline-flex; }
+}
 @media (max-width: 620px) {
   canvas { height: 330px; }.guess-form { align-items: stretch; }.guess-form .button { padding-left: 13px; padding-right: 13px; }.round-complete { align-items: stretch; flex-direction: column; }.round-complete .button { width: 100%; }
 }

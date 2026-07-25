@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { CheckCircle2, Eraser, LoaderCircle, Palette, Send } from 'lucide-vue-next'
+import { CheckCircle2, Eraser, LoaderCircle, Palette, Send, Trash2 } from 'lucide-vue-next'
 import { api } from '../../api'
 import { errorMessage } from '../../api/client'
 import { useToast } from '../../composables/toast'
@@ -14,12 +14,16 @@ const { show } = useToast()
 const canvas = ref<HTMLCanvasElement | null>(null)
 const color = ref('#c95868')
 const width = ref(5)
+const tool = ref<'DRAW' | 'ERASE'>('DRAW')
 const guess = ref('')
 const busy = ref(false)
 const syncing = ref(false)
 const currentStroke = ref<GameStroke | null>(null)
 const pendingStrokes: GameStroke[] = []
+const MAX_STROKE_POINTS = 480
+const MAX_BATCH_STROKES = 12
 let observer: ResizeObserver | null = null
+let activePointerId: number | null = null
 
 const isDrawer = computed(() => sameId(props.session.currentTurnUserId, authState.user?.id))
 const canDraw = computed(() => props.session.status === 'ACTIVE' && isDrawer.value && !props.session.roundComplete)
@@ -31,7 +35,11 @@ onMounted(() => {
   if (canvas.value) observer?.observe(canvas.value)
   void nextTick(resizeCanvas)
 })
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  activePointerId = null
+  currentStroke.value = null
+})
 watch(() => props.session.strokes, () => void nextTick(redraw), { deep: true })
 
 function resizeCanvas() {
@@ -57,6 +65,8 @@ function redraw() {
 
 function drawStroke(context: CanvasRenderingContext2D, stroke: GameStroke, rect: DOMRect) {
   if (!stroke.points.length) return
+  context.save()
+  context.globalCompositeOperation = stroke.tool === 'ERASE' ? 'destination-out' : 'source-over'
   context.beginPath()
   context.lineCap = 'round'
   context.lineJoin = 'round'
@@ -67,6 +77,7 @@ function drawStroke(context: CanvasRenderingContext2D, stroke: GameStroke, rect:
   stroke.points.slice(1).forEach((point) => context.lineTo(point.x * rect.width, point.y * rect.height))
   if (stroke.points.length === 1) context.lineTo(first.x * rect.width + 0.01, first.y * rect.height + 0.01)
   context.stroke()
+  context.restore()
 }
 
 function pointFrom(event: PointerEvent): GamePoint {
@@ -78,37 +89,69 @@ function pointFrom(event: PointerEvent): GamePoint {
 }
 
 function startDrawing(event: PointerEvent) {
-  if (!canDraw.value || !canvas.value) return
+  if (!canDraw.value || !canvas.value || activePointerId !== null) return
   event.preventDefault()
+  activePointerId = event.pointerId
   canvas.value.setPointerCapture(event.pointerId)
-  currentStroke.value = { color: color.value, width: width.value, points: [pointFrom(event)] }
+  currentStroke.value = {
+    tool: tool.value,
+    color: color.value,
+    width: tool.value === 'ERASE' ? Math.max(width.value, 14) : width.value,
+    points: [pointFrom(event)],
+  }
   redraw()
 }
 
 function continueDrawing(event: PointerEvent) {
-  if (!currentStroke.value || !canvas.value) return
+  if (event.pointerId !== activePointerId || !currentStroke.value || !canvas.value) return
   event.preventDefault()
   const next = pointFrom(event)
   const previous = currentStroke.value.points.at(-1)
   if (previous && Math.hypot(next.x - previous.x, next.y - previous.y) < 0.002) return
   currentStroke.value.points.push(next)
+  if (currentStroke.value.points.length > MAX_STROKE_POINTS * 2) {
+    currentStroke.value.points = compactPoints(currentStroke.value.points)
+  }
   redraw()
 }
 
 function endDrawing(event: PointerEvent) {
-  if (!currentStroke.value) return
+  if (event.pointerId !== activePointerId || !currentStroke.value) return
   event.preventDefault()
-  const stroke = currentStroke.value
+  const stroke = { ...currentStroke.value, points: compactPoints(currentStroke.value.points) }
   currentStroke.value = null
+  releaseActivePointer(event.pointerId)
   pendingStrokes.push(stroke)
   redraw()
   void flushStrokes()
 }
 
+function cancelDrawing(event: PointerEvent) {
+  if (event.pointerId !== activePointerId) return
+  event.preventDefault()
+  currentStroke.value = null
+  releaseActivePointer(event.pointerId)
+  redraw()
+}
+
+function releaseActivePointer(pointerId: number) {
+  const element = canvas.value
+  if (element?.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId)
+  activePointerId = null
+}
+
+function compactPoints(points: GamePoint[]): GamePoint[] {
+  if (points.length <= MAX_STROKE_POINTS) return points
+  return Array.from({ length: MAX_STROKE_POINTS }, (_, index) => {
+    const sourceIndex = Math.round(index * (points.length - 1) / (MAX_STROKE_POINTS - 1))
+    return points[sourceIndex]
+  })
+}
+
 async function flushStrokes() {
   if (syncing.value || !pendingStrokes.length) return
   syncing.value = true
-  const count = pendingStrokes.length
+  const count = Math.min(pendingStrokes.length, MAX_BATCH_STROKES)
   const batch = pendingStrokes.slice(0, count)
   try {
     const updated = await api.addGameStrokes(props.session.id, batch)
@@ -179,21 +222,22 @@ async function nextRound() {
     <div class="canvas-shell">
       <canvas
         ref="canvas"
-        :class="{ drawable: canDraw }"
+        :class="{ drawable: canDraw, erasing: canDraw && tool === 'ERASE' }"
         aria-label="你画我猜画布"
         @pointerdown="startDrawing"
         @pointermove="continueDrawing"
         @pointerup="endDrawing"
-        @pointercancel="endDrawing"
+        @pointercancel="cancelDrawing"
       ></canvas>
       <span v-if="syncing" class="canvas-sync"><LoaderCircle class="spin" :size="13" />同步画笔</span>
     </div>
 
     <div v-if="canDraw" class="draw-tools">
-      <Palette :size="18" />
-      <button v-for="value in ['#c95868', '#374151', '#4f7c67', '#4169a1', '#e69a35']" :key="value" type="button" :class="{ active: color === value }" :style="{ background: value }" :aria-label="`选择颜色 ${value}`" @click="color = value"></button>
-      <input v-model.number="width" type="range" min="2" max="14" aria-label="画笔粗细" />
-      <button class="text-button" type="button" :disabled="busy || syncing" @click="clearCanvas"><Eraser :size="16" />清空</button>
+      <button class="tool-button" :class="{ active: tool === 'DRAW' }" type="button" @click="tool = 'DRAW'"><Palette :size="16" />画笔</button>
+      <button v-for="value in ['#c95868', '#374151', '#4f7c67', '#4169a1', '#e69a35']" :key="value" type="button" class="color-button" :class="{ active: tool === 'DRAW' && color === value }" :style="{ background: value }" :aria-label="`选择颜色 ${value}`" @click="color = value; tool = 'DRAW'"></button>
+      <input v-model.number="width" type="range" min="2" max="24" :aria-label="tool === 'ERASE' ? '橡皮擦粗细' : '画笔粗细'" />
+      <button class="tool-button" :class="{ active: tool === 'ERASE' }" type="button" @click="tool = 'ERASE'"><Eraser :size="16" />橡皮</button>
+      <button class="text-button" type="button" :disabled="busy || syncing" @click="clearCanvas"><Trash2 :size="16" />清空</button>
     </div>
 
     <form v-if="canGuess" class="guess-form" @submit.prevent="submitGuess">
@@ -219,10 +263,11 @@ async function nextRound() {
 .draw-status span { color: var(--rose-dark); font-size: 11px; font-weight: 800; }.draw-status h2 { margin: 5px 0 0; font-size: clamp(21px, 4vw, 29px); }.draw-status h2 strong { color: var(--rose-dark); }
 .draw-score { min-width: 75px; display: grid; grid-template-columns: auto auto; align-items: center; justify-content: center; gap: 3px 6px; padding: 10px; border-radius: 15px; background: var(--sage-pale); color: #587052; }.draw-score small { grid-column: 1 / -1; text-align: center; font-size: 9px; }
 .canvas-shell { position: relative; overflow: hidden; border: 1px solid #e6d9d4; border-radius: 18px; background-color: #fffdfa; background-image: linear-gradient(#f4ece7 1px, transparent 1px), linear-gradient(90deg, #f4ece7 1px, transparent 1px); background-size: 24px 24px; box-shadow: inset 0 0 25px rgba(104,75,66,.04); }
-canvas { width: 100%; height: clamp(280px, 48dvh, 520px); display: block; touch-action: pan-y; }.drawable { cursor: crosshair; touch-action: none; }
+canvas { width: 100%; height: clamp(280px, 48dvh, 520px); display: block; touch-action: pan-y; }.drawable { cursor: crosshair; touch-action: none; }.drawable.erasing { cursor: cell; }
 .canvas-sync { position: absolute; right: 10px; top: 10px; display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 999px; background: rgba(255,255,255,.9); color: var(--muted); font-size: 9px; }
 .draw-tools { min-height: 45px; display: flex; align-items: center; gap: 8px; padding: 7px 9px; overflow-x: auto; border-radius: 13px; background: #f8f2ef; color: var(--muted); }
-.draw-tools > button:not(.text-button) { width: 28px; height: 28px; flex: 0 0 auto; border: 3px solid white; border-radius: 50%; cursor: pointer; box-shadow: 0 0 0 1px #d8cbc7; }.draw-tools > button.active { box-shadow: 0 0 0 2px var(--rose); }
+.draw-tools .color-button { width: 28px; height: 28px; flex: 0 0 auto; border: 3px solid white; border-radius: 50%; cursor: pointer; box-shadow: 0 0 0 1px #d8cbc7; }.draw-tools .color-button.active { box-shadow: 0 0 0 2px var(--rose); }
+.draw-tools .tool-button { min-height: 31px; display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; padding: 5px 8px; border: 1px solid #ddcfca; border-radius: 9px; background: white; color: var(--muted); cursor: pointer; white-space: nowrap; }.draw-tools .tool-button.active { border-color: var(--rose); background: #fff0f2; color: var(--rose-dark); }
 .draw-tools input { min-width: 80px; flex: 1; }.draw-tools .text-button { white-space: nowrap; }
 .guess-form { display: flex; gap: 9px; }.guess-form input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: 13px; padding: 11px 13px; background: white; }
 .guess-history { display: flex; flex-wrap: wrap; gap: 6px; }.guess-history p { display: flex; align-items: center; gap: 5px; margin: 0; padding: 6px 9px; border-radius: 999px; background: #f5efec; color: var(--muted); font-size: 10px; }.guess-history p.correct { background: var(--sage-pale); color: #557050; }.guess-history strong { color: var(--ink); }

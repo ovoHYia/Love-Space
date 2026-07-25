@@ -118,7 +118,7 @@ public class GameService {
         StoredGameState state = read(game);
         if (state.roundComplete()) throw ApiException.conflict("本轮已经猜中，请进入下一轮");
         List<GameStrokeRequest> strokes = new ArrayList<>(state.strokes());
-        strokes.addAll(input.strokes());
+        strokes.addAll(input.strokes().stream().map(this::normalizeStroke).toList());
         int points = strokes.stream().mapToInt(stroke -> stroke.points().size()).sum();
         if (strokes.size() > MAX_STROKES || points > MAX_POINTS) {
             throw ApiException.badRequest("画布内容过多，请清空后重新绘制");
@@ -263,18 +263,26 @@ public class GameService {
     private StoredGameState read(GameSession game) {
         try {
             StoredGameState state = objectMapper.readValue(game.getStateJson(), StoredGameState.class);
+            List<GameStrokeRequest> strokes = state.strokes() == null
+                    ? List.of()
+                    : state.strokes().stream().map(this::normalizeStroke).toList();
             return new StoredGameState(
                     state.prompt(),
                     state.options() == null ? List.of() : state.options(),
                     state.answers() == null ? Map.of() : state.answers(),
                     state.score(),
                     state.secretWord(),
-                    state.strokes() == null ? List.of() : state.strokes(),
+                    strokes,
                     state.guesses() == null ? List.of() : state.guesses(),
                     state.roundComplete());
         } catch (Exception ex) {
             throw new IllegalStateException("无法读取游戏状态", ex);
         }
+    }
+
+    private GameStrokeRequest normalizeStroke(GameStrokeRequest stroke) {
+        String tool = "ERASE".equals(stroke.tool()) ? "ERASE" : "DRAW";
+        return new GameStrokeRequest(tool, stroke.color(), stroke.width(), stroke.points());
     }
 
     private String write(StoredGameState state) {

@@ -157,9 +157,10 @@ public final class ApiDtos {
             @DecimalMin("0.0") @DecimalMax("1.0") double x,
             @DecimalMin("0.0") @DecimalMax("1.0") double y) {}
     public record GameStrokeRequest(
+            @Pattern(regexp = "DRAW|ERASE") String tool,
             @NotBlank @Pattern(regexp = "^#[0-9A-Fa-f]{6}$") String color,
-            @DecimalMin("1.0") @DecimalMax("24.0") double width,
-            @NotEmpty @Size(max = 120) List<@Valid GamePointRequest> points) {}
+            @DecimalMin("1.0") @DecimalMax("32.0") double width,
+            @NotEmpty @Size(max = 600) List<@Valid GamePointRequest> points) {}
     public record GameStrokeBatchRequest(
             @NotEmpty @Size(max = 12) List<@Valid GameStrokeRequest> strokes) {}
     public record GameGuessView(Long userId, String nickname, String text,

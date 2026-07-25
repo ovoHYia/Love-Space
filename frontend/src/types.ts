@@ -141,6 +141,7 @@ export interface GamePoint {
 }
 
 export interface GameStroke {
+  tool?: 'DRAW' | 'ERASE'
   color: string
   width: number
   points: GamePoint[]

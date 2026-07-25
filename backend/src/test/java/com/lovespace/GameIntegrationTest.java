@@ -112,7 +112,30 @@ class GameIntegrationTest {
                 .andExpect(status().isForbidden());
         mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
                         .contentType(MediaType.APPLICATION_JSON).content(stroke))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.strokes", hasSize(1)));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.strokes", hasSize(1)))
+                .andExpect(jsonPath("$.strokes[0].tool").value("DRAW"));
+
+        String eraserStroke = """
+                {"strokes":[{"tool":"ERASE","color":"#c95868","width":16,
+                "points":[{"x":0.2,"y":0.3},{"x":0.4,"y":0.5}]}]}
+                """;
+        mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON).content(eraserStroke))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.strokes", hasSize(2)))
+                .andExpect(jsonPath("$.strokes[1].tool").value("ERASE"));
+
+        String longPoints = java.util.stream.IntStream.range(0, 480)
+                .mapToObj(index -> "{\"x\":" + (index % 100) / 100.0
+                        + ",\"y\":" + (index % 80) / 80.0 + "}")
+                .collect(java.util.stream.Collectors.joining(","));
+        String longStroke = "{\"strokes\":[{\"tool\":\"DRAW\",\"color\":\"#374151\","
+                + "\"width\":4,\"points\":[" + longPoints + "]}]}";
+        mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON).content(longStroke))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.strokes", hasSize(3)));
 
         mvc.perform(post("/api/games/{id}/guess", gameId).with(csrf()).session(alice)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"guess\":\"奶茶\"}"))

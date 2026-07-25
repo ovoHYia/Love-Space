@@ -16,7 +16,7 @@ import { daysUntilAnniversary, formatDate, formatDateTime, sameId } from '../uti
 const { show } = useToast()
 const loading = ref(true)
 const loadError = ref('')
-const data = ref<DashboardPayload>({})
+const data = ref<DashboardPayload | null>(null)
 const now = ref(Date.now())
 const moodOpen = ref(false)
 const moodSaving = ref(false)
@@ -29,15 +29,15 @@ const moodChoices = [
   { emoji: '🥺', label: '想念' }, { emoji: '😴', label: '有点累' }, { emoji: '🌧️', label: '需要抱抱' },
 ]
 
-const user = computed(() => data.value.account?.user || data.value.currentUser || data.value.user || authState.user)
-const partner = computed(() => data.value.account?.partner || data.value.partner || authState.partner)
-const spaceName = computed(() => data.value.account?.couple?.spaceName || data.value.couple?.spaceName || data.value.spaceName || authState.spaceName)
-const startedAt = computed(() => data.value.account?.couple?.loveStartedAt || data.value.couple?.loveStartedAt || data.value.loveStartedAt || authState.loveStartedAt)
-const moods = computed(() => data.value.todayMoods || data.value.moods || [])
-const memories = computed(() => (data.value.recentMemories || []).slice(0, 3))
-const letters = computed<Letter[]>(() => data.value.recentMessages || data.value.latestMessages || (data.value.latestMessage ? [data.value.latestMessage] : []))
-const anniversaries = computed<Anniversary[]>(() => data.value.anniversaries || data.value.nextAnniversaries || (data.value.nextAnniversary ? [data.value.nextAnniversary] : []))
-const dueReminders = computed<Anniversary[]>(() => data.value.dueReminders || [])
+const user = computed(() => data.value?.account.user || authState.user)
+const partner = computed(() => data.value?.account.partner || authState.partner)
+const spaceName = computed(() => data.value?.account.couple.spaceName || authState.spaceName)
+const startedAt = computed(() => data.value?.account.couple.loveStartedAt || authState.loveStartedAt)
+const moods = computed(() => data.value?.todayMoods || [])
+const memories = computed(() => (data.value?.recentMemories || []).slice(0, 3))
+const letters = computed<Letter[]>(() => data.value?.recentMessages || [])
+const anniversaries = computed<Anniversary[]>(() => data.value?.anniversaries || [])
+const dueReminders = computed<Anniversary[]>(() => data.value?.dueReminders || [])
 const duration = computed(() => {
   const start = new Date(startedAt.value || '').getTime()
   let seconds = Math.max(0, Math.floor((now.value - start) / 1000))
@@ -64,11 +64,11 @@ async function load() {
 }
 
 function moodFor(id?: string | number): Mood | undefined {
-  return moods.value.find((mood) => sameId(mood.userId ?? mood.user?.id ?? mood.author?.id, id))
+  return moods.value.find((mood) => sameId(mood.userId, id))
 }
 
 function letterAuthorName(letter: Letter) {
-  return letter.authorNickname || letter.author?.nickname || letter.sender?.nickname || '心上人'
+  return letter.authorNickname || '心上人'
 }
 
 function letterPending(letter: Letter) {
@@ -120,19 +120,19 @@ function burst() {
 }
 
 function firstVisual(memory: Memory): MediaItem | undefined {
-  return [...(memory.media || []), ...(memory.files || [])].find((item) => {
-    const type = (item.contentType || item.mediaType || item.type || '').toLowerCase()
+  return memory.media.find((item) => {
+    const type = (item.contentType || item.mediaType).toLowerCase()
     return type.includes('image') || type.includes('video')
   })
 }
 
 function visualType(media?: MediaItem) {
-  const type = (media?.contentType || media?.mediaType || media?.type || '').toLowerCase()
+  const type = (media?.contentType || media?.mediaType || '').toLowerCase()
   return type.includes('video') ? 'video' : 'image'
 }
 
 function visualUrl(media?: MediaItem) {
-  return media ? mediaUrl(media.id || media.mediaId, media.url) : ''
+  return media ? mediaUrl(media.id, media.url) : ''
 }
 </script>
 

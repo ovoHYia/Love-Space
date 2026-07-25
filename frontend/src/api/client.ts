@@ -104,6 +104,15 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   return payload as T
 }
 
+export function jsonRequest<T>(
+  path: string,
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  body: unknown,
+  init: RequestInit = {},
+) {
+  return request<T>(path, { ...init, method, body: JSON.stringify(body) })
+}
+
 export async function download(path: string): Promise<{ blob: Blob; filename?: string }> {
   let response: Response
   try {
@@ -138,11 +147,6 @@ export function mediaUrl(id?: number | string | null, directUrl?: string | null)
 }
 
 export function resetCsrfToken() { csrfToken = '' }
-
-export function unwrapList<T>(payload: T[] | { content?: T[] } | undefined | null): T[] {
-  if (Array.isArray(payload)) return payload
-  return payload?.content || []
-}
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : '发生了一点小问题，请再试一次。'

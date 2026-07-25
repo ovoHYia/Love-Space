@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Bell, CalendarDays, CalendarHeart, CakeSlice, HeartHandshake, MapPinned, Pencil, Plus, RefreshCw, Sparkles, Star, Trash2 } from 'lucide-vue-next'
 import { api } from '../api'
-import { errorMessage, unwrapList } from '../api/client'
+import { errorMessage } from '../api/client'
 import { useToast } from '../composables/toast'
 import BaseModal from '../components/BaseModal.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -37,7 +37,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    anniversaries.value = unwrapList(await api.anniversaries())
+    anniversaries.value = await api.anniversaries()
   } catch (cause) {
     error.value = errorMessage(cause)
   } finally {

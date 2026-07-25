@@ -28,13 +28,13 @@ export const authState = reactive<AuthState>({
 let bootstrapPromise: Promise<void> | null = null
 
 export function applyAuth(payload: AuthPayload) {
-  const nextUser = payload.currentUser || payload.user || null
+  const nextUser = payload.user
   if (String(authState.user?.id ?? '') !== String(nextUser?.id ?? '')) resetNotifications()
   authState.user = nextUser
-  authState.partner = payload.partner || null
-  authState.spaceName = payload.couple?.spaceName || payload.spaceName || authState.spaceName
-  authState.loveStartedAt = payload.couple?.loveStartedAt || payload.loveStartedAt || authState.loveStartedAt
-  authState.authenticated = Boolean(authState.user)
+  authState.partner = payload.partner
+  authState.spaceName = payload.couple.spaceName
+  authState.loveStartedAt = payload.couple.loveStartedAt
+  authState.authenticated = true
 }
 
 export async function bootstrapAuth(force = false) {

@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { BookHeart, Feather, Heart, LockOpen, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-vue-next'
 import { api } from '../api'
-import { errorMessage, unwrapList } from '../api/client'
+import { errorMessage } from '../api/client'
 import { useToast } from '../composables/toast'
 import { authState } from '../stores/auth'
 import BaseAvatar from '../components/BaseAvatar.vue'
@@ -26,7 +26,7 @@ const form = reactive({ title: '', content: '', diaryDate: todayInput(), mood: '
 const moodOptions = ['开心', '温柔', '想念', '平静', '感动', '有点累', '需要抱抱']
 
 const filtered = computed(() => diaries.value.filter((diary) => {
-  const authorId = diary.author?.id ?? diary.authorId
+  const authorId = diary.authorId
   if (filter.value === 'mine' && !sameId(authorId, authState.user?.id)) return false
   if (filter.value === 'partner' && !sameId(authorId, authState.partner?.id)) return false
   const q = search.value.trim().toLowerCase()
@@ -39,7 +39,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    diaries.value = unwrapList(await api.diaries())
+    diaries.value = await api.diaries()
   } catch (cause) {
     error.value = errorMessage(cause)
   } finally {
@@ -59,11 +59,9 @@ function openEdit(diary: Diary) {
   modalOpen.value = true
 }
 
-function canEdit(diary: Diary) { return sameId(diary.author?.id ?? diary.authorId, authState.user?.id) }
-function authorOf(diary: Diary): UserProfile | undefined {
-  if (diary.author) return diary.author
-  if (diary.authorNickname) return { id: diary.authorId ?? '', nickname: diary.authorNickname }
-  return canEdit(diary) ? authState.user || undefined : authState.partner || undefined
+function canEdit(diary: Diary) { return sameId(diary.authorId, authState.user?.id) }
+function authorOf(diary: Diary): UserProfile {
+  return { id: diary.authorId, nickname: diary.authorNickname }
 }
 
 async function save() {

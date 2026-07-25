@@ -2,23 +2,19 @@ export interface UserProfile {
   id: number | string
   username?: string
   nickname: string
-  avatarMediaId?: number | string | null
   avatarUrl?: string | null
 }
 
 export interface CoupleSummary {
-  id?: number | string
-  spaceName?: string
-  loveStartedAt?: string
+  id: number | string
+  spaceName: string
+  loveStartedAt: string
 }
 
 export interface AuthPayload {
-  user?: UserProfile
-  currentUser?: UserProfile
-  partner?: UserProfile
-  couple?: CoupleSummary
-  spaceName?: string
-  loveStartedAt?: string
+  user: UserProfile
+  partner: UserProfile
+  couple: CoupleSummary
 }
 
 export interface Mood {
@@ -28,8 +24,6 @@ export interface Mood {
   emoji: string
   label: string
   note?: string
-  user?: UserProfile
-  author?: UserProfile
   updatedAt?: string
 }
 
@@ -91,15 +85,13 @@ export interface MonthlyReport {
 }
 
 export interface MediaItem {
-  id?: number | string
-  mediaId?: number | string
-  contentType?: string
-  mediaType?: string
-  type?: string
-  originalName?: string
-  url?: string
-  byteSize?: number
-  createdAt?: string
+  id: number | string
+  contentType: string
+  mediaType: string
+  originalName: string
+  url: string
+  byteSize: number
+  createdAt: string
 }
 
 export interface Memory {
@@ -112,11 +104,9 @@ export interface Memory {
   longitude?: number | null
   tags?: string[]
   createdAt?: string
-  author?: UserProfile
-  authorId?: number | string
-  authorNickname?: string
-  media?: MediaItem[]
-  files?: MediaItem[]
+  authorId: number | string
+  authorNickname: string
+  media: MediaItem[]
   updatedAt?: string
 }
 
@@ -148,9 +138,8 @@ export interface Diary {
   content: string
   diaryDate: string
   mood?: string
-  author?: UserProfile
-  authorId?: number | string
-  authorNickname?: string
+  authorId: number | string
+  authorNickname: string
   createdAt?: string
   updatedAt?: string
 }
@@ -159,17 +148,13 @@ export interface Letter {
   id: number | string
   content?: string | null
   createdAt: string
-  read?: boolean
-  isRead?: boolean
   readAt?: string | null
-  scheduled?: boolean
-  deliverAt?: string
-  author?: UserProfile
-  sender?: UserProfile
-  authorId?: number | string
-  authorNickname?: string
-  recipientId?: number | string
-  recipientNickname?: string
+  scheduled: boolean
+  deliverAt: string
+  authorId: number | string
+  authorNickname: string
+  recipientId: number | string
+  recipientNickname: string
 }
 
 export interface Anniversary {
@@ -274,33 +259,22 @@ export interface NotificationPreferences {
 }
 
 export interface DashboardPayload {
-  account?: AuthPayload
-  currentUser?: UserProfile
-  user?: UserProfile
-  partner?: UserProfile
-  couple?: CoupleSummary
-  spaceName?: string
-  loveStartedAt?: string
-  moods?: Mood[]
-  todayMoods?: Mood[]
-  recentMemories?: Memory[]
-  latestMessages?: Letter[]
-  latestMessage?: Letter
-  recentMessages?: Letter[]
-  nextAnniversaries?: Anniversary[]
-  nextAnniversary?: Anniversary
-  anniversaries?: Anniversary[]
-  dueReminders?: Anniversary[]
-  randomMemory?: Memory
+  account: AuthPayload
+  todayMoods: Mood[]
+  recentMemories: Memory[]
+  recentDiaries: Diary[]
+  recentMessages: Letter[]
+  anniversaries: Anniversary[]
+  dueReminders: Anniversary[]
+  unreadMessages: number
 }
 
 export interface SpringPage<T> {
   content: T[]
-  totalPages?: number
-  totalElements?: number
-  page?: number
-  size?: number
-  first?: boolean
-  number?: number
-  last?: boolean
+  totalPages: number
+  totalElements: number
+  page: number
+  size: number
+  first: boolean
+  last: boolean
 }

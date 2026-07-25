@@ -10,7 +10,7 @@ import BaseModal from '../components/BaseModal.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import type { Letter, UserProfile } from '../types'
-import { formatDate, formatDateTime, sameId } from '../utils'
+import { formatDate, formatDateTime, sameId, toLocalDateTimeInput } from '../utils'
 
 const { show } = useToast()
 const letters = ref<Letter[]>([])
@@ -49,20 +49,13 @@ async function load() {
   }
 }
 
-function sender(letter: Letter): UserProfile | undefined {
-  if (letter.author || letter.sender) return letter.author || letter.sender
-  if (letter.authorNickname) return { id: letter.authorId ?? '', nickname: letter.authorNickname }
-  return sameId(letter.authorId, authState.user?.id) ? authState.user || undefined : authState.partner || undefined
+function sender(letter: Letter): UserProfile {
+  return { id: letter.authorId, nickname: letter.authorNickname }
 }
-function mine(letter: Letter) { return sameId(sender(letter)?.id ?? letter.authorId, authState.user?.id) }
-function unread(letter: Letter) { return !mine(letter) && !(letter.read || letter.isRead || letter.readAt) }
+function mine(letter: Letter) { return sameId(letter.authorId, authState.user?.id) }
+function unread(letter: Letter) { return !mine(letter) && !letter.readAt }
 function pending(letter: Letter) {
   return Boolean(letter.scheduled && letter.deliverAt && new Date(letter.deliverAt).getTime() > now.value)
-}
-
-function toLocalDateTimeInput(value: Date) {
-  const pad = (part: number) => String(part).padStart(2, '0')
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`
 }
 
 function openComposer() {
@@ -81,8 +74,6 @@ async function openLetter(letter: Letter) {
   try {
     const opened = await api.readMessage(letter.id)
     letter.content = opened.content
-    letter.read = true
-    letter.isRead = true
     letter.readAt = new Date().toISOString()
   } catch (cause) {
     show(errorMessage(cause), 'error')

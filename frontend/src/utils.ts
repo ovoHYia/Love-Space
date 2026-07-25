@@ -9,7 +9,7 @@ export function formatDateTime(value?: string) {
   return formatDate(value, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-export function toLocalDateTimeInput(value?: string) {
+export function toLocalDateTimeInput(value?: string | Date) {
   const date = value ? new Date(value) : new Date()
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
   return local.toISOString().slice(0, 16)

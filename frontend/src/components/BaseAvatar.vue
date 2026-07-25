@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { mediaUrl } from '../api/client'
 import type { UserProfile } from '../types'
 
 const props = withDefaults(defineProps<{ user?: UserProfile | null; size?: 'sm' | 'md' | 'lg' | 'xl' }>(), { size: 'md' })
-const src = computed(() => mediaUrl(props.user?.avatarMediaId, props.user?.avatarUrl))
+const src = computed(() => props.user?.avatarUrl || '')
 const initial = computed(() => props.user?.nickname?.trim().slice(0, 1) || '♡')
 </script>
 

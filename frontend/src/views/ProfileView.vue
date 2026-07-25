@@ -59,7 +59,7 @@ async function saveSpaceName() {
   spaceSaving.value = true
   try {
     const updated = await api.updateSpaceName(spaceName.value.trim())
-    authState.spaceName = updated.spaceName || spaceName.value.trim()
+    authState.spaceName = updated.spaceName
     spaceName.value = authState.spaceName
     show('空间名称已经更新。', 'success')
   } catch (cause) {

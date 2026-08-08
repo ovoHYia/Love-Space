@@ -5,6 +5,7 @@ import static com.lovespace.api.dto.ApiDtos.*;
 import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.GameSession;
 import com.lovespace.domain.User;
+import com.lovespace.repository.CoupleRepository;
 import com.lovespace.repository.GameSessionRepository;
 import com.lovespace.security.CurrentUserService;
 import java.time.LocalDateTime;
@@ -20,6 +21,7 @@ public class GameService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final int MAX_STROKES = 500;
     private static final int MAX_POINTS = 20_000;
+    private static final int MAX_STROKE_OPERATION_IDS = 100;
     private static final List<Question> QUESTIONS = List.of(
             new Question("周末最想和对方一起做什么？", List.of("宅家看电影", "去吃好吃的", "户外散步", "随性出发")),
             new Question("如果突然多出三天假期，最想怎么过？", List.of("去旅行", "回家休息", "逛吃逛吃", "一起学新东西")),
@@ -34,11 +36,14 @@ public class GameService {
     );
 
     private final GameSessionRepository games;
+    private final CoupleRepository couples;
     private final CurrentUserService current;
     private final ObjectMapper objectMapper;
 
-    public GameService(GameSessionRepository games, CurrentUserService current, ObjectMapper objectMapper) {
+    public GameService(GameSessionRepository games, CoupleRepository couples,
+                       CurrentUserService current, ObjectMapper objectMapper) {
         this.games = games;
+        this.couples = couples;
         this.current = current;
         this.objectMapper = objectMapper;
     }
@@ -63,12 +68,15 @@ public class GameService {
     public GameSessionView create(Authentication auth, GameCreateRequest input) {
         User user = current.user(auth);
         User partner = current.partner(user);
+        Long coupleId = user.getCouple().getId();
+        couples.findByIdForUpdate(coupleId)
+                .orElseThrow(() -> ApiException.conflict("情侣空间不存在"));
         Optional<GameSession> active = games.findFirstByCoupleIdAndGameTypeAndStatusOrderByUpdatedAtDesc(
-                user.getCouple().getId(), input.gameType(), GameSession.STATUS_ACTIVE);
+                coupleId, input.gameType(), GameSession.STATUS_ACTIVE);
         if (active.isPresent()) return view(active.get(), user, partner);
 
         GameSession game = new GameSession();
-        game.setCoupleId(user.getCouple().getId());
+        game.setCoupleId(coupleId);
         game.setGameType(input.gameType());
         game.setStatus(GameSession.STATUS_ACTIVE);
         game.setCreatedBy(user.getId());
@@ -78,12 +86,12 @@ public class GameService {
             game.setCurrentTurnUserId(null);
             game.setStateJson(write(new StoredGameState(
                     question.prompt(), question.options(), Map.of(), 0,
-                    null, List.of(), List.of(), false)));
+                    null, List.of(), List.of(), false, List.of())));
         } else {
             game.setCurrentTurnUserId(user.getId());
             game.setStateJson(write(new StoredGameState(
                     null, List.of(), Map.of(), 0,
-                    DRAW_WORDS.get(0), List.of(), List.of(), false)));
+                    DRAW_WORDS.get(0), List.of(), List.of(), false, List.of())));
         }
         return view(games.save(game), user, partner);
     }
@@ -95,6 +103,9 @@ public class GameService {
         GameSession game = findLocked(user, id);
         requireActiveType(game, GameSession.TYPE_TACIT_QUIZ);
         StoredGameState state = read(game);
+        if (state.answers().containsKey(user.getId())) {
+            throw ApiException.conflict("你已经回答过本题，请等待对方");
+        }
         if (state.answers().size() >= 2) throw ApiException.conflict("本轮答案已经揭晓，请进入下一题");
         String answer = input.answer().trim();
         if (!state.options().contains(answer)) throw ApiException.badRequest("请选择题目提供的答案");
@@ -104,7 +115,7 @@ public class GameService {
         if (answers.size() == 2 && Objects.equals(answers.get(user.getId()), answers.get(partner.getId()))) score++;
         saveState(game, new StoredGameState(
                 state.prompt(), state.options(), answers, score,
-                null, List.of(), List.of(), answers.size() == 2));
+                null, List.of(), List.of(), answers.size() == 2, state.appliedStrokeOperationIds()));
         return view(game, user, partner);
     }
 
@@ -115,32 +126,43 @@ public class GameService {
         GameSession game = findLocked(user, id);
         requireActiveType(game, GameSession.TYPE_DRAW_GUESS);
         requireDrawer(game, user);
+        requireRound(game, input.roundNumber());
         StoredGameState state = read(game);
         if (state.roundComplete()) throw ApiException.conflict("本轮已经猜中，请进入下一轮");
+        if (state.appliedStrokeOperationIds().contains(input.operationId())) {
+            return view(game, user, partner);
+        }
         List<GameStrokeRequest> strokes = new ArrayList<>(state.strokes());
         strokes.addAll(input.strokes().stream().map(this::normalizeStroke).toList());
         int points = strokes.stream().mapToInt(stroke -> stroke.points().size()).sum();
         if (strokes.size() > MAX_STROKES || points > MAX_POINTS) {
             throw ApiException.badRequest("画布内容过多，请清空后重新绘制");
         }
+        List<String> operationIds = new ArrayList<>(state.appliedStrokeOperationIds());
+        operationIds.add(input.operationId());
+        if (operationIds.size() > MAX_STROKE_OPERATION_IDS) {
+            operationIds = new ArrayList<>(operationIds.subList(
+                    operationIds.size() - MAX_STROKE_OPERATION_IDS, operationIds.size()));
+        }
         saveState(game, new StoredGameState(
                 null, List.of(), Map.of(), state.score(),
-                state.secretWord(), strokes, state.guesses(), false));
+                state.secretWord(), strokes, state.guesses(), false, operationIds));
         return view(game, user, partner);
     }
 
     @Transactional
-    public GameSessionView clearCanvas(Authentication auth, Long id) {
+    public GameSessionView clearCanvas(Authentication auth, Long id, int roundNumber) {
         User user = current.user(auth);
         User partner = current.partner(user);
         GameSession game = findLocked(user, id);
         requireActiveType(game, GameSession.TYPE_DRAW_GUESS);
         requireDrawer(game, user);
+        requireRound(game, roundNumber);
         StoredGameState state = read(game);
         if (state.roundComplete()) throw ApiException.conflict("本轮已经结束");
         saveState(game, new StoredGameState(
                 null, List.of(), Map.of(), state.score(),
-                state.secretWord(), List.of(), state.guesses(), false));
+                state.secretWord(), List.of(), state.guesses(), false, List.of()));
         return view(game, user, partner);
     }
 
@@ -162,7 +184,7 @@ public class GameService {
         if (guesses.size() > 20) guesses = new ArrayList<>(guesses.subList(guesses.size() - 20, guesses.size()));
         saveState(game, new StoredGameState(
                 null, List.of(), Map.of(), state.score() + (correct ? 1 : 0),
-                state.secretWord(), state.strokes(), guesses, correct));
+                state.secretWord(), state.strokes(), guesses, correct, state.appliedStrokeOperationIds()));
         return view(game, user, partner);
     }
 
@@ -180,7 +202,7 @@ public class GameService {
             Question question = QUESTIONS.get((nextRound - 1) % QUESTIONS.size());
             saveState(game, new StoredGameState(
                     question.prompt(), question.options(), Map.of(), state.score(),
-                    null, List.of(), List.of(), false));
+                    null, List.of(), List.of(), false, List.of()));
         } else {
             if (!state.roundComplete()) throw ApiException.conflict("猜中后才能进入下一轮");
             Long nextDrawer = Objects.equals(game.getCurrentTurnUserId(), user.getId())
@@ -188,7 +210,7 @@ public class GameService {
             game.setCurrentTurnUserId(nextDrawer);
             saveState(game, new StoredGameState(
                     null, List.of(), Map.of(), state.score(),
-                    DRAW_WORDS.get((nextRound - 1) % DRAW_WORDS.size()), List.of(), List.of(), false));
+                    DRAW_WORDS.get((nextRound - 1) % DRAW_WORDS.size()), List.of(), List.of(), false, List.of()));
         }
         return view(game, user, partner);
     }
@@ -228,6 +250,12 @@ public class GameService {
     private void requireDrawer(GameSession game, User user) {
         if (!Objects.equals(game.getCurrentTurnUserId(), user.getId())) {
             throw ApiException.forbidden("现在轮到对方作画");
+        }
+    }
+
+    private void requireRound(GameSession game, int roundNumber) {
+        if (game.getRoundNumber() != roundNumber) {
+            throw ApiException.conflict("画板局次已经变化，请刷新后重试");
         }
     }
 
@@ -274,7 +302,8 @@ public class GameService {
                     state.secretWord(),
                     strokes,
                     state.guesses() == null ? List.of() : state.guesses(),
-                    state.roundComplete());
+                    state.roundComplete(),
+                    state.appliedStrokeOperationIds() == null ? List.of() : state.appliedStrokeOperationIds());
         } catch (Exception ex) {
             throw new IllegalStateException("无法读取游戏状态", ex);
         }
@@ -302,5 +331,6 @@ public class GameService {
     public record StoredGameState(
             String prompt, List<String> options, Map<Long, String> answers, int score,
             String secretWord, List<GameStrokeRequest> strokes,
-            List<StoredGuess> guesses, boolean roundComplete) {}
+            List<StoredGuess> guesses, boolean roundComplete,
+            List<String> appliedStrokeOperationIds) {}
 }

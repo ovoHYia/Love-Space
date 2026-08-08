@@ -1,6 +1,7 @@
 package com.lovespace.service;
 
 import com.lovespace.domain.*;
+import com.lovespace.api.error.ApiException;
 import com.lovespace.repository.*;
 import com.lovespace.security.CurrentUserService;
 import java.io.IOException;
@@ -65,7 +66,7 @@ public class DataExportService {
     }
 
     @Transactional(readOnly = true)
-    public void writeZip(Authentication auth, OutputStream output) throws IOException {
+    public ExportBundle prepare(Authentication auth) {
         User user = current.user(auth);
         Long userId = user.getId();
         Long coupleId = user.getCouple().getId();
@@ -76,11 +77,17 @@ public class DataExportService {
         List<Media> visibleMedia = media.findByCoupleIdOrderById(coupleId).stream()
                 .filter(item -> item.getMemoryId() == null || visibleMemoryIds.contains(item.getMemoryId()))
                 .toList();
-        Map<Long, Resource> mediaResources = visibleMedia.stream()
-                .map(item -> Map.entry(item, storage.loadForExport(item)))
-                .filter(entry -> entry.getValue().isPresent())
-                .collect(Collectors.toMap(entry -> entry.getKey().getId(),
-                        entry -> entry.getValue().orElseThrow(), (left, right) -> left, LinkedHashMap::new));
+        Map<Long, Resource> mediaResources = new LinkedHashMap<>();
+        List<Long> missingMediaIds = new ArrayList<>();
+        for (Media item : visibleMedia) {
+            Optional<Resource> resource = storage.loadForExport(item);
+            if (resource.isPresent()) mediaResources.put(item.getId(), resource.orElseThrow());
+            else missingMediaIds.add(item.getId());
+        }
+        if (!missingMediaIds.isEmpty()) {
+            throw ApiException.conflict("导出检查发现媒体原文件缺失，请先修复存储完整性。缺失媒体 ID："
+                    + missingMediaIds.stream().map(String::valueOf).collect(Collectors.joining(", ")));
+        }
 
         Map<String, Object> export = new LinkedHashMap<>();
         export.put("formatVersion", 2);
@@ -128,7 +135,7 @@ public class DataExportService {
                 "contentType", item.getContentType(),
                 "mediaType", item.getMediaType(),
                 "byteSize", item.getByteSize(),
-                "archivePath", mediaResources.containsKey(item.getId()) ? archivePath(item) : null,
+                "archivePath", archivePath(item),
                 "createdAt", item.getCreatedAt())).toList());
         export.put("diaries", visible(diaries.findByCoupleIdOrderById(coupleId), userId).stream().map(item -> orderedMap(
                 "id", item.getId(),
@@ -225,15 +232,20 @@ public class DataExportService {
                 "updatedAt", item.getUpdatedAt(),
                 "finishedAt", item.getFinishedAt())).toList());
 
+        List<ExportMedia> mediaEntries = visibleMedia.stream()
+                .map(item -> new ExportMedia(archivePath(item), mediaResources.get(item.getId())))
+                .toList();
+        return new ExportBundle(Collections.unmodifiableMap(export), mediaEntries);
+    }
+
+    public void writeZip(ExportBundle bundle, OutputStream output) throws IOException {
         try (ZipOutputStream zip = new ZipOutputStream(output)) {
             zip.putNextEntry(new ZipEntry("love-space-data.json"));
-            zip.write(objectMapper.writeValueAsBytes(export));
+            zip.write(objectMapper.writeValueAsBytes(bundle.export()));
             zip.closeEntry();
-            for (Media item : visibleMedia) {
-                Resource resource = mediaResources.get(item.getId());
-                if (resource == null) continue;
-                zip.putNextEntry(new ZipEntry(archivePath(item)));
-                try (InputStream input = resource.getInputStream()) {
+            for (ExportMedia item : bundle.media()) {
+                zip.putNextEntry(new ZipEntry(item.archivePath()));
+                try (InputStream input = item.resource().getInputStream()) {
                     input.transferTo(zip);
                 }
                 zip.closeEntry();
@@ -264,4 +276,7 @@ public class DataExportService {
         for (int i = 0; i < values.length; i += 2) result.put((String) values[i], values[i + 1]);
         return result;
     }
+
+    public record ExportBundle(Map<String, Object> export, List<ExportMedia> media) {}
+    public record ExportMedia(String archivePath, Resource resource) {}
 }

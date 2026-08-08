@@ -162,6 +162,8 @@ public final class ApiDtos {
             @DecimalMin("1.0") @DecimalMax("32.0") double width,
             @NotEmpty @Size(max = 600) List<@Valid GamePointRequest> points) {}
     public record GameStrokeBatchRequest(
+            @Positive int roundNumber,
+            @NotBlank @Size(max = 80) String operationId,
             @NotEmpty @Size(max = 12) List<@Valid GameStrokeRequest> strokes) {}
     public record GameGuessView(Long userId, String nickname, String text,
                                 boolean correct, LocalDateTime createdAt) {}

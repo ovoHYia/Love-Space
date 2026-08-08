@@ -1,4 +1,4 @@
-import { download, jsonRequest, request } from './client'
+import { jsonRequest, request, startDownload } from './client'
 import type { AlbumItem, Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, GameSession, GameStroke, GameType, Letter, MediaItem, Memory, MemoryTag, MonthlyReport, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
 
 export interface MemoryInput {
@@ -78,7 +78,7 @@ export const api = {
   restoreTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}/restore`, { method: 'POST' }),
   purgeTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}`, { method: 'DELETE' }),
   emptyTrash: () => request<void>('/trash', { method: 'DELETE' }),
-  exportData: () => download('/data/export'),
+  exportData: () => startDownload('/data/export'),
   notifications: (query: { page?: number; size?: number; status?: string; category?: string; keyword?: string } = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => {
@@ -101,8 +101,10 @@ export const api = {
   game: (id: GameSession['id']) => request<GameSession>(`/games/${id}`),
   createGame: (gameType: GameType) => jsonRequest<GameSession>('/games', 'POST', { gameType }),
   answerGame: (id: GameSession['id'], answer: string) => jsonRequest<GameSession>(`/games/${id}/answer`, 'POST', { answer }),
-  addGameStrokes: (id: GameSession['id'], strokes: GameStroke[]) => jsonRequest<GameSession>(`/games/${id}/strokes`, 'POST', { strokes }),
-  clearGameCanvas: (id: GameSession['id']) => request<GameSession>(`/games/${id}/canvas`, { method: 'DELETE' }),
+  addGameStrokes: (id: GameSession['id'], roundNumber: number, operationId: string, strokes: GameStroke[]) =>
+    jsonRequest<GameSession>(`/games/${id}/strokes`, 'POST', { roundNumber, operationId, strokes }),
+  clearGameCanvas: (id: GameSession['id'], roundNumber: number) =>
+    request<GameSession>(`/games/${id}/canvas?roundNumber=${roundNumber}`, { method: 'DELETE' }),
   guessGame: (id: GameSession['id'], guess: string) => jsonRequest<GameSession>(`/games/${id}/guess`, 'POST', { guess }),
   nextGameRound: (id: GameSession['id']) => request<GameSession>(`/games/${id}/next`, { method: 'POST' }),
   finishGame: (id: GameSession['id']) => request<GameSession>(`/games/${id}/finish`, { method: 'PATCH' }),

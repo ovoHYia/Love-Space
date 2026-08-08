@@ -72,6 +72,10 @@ class GameIntegrationTest {
                 .andExpect(jsonPath("$.partnerAnswer").value(nullValue()))
                 .andExpect(jsonPath("$.answersRevealed").value(false));
 
+        mvc.perform(post("/api/games/{id}/answer", gameId).with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"answer\":\"去吃好吃的\"}"))
+                .andExpect(status().isConflict());
+
         mvc.perform(get("/api/games/{id}", gameId).session(bob))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myAnswer").value(nullValue()))
@@ -92,6 +96,17 @@ class GameIntegrationTest {
     }
 
     @Test
+    void creatingSameGameTypeReusesActiveSession() throws Exception {
+        long gameId = createGame(alice, "TACIT_QUIZ");
+
+        mvc.perform(post("/api/games").with(csrf()).session(bob)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"gameType\":\"TACIT_QUIZ\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(gameId));
+    }
+
+    @Test
     void drawingAndGuessingRespectRolesAndSwitchEachRound() throws Exception {
         long gameId = createGame(alice, "DRAW_GUESS");
 
@@ -104,7 +119,7 @@ class GameIntegrationTest {
                 .andExpect(jsonPath("$.secretWord").value(nullValue()));
 
         String stroke = """
-                {"strokes":[{"color":"#c95868","width":5,
+                {"roundNumber":1,"operationId":"stroke-1","strokes":[{"color":"#c95868","width":5,
                 "points":[{"x":0.1,"y":0.2},{"x":0.3,"y":0.4}]}]}
                 """;
         mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(bob)
@@ -115,9 +130,13 @@ class GameIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.strokes", hasSize(1)))
                 .andExpect(jsonPath("$.strokes[0].tool").value("DRAW"));
+        mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON).content(stroke))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.strokes", hasSize(1)));
 
         String eraserStroke = """
-                {"strokes":[{"tool":"ERASE","color":"#c95868","width":16,
+                {"roundNumber":1,"operationId":"stroke-2","strokes":[{"tool":"ERASE","color":"#c95868","width":16,
                 "points":[{"x":0.2,"y":0.3},{"x":0.4,"y":0.5}]}]}
                 """;
         mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
@@ -130,7 +149,7 @@ class GameIntegrationTest {
                 .mapToObj(index -> "{\"x\":" + (index % 100) / 100.0
                         + ",\"y\":" + (index % 80) / 80.0 + "}")
                 .collect(java.util.stream.Collectors.joining(","));
-        String longStroke = "{\"strokes\":[{\"tool\":\"DRAW\",\"color\":\"#374151\","
+        String longStroke = "{\"roundNumber\":1,\"operationId\":\"stroke-3\",\"strokes\":[{\"tool\":\"DRAW\",\"color\":\"#374151\","
                 + "\"width\":4,\"points\":[" + longPoints + "]}]}";
         mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
                         .contentType(MediaType.APPLICATION_JSON).content(longStroke))
@@ -155,6 +174,20 @@ class GameIntegrationTest {
                 .andExpect(jsonPath("$.roundNumber").value(2))
                 .andExpect(jsonPath("$.secretWord").value("玫瑰"))
                 .andExpect(jsonPath("$.strokes", hasSize(0)));
+
+        mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON).content(stroke))
+                .andExpect(status().isForbidden());
+        String staleRound = stroke.replace("\"roundNumber\":1", "\"roundNumber\":2")
+                .replace("\"operationId\":\"stroke-1\"", "\"operationId\":\"stale-round\"");
+        mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(bob)
+                        .contentType(MediaType.APPLICATION_JSON).content(staleRound))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(bob)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(staleRound.replace("\"roundNumber\":2", "\"roundNumber\":1")
+                                .replace("\"operationId\":\"stale-round\"", "\"operationId\":\"old-round\"")))
+                .andExpect(status().isConflict());
     }
 
     @Test

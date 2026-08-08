@@ -10,6 +10,7 @@ import MemoryEditorModal from '../components/memories/MemoryEditorModal.vue'
 import MemoryMapPanel from '../components/memories/MemoryMapPanel.vue'
 import MemoryTimeline from '../components/memories/MemoryTimeline.vue'
 import { useToast } from '../composables/toast'
+import { useResourceSync } from '../composables/resourceSync'
 import type { AlbumItem, MediaItem, Memory, MemoryTag } from '../types'
 import { memoryMediaType, memoryMediaUrl } from '../utils/memoryMedia'
 
@@ -39,6 +40,9 @@ const viewOptions = [
 ]
 
 onMounted(() => Promise.all([loadTimeline(), loadTags()]))
+useResourceSync(['memories', 'media'], async () => {
+  await Promise.all([loadCurrentView(), loadTags()])
+})
 watch(activeView, loadCurrentView)
 watch(() => filters.tag, loadCurrentView)
 

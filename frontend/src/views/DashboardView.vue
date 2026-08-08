@@ -10,6 +10,7 @@ import EmptyState from '../components/EmptyState.vue'
 import BaseModal from '../components/BaseModal.vue'
 import { authState } from '../stores/auth'
 import { useToast } from '../composables/toast'
+import { useResourceSync } from '../composables/resourceSync'
 import type { Anniversary, DashboardPayload, Letter, MediaItem, Memory, Mood } from '../types'
 import { daysUntilAnniversary, formatDate, formatDateTime, sameId } from '../utils'
 
@@ -49,6 +50,7 @@ const duration = computed(() => {
 
 let timer: number | undefined
 onMounted(() => { load(); timer = window.setInterval(() => { now.value = Date.now() }, 1000) })
+useResourceSync(['moods', 'memories', 'diaries', 'messages', 'anniversaries', 'wishes'], load)
 onUnmounted(() => window.clearInterval(timer))
 
 async function load() {

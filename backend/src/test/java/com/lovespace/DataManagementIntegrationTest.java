@@ -181,6 +181,32 @@ class DataManagementIntegrationTest {
         assertFalse(json.contains("alice-pass-123"));
     }
 
+    @Test
+    void exportFailsBeforeStreamingWhenAStoredMediaFileIsMissing() throws Exception {
+        long memoryId = createMemory("缺失文件检查");
+        String storedName = jdbc.queryForObject(
+                "select stored_name from media where memory_id = ?", String.class, memoryId);
+        Files.delete(Path.of(uploadDir).resolve(storedName));
+
+        mvc.perform(get("/api/data/export").session(alice))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("媒体原文件缺失")));
+    }
+
+    @Test
+    void onlyOneExportCanStreamAtATime() throws Exception {
+        createMemory("并发导出检查");
+        MvcResult first = mvc.perform(get("/api/data/export").session(alice))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mvc.perform(get("/api/data/export").session(bob))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("EXPORT_BUSY"));
+
+        mvc.perform(asyncDispatch(first)).andExpect(status().isOk());
+    }
+
     private void restore(String type, long id) throws Exception {
         mvc.perform(post("/api/trash/{type}/{id}/restore", type, id).with(csrf()).session(alice))
                 .andExpect(status().isNoContent());

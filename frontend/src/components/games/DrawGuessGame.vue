@@ -7,6 +7,7 @@ import { useToast } from '../../composables/toast'
 import { authState } from '../../stores/auth'
 import type { GamePoint, GameSession, GameStroke } from '../../types'
 import { sameId } from '../../utils'
+import { createStrokeOperationId, isRetryableStrokeError, strokeRetryDelay } from '../../utils/gameStrokeSync'
 
 const props = defineProps<{ session: GameSession }>()
 const emit = defineEmits<{ updated: [session: GameSession] }>()
@@ -16,6 +17,9 @@ const color = ref('#c95868')
 const width = ref(5)
 const tool = ref<'DRAW' | 'ERASE'>('DRAW')
 const eraserPreview = ref<{ x: number; y: number; size: number } | null>(null)
+const keyboardCursor = ref({ x: 0.5, y: 0.5 })
+const canvasFocused = ref(false)
+const keyboardDrawing = ref(false)
 const guess = ref('')
 const busy = ref(false)
 const syncing = ref(false)
@@ -24,8 +28,15 @@ const pendingStrokes: GameStroke[] = []
 const MAX_STROKE_POINTS = 480
 const MAX_BATCH_STROKES = 12
 const TOUCH_ERASER_OFFSET = 44
+const STROKE_RETRY_DELAY = 2000
+const MAX_STROKE_RETRY_DELAY = 30000
+type PendingBatch = { roundNumber: number; operationId: string; strokes: GameStroke[] }
 let observer: ResizeObserver | null = null
 let activePointerId: number | null = null
+let flushRetryTimer: number | null = null
+let activeBatch: PendingBatch | null = null
+let retryAttempt = 0
+let retryNoticeShown = false
 
 const isDrawer = computed(() => sameId(props.session.currentTurnUserId, authState.user?.id))
 const canDraw = computed(() => props.session.status === 'ACTIVE' && isDrawer.value && !props.session.roundComplete)
@@ -40,11 +51,20 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   observer?.disconnect()
+  cancelStrokeRetry()
   activePointerId = null
   currentStroke.value = null
   eraserPreview.value = null
 })
 watch(() => props.session.strokes, () => void nextTick(redraw), { deep: true })
+watch(
+  () => [props.session.id, props.session.roundNumber, props.session.currentTurnUserId,
+    props.session.status, props.session.roundComplete] as const,
+  (next, previous) => {
+    if (!previous || next.every((value, index) => String(value) === String(previous[index]))) return
+    discardPendingStrokes(pendingStrokes.length > 0)
+  },
+)
 watch(tool, (value) => {
   if (value !== 'ERASE') eraserPreview.value = null
 })
@@ -149,6 +169,59 @@ function cancelDrawing(event: PointerEvent) {
   redraw()
 }
 
+function commitKeyboardStroke() {
+  if (!currentStroke.value) return
+  const stroke = { ...currentStroke.value, points: compactPoints(currentStroke.value.points) }
+  currentStroke.value = null
+  keyboardDrawing.value = false
+  pendingStrokes.push(stroke)
+  redraw()
+  void flushStrokes()
+}
+
+function handleCanvasKey(event: KeyboardEvent) {
+  if (!canDraw.value) return
+  const movements: Record<string, [number, number]> = {
+    ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+  }
+  const movement = movements[event.key]
+  if (movement) {
+    event.preventDefault()
+    const step = event.shiftKey ? 0.05 : 0.015
+    keyboardCursor.value = {
+      x: Math.max(0, Math.min(1, keyboardCursor.value.x + movement[0] * step)),
+      y: Math.max(0, Math.min(1, keyboardCursor.value.y + movement[1] * step)),
+    }
+    if (keyboardDrawing.value && currentStroke.value) {
+      currentStroke.value.points.push({ ...keyboardCursor.value })
+      redraw()
+    }
+    return
+  }
+  if (event.key === ' ') {
+    event.preventDefault()
+    if (keyboardDrawing.value) commitKeyboardStroke()
+    else {
+      keyboardDrawing.value = true
+      currentStroke.value = {
+        tool: tool.value,
+        color: color.value,
+        width: tool.value === 'ERASE' ? eraserWidth.value : width.value,
+        points: [{ ...keyboardCursor.value }],
+      }
+      redraw()
+    }
+  } else if (event.key === 'Enter' && keyboardDrawing.value) {
+    event.preventDefault()
+    commitKeyboardStroke()
+  } else if (event.key === 'Escape' && keyboardDrawing.value) {
+    event.preventDefault()
+    keyboardDrawing.value = false
+    currentStroke.value = null
+    redraw()
+  }
+}
+
 function updateEraserPreview(event: PointerEvent, point: GamePoint) {
   if (event.pointerType !== 'touch' || currentStroke.value?.tool !== 'ERASE' || !canvas.value) {
     eraserPreview.value = null
@@ -176,33 +249,92 @@ function compactPoints(points: GamePoint[]): GamePoint[] {
   })
 }
 
+function cancelStrokeRetry() {
+  if (flushRetryTimer === null) return
+  window.clearTimeout(flushRetryTimer)
+  flushRetryTimer = null
+}
+
+function scheduleStrokeRetry() {
+  if (flushRetryTimer !== null || !pendingStrokes.length || !canDraw.value || !activeBatch) return
+  const delay = strokeRetryDelay(retryAttempt, STROKE_RETRY_DELAY, MAX_STROKE_RETRY_DELAY)
+  retryAttempt++
+  flushRetryTimer = window.setTimeout(() => {
+    flushRetryTimer = null
+    void flushStrokes()
+  }, delay)
+}
+
+function discardPendingStrokes(notify: boolean) {
+  cancelStrokeRetry()
+  activeBatch = null
+  retryAttempt = 0
+  retryNoticeShown = false
+  pendingStrokes.splice(0)
+  currentStroke.value = null
+  activePointerId = null
+  if (notify) show('画板局次已经变化，上一轮未同步的笔画已停止上传。', 'info')
+  void nextTick(redraw)
+}
+
 async function flushStrokes() {
-  if (syncing.value || !pendingStrokes.length) return
+  if (syncing.value || !pendingStrokes.length || !canDraw.value) return
+  if (!activeBatch) {
+    activeBatch = {
+      roundNumber: props.session.roundNumber,
+      operationId: createStrokeOperationId(),
+      strokes: pendingStrokes.slice(0, MAX_BATCH_STROKES),
+    }
+  }
+  if (activeBatch.roundNumber !== props.session.roundNumber) {
+    discardPendingStrokes(true)
+    return
+  }
   syncing.value = true
-  const count = Math.min(pendingStrokes.length, MAX_BATCH_STROKES)
-  const batch = pendingStrokes.slice(0, count)
+  const batch = activeBatch
   try {
-    const updated = await api.addGameStrokes(props.session.id, batch)
-    pendingStrokes.splice(0, count)
+    const updated = await api.addGameStrokes(
+      props.session.id, batch.roundNumber, batch.operationId, batch.strokes,
+    )
+    pendingStrokes.splice(0, batch.strokes.length)
+    activeBatch = null
+    retryAttempt = 0
+    if (retryNoticeShown) show('画笔已经重新同步。', 'success')
+    retryNoticeShown = false
     emit('updated', updated)
   } catch (cause) {
-    pendingStrokes.splice(0, count)
-    show(errorMessage(cause), 'error')
     redraw()
+    if (isRetryableStrokeError(cause) && canDraw.value) {
+      if (!retryNoticeShown) {
+        show('画笔同步暂时中断，正在自动重试。', 'error')
+        retryNoticeShown = true
+      }
+      scheduleStrokeRetry()
+    } else {
+      show(errorMessage(cause), 'error')
+      discardPendingStrokes(false)
+    }
   } finally {
     syncing.value = false
-    if (pendingStrokes.length) void flushStrokes()
+    if (pendingStrokes.length && flushRetryTimer === null) void flushStrokes()
   }
 }
 
 async function clearCanvas() {
   if (busy.value || syncing.value) return
   busy.value = true
+  cancelStrokeRetry()
   try {
+    const updated = await api.clearGameCanvas(props.session.id, props.session.roundNumber)
     pendingStrokes.splice(0)
-    emit('updated', await api.clearGameCanvas(props.session.id))
+    activeBatch = null
+    retryAttempt = 0
+    retryNoticeShown = false
+    emit('updated', updated)
   } catch (cause) {
     show(errorMessage(cause), 'error')
+    redraw()
+    if (activeBatch && isRetryableStrokeError(cause)) scheduleStrokeRetry()
   } finally {
     busy.value = false
   }
@@ -251,12 +383,26 @@ async function nextRound() {
       <canvas
         ref="canvas"
         :class="{ drawable: canDraw, erasing: canDraw && tool === 'ERASE' }"
+        role="application"
+        :tabindex="canDraw ? 0 : -1"
         aria-label="你画我猜画布"
+        aria-describedby="canvas-keyboard-help"
+        @focus="canvasFocused = true"
+        @blur="canvasFocused = false"
+        @keydown="handleCanvasKey"
         @pointerdown="startDrawing"
         @pointermove="continueDrawing"
         @pointerup="endDrawing"
         @pointercancel="cancelDrawing"
       ></canvas>
+      <p id="canvas-keyboard-help" class="sr-only">键盘作画：方向键移动光标，空格开始或结束一笔，回车完成，Escape 取消；按住 Shift 可加速移动。</p>
+      <span
+        v-if="canvasFocused && canDraw"
+        class="keyboard-cursor"
+        :class="{ drawing: keyboardDrawing }"
+        :style="{ left: `${keyboardCursor.x * 100}%`, top: `${keyboardCursor.y * 100}%` }"
+        aria-hidden="true"
+      ></span>
       <span
         v-if="eraserPreview"
         class="eraser-preview"
@@ -284,7 +430,7 @@ async function nextRound() {
     </div>
 
     <form v-if="canGuess" class="guess-form" @submit.prevent="submitGuess">
-      <input v-model="guess" maxlength="80" autocomplete="off" placeholder="输入你的答案…" />
+      <input v-model="guess" maxlength="80" autocomplete="off" aria-label="你的答案" placeholder="输入你的答案…" />
       <button class="button primary" type="submit" :disabled="busy || !guess.trim()"><Send :size="17" />猜一下</button>
     </form>
 
@@ -309,10 +455,11 @@ async function nextRound() {
 canvas { width: 100%; height: clamp(280px, 48dvh, 520px); display: block; touch-action: pan-y; }.drawable { cursor: crosshair; touch-action: none; }.drawable.erasing { cursor: cell; }
 .eraser-preview { position: absolute; z-index: 2; box-sizing: border-box; pointer-events: none; transform: translate(-50%, -50%); border: 2px solid rgba(55,65,81,.9); border-radius: 50%; background: rgba(255,255,255,.38); box-shadow: 0 0 0 2px rgba(255,255,255,.8), 0 2px 7px rgba(55,65,81,.22); }
 .eraser-preview::after { position: absolute; top: 100%; left: 50%; width: 2px; height: 30px; content: ''; transform: translateX(-50%); background: linear-gradient(rgba(55,65,81,.65), rgba(55,65,81,.08)); }
+.keyboard-cursor { position: absolute; z-index: 3; width: 16px; height: 16px; pointer-events: none; transform: translate(-50%, -50%); border: 2px solid #374151; border-radius: 50%; background: rgba(255,255,255,.75); box-shadow: 0 0 0 2px rgba(255,255,255,.9); }.keyboard-cursor.drawing { background: var(--rose); }
 .canvas-sync { position: absolute; right: 10px; top: 10px; display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 999px; background: rgba(255,255,255,.9); color: var(--muted); font-size: 9px; }
 .draw-tools { min-height: 45px; display: flex; align-items: center; gap: 8px; padding: 7px 9px; overflow-x: auto; border-radius: 13px; background: #f8f2ef; color: var(--muted); }
-.draw-tools .color-button { width: 28px; height: 28px; flex: 0 0 auto; border: 3px solid white; border-radius: 50%; cursor: pointer; box-shadow: 0 0 0 1px #d8cbc7; }.draw-tools .color-button.active { box-shadow: 0 0 0 2px var(--rose); }
-.draw-tools .tool-button { min-height: 31px; display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; padding: 5px 8px; border: 1px solid #ddcfca; border-radius: 9px; background: white; color: var(--muted); cursor: pointer; white-space: nowrap; }.draw-tools .tool-button.active { border-color: var(--rose); background: #fff0f2; color: var(--rose-dark); }
+.draw-tools .color-button { width: 44px; height: 44px; flex: 0 0 auto; border: 5px solid white; border-radius: 50%; cursor: pointer; box-shadow: 0 0 0 1px #d8cbc7; }.draw-tools .color-button.active { box-shadow: 0 0 0 2px var(--rose); }
+.draw-tools .tool-button { min-height: 44px; display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; padding: 8px 10px; border: 1px solid #ddcfca; border-radius: 10px; background: white; color: var(--muted); cursor: pointer; white-space: nowrap; }.draw-tools .tool-button.active { border-color: var(--rose); background: #fff0f2; color: var(--rose-dark); }
 .eraser-size { display: none; align-items: center; gap: 5px; flex: 0 0 auto; min-width: 52px; color: var(--muted); }.eraser-size i { box-sizing: border-box; display: block; flex: 0 0 auto; border: 2px solid #59616e; border-radius: 50%; background: rgba(255,255,255,.65); }.eraser-size small { white-space: nowrap; font-size: 9px; }
 .draw-tools input { min-width: 80px; flex: 1; }.draw-tools .text-button { white-space: nowrap; }
 .guess-form { display: flex; gap: 9px; }.guess-form input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: 13px; padding: 11px 13px; background: white; }

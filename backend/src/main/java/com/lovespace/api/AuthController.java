@@ -20,11 +20,13 @@ import org.springframework.security.web.authentication.logout.SecurityContextLog
 import org.springframework.security.web.context.*;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]{3,50}$");
     private final AuthenticationManager authenticationManager;
     private final AccountService accounts;
     private final LoginAttemptService loginAttempts;
@@ -73,6 +75,10 @@ public class AuthController {
                              HttpServletRequest request, HttpServletResponse response) {
         String normalizedUsername = username.trim();
         String remoteAddress = request.getRemoteAddr();
+        if (!USERNAME_PATTERN.matcher(normalizedUsername).matches()
+                || password.isEmpty() || password.length() > 72) {
+            throw invalidCredentials();
+        }
         loginAttempts.requireAllowed(normalizedUsername, remoteAddress);
         try {
             Authentication result = authenticationManager.authenticate(
@@ -89,7 +95,7 @@ public class AuthController {
         } catch (AuthenticationException ex) {
             loginAttempts.failed(normalizedUsername, remoteAddress);
             log.info("Login failed for user {} from {}: {}", normalizedUsername, remoteAddress, ex.getMessage());
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "用户名或密码错误");
+            throw invalidCredentials();
         }
     }
 
@@ -104,5 +110,9 @@ public class AuthController {
 
     private ApiException passwordResetFailed() {
         return new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_RESET_FAILED", "账号或恢复口令不正确");
+    }
+
+    private ApiException invalidCredentials() {
+        return new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "用户名或密码错误");
     }
 }

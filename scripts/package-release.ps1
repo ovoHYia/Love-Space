@@ -16,23 +16,44 @@ if (-not (Test-Path $releaseJar)) {
 try {
     New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 
-    $excluded = @(".git", ".env", "data", "work", "outputs")
-    Get-ChildItem -Force $projectRoot |
-        Where-Object { $_.Name -notin $excluded } |
-        Copy-Item -Destination $packageRoot -Recurse -Force
-
-    $frontendNodeModules = Join-Path $packageRoot "frontend\node_modules"
-    $frontendDist = Join-Path $packageRoot "frontend\dist"
-    $backendTarget = Join-Path $packageRoot "backend\target"
-    foreach ($path in @($frontendNodeModules, $frontendDist, $backendTarget)) {
-        if (Test-Path $path) {
-            Remove-Item -LiteralPath $path -Recurse -Force
-        }
+    foreach ($file in @(".env.example", ".gitignore", "AGENTS.md", "README.md")) {
+        Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $packageRoot -Force
     }
+
+    $backendRoot = Join-Path $packageRoot "backend"
+    New-Item -ItemType Directory -Path $backendRoot -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $projectRoot "backend\pom.xml") -Destination $backendRoot -Force
+    Copy-Item -LiteralPath (Join-Path $projectRoot "backend\src") -Destination $backendRoot -Recurse -Force
+
+    $frontendRoot = Join-Path $packageRoot "frontend"
+    New-Item -ItemType Directory -Path $frontendRoot -Force | Out-Null
+    foreach ($file in @(".env.example", ".gitignore", "index.html", "package.json", "package-lock.json",
+            "tsconfig.app.json", "tsconfig.json", "tsconfig.node.json", "vite.config.ts")) {
+        Copy-Item -LiteralPath (Join-Path $projectRoot "frontend\$file") -Destination $frontendRoot -Force
+    }
+    foreach ($directory in @("public", "src")) {
+        Copy-Item -LiteralPath (Join-Path $projectRoot "frontend\$directory") -Destination $frontendRoot -Recurse -Force
+    }
+
+    Copy-Item -LiteralPath (Join-Path $projectRoot "scripts") -Destination $packageRoot -Recurse -Force
 
     $releaseTarget = Join-Path $packageRoot "backend\target"
     New-Item -ItemType Directory -Path $releaseTarget -Force | Out-Null
     Copy-Item -LiteralPath $releaseJar -Destination (Join-Path $releaseTarget "love-space-backend-1.0.0.jar") -Force
+
+    $forbidden = Get-ChildItem -LiteralPath $packageRoot -Recurse -Force -File |
+        Where-Object {
+            $relativePath = $_.FullName.Substring($packageRoot.Length + 1)
+            $_.Name -match '^\.env(?!\.example$)' -or
+            $_.Extension -in @('.pem', '.key', '.p12', '.pfx', '.jks', '.db', '.sqlite', '.sqlite3', '.log') -or
+            $_.FullName -match '[\\/](data|uploads|backup|backups|node_modules)[\\/]' -or
+            ($_.FullName -match '[\\/]target[\\/]' -and
+                $relativePath -ne 'backend\target\love-space-backend-1.0.0.jar')
+        }
+    if ($forbidden) {
+        $relative = $forbidden | ForEach-Object { $_.FullName.Substring($packageRoot.Length + 1) }
+        throw "Release staging contains forbidden files: $($relative -join ', ')"
+    }
 
     Compress-Archive -Path $packageRoot -DestinationPath $outputZip -Force
     Write-Host "Release archive created: $outputZip"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { BarChart3, CalendarDays, CalendarHeart, Feather, Gamepad2, Heart, Home, Images, ListTodo, Mails as MailHeart, UserRound, Wifi, WifiOff } from 'lucide-vue-next'
 import BaseAvatar from './BaseAvatar.vue'
@@ -11,7 +11,6 @@ import { realtimeState, startRealtimeSync, stopRealtimeSync } from '../stores/re
 
 const route = useRoute()
 const { show } = useToast()
-const syncRevision = ref(0)
 const authRetryDelays = [1000, 3000]
 let authRefreshPromise: Promise<void> | null = null
 let mounted = false
@@ -59,8 +58,6 @@ async function refreshAuthAfterSync() {
 function handleSync(event: Event) {
   const detail = (event as CustomEvent<{ resource?: string }>).detail
   void refreshUnreadCount()
-  if (detail?.resource === 'games') return
-  syncRevision.value++
   if (detail?.resource === 'profile' || detail?.resource === 'space') {
     void refreshAuthAfterSync()
   }
@@ -116,9 +113,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
       <main class="page-container">
-        <RouterView v-slot="{ Component }">
-          <component :is="Component" :key="`${route.fullPath}-${syncRevision}`" />
-        </RouterView>
+        <RouterView />
       </main>
       <nav class="bottom-nav" aria-label="主导航">
         <RouterLink v-for="item in nav" :key="item.name" :to="item.to" :class="{ active: route.name === item.name }" :aria-label="item.label">

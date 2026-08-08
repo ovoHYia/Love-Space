@@ -4,6 +4,7 @@ import { BookHeart, Feather, Heart, LockOpen, Pencil, Plus, RefreshCw, Search, T
 import { api } from '../api'
 import { errorMessage } from '../api/client'
 import { useToast } from '../composables/toast'
+import { useResourceSync } from '../composables/resourceSync'
 import { authState } from '../stores/auth'
 import BaseAvatar from '../components/BaseAvatar.vue'
 import BaseModal from '../components/BaseModal.vue'
@@ -34,6 +35,7 @@ const filtered = computed(() => diaries.value.filter((diary) => {
 }))
 
 onMounted(load)
+useResourceSync(['diaries'], load)
 
 async function load() {
   loading.value = true

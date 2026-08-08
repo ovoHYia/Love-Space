@@ -10,6 +10,7 @@ import BaseModal from '../components/BaseModal.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
+import { useResourceSync } from '../composables/resourceSync'
 import type { Wish, WishInput } from '../types'
 import { formatDate, formatDateTime } from '../utils'
 
@@ -48,6 +49,7 @@ const visible = computed(() => {
 })
 
 onMounted(load)
+useResourceSync(['wishes'], load)
 
 async function load() {
   loading.value = true
@@ -162,7 +164,7 @@ async function remove(item: Wish) {
     <section class="wish-summary card">
       <span class="summary-icon"><Sparkles :size="26" /></span>
       <div><strong>还有 {{ activeCount }} 个愿望等着我们</strong><p>已经一起完成 {{ completedCount }} 个，慢慢来，每一个都算数。</p></div>
-      <div class="wish-progress"><span :style="{ width: `${wishes.length ? completedCount / wishes.length * 100 : 0}%` }"></span></div>
+      <div class="wish-progress"><span :style="{ transform: `scaleX(${wishes.length ? completedCount / wishes.length : 0})` }"></span></div>
     </section>
 
     <div class="wish-filters" role="tablist" aria-label="筛选愿望">
@@ -210,7 +212,7 @@ async function remove(item: Wish) {
 .summary-icon { flex: 0 0 auto; width: 48px; height: 48px; display: grid; place-items: center; border-radius: 16px; background: var(--rose-pale); color: var(--rose-dark); }
 .wish-summary strong { font-size: 17px; }.wish-summary p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .wish-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: #f5e9e9; }
-.wish-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--rose), #e9a2aa); transition: width .3s ease; }
+.wish-progress span { display: block; height: 100%; border-radius: inherit; transform-origin: left center; background: linear-gradient(90deg, var(--rose), #e9a2aa); transition: transform .3s ease; }
 .wish-filters { display: flex; gap: 8px; padding: 4px; align-self: flex-start; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.7); }
 .wish-filters button { padding: 8px 13px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; }
 .wish-filters button.active { background: var(--rose-pale); color: var(--rose-dark); }

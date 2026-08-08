@@ -7,6 +7,7 @@ import { errorMessage } from '../api/client'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
+import { useResourceSync } from '../composables/resourceSync'
 import type { TrashItem } from '../types'
 import { formatDateTime } from '../utils'
 
@@ -29,6 +30,7 @@ const typeLabels: Record<TrashItem['type'], string> = {
 const countText = computed(() => items.value.length ? `${items.value.length} 项待处理` : '回收站为空')
 
 onMounted(load)
+useResourceSync(['trash', 'memories', 'diaries', 'messages', 'anniversaries', 'wishes', 'calendar'], load)
 
 async function load() {
   loading.value = true
@@ -42,24 +44,11 @@ async function load() {
   }
 }
 
-async function exportData() {
+function exportData() {
   exporting.value = true
-  try {
-    const result = await api.exportData()
-    const url = URL.createObjectURL(result.blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = result.filename || `love-space-export-${new Date().toISOString().slice(0, 10)}.zip`
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    URL.revokeObjectURL(url)
-    show('数据压缩包已经开始下载。', 'success')
-  } catch (cause) {
-    show(errorMessage(cause), 'error')
-  } finally {
-    exporting.value = false
-  }
+  api.exportData()
+  window.setTimeout(() => { exporting.value = false }, 800)
+  show('浏览器正在直接下载数据压缩包，不会把整个文件读入页面内存。', 'success')
 }
 
 function key(item: TrashItem) {

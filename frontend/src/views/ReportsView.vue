@@ -11,6 +11,7 @@ import BaseAvatar from '../components/BaseAvatar.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { authState } from '../stores/auth'
+import { useResourceSync } from '../composables/resourceSync'
 import type { MonthlyHighlight, MonthlyReport, UserProfile } from '../types'
 import { formatDate, sameId, todayInput } from '../utils'
 
@@ -78,6 +79,7 @@ const activityItems = computed(() => {
 })
 
 onMounted(load)
+useResourceSync(['moods', 'memories', 'diaries', 'messages', 'wishes'], load)
 
 async function load() {
   loading.value = true

@@ -120,13 +120,16 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\build.ps1
 mvn -f backend/pom.xml test
 ```
 
-前端目前没有独立测试运行器，修改前端后至少执行：
+前端单元测试和生产构建：
 
 ```powershell
 Push-Location frontend
+npm test
 npm run build
 Pop-Location
 ```
+
+仓库中的 `.github/workflows/verify.yml` 会在提交和拉取请求上执行前端测试、构建、依赖审计、后端测试，并使用真实 MySQL 8.4 验证全部 Flyway 迁移。需要在本机验证真实 MySQL 时，可设置仅指向本机且数据库名以 `_test` 结尾的 `MYSQL_TEST_URL`、`MYSQL_TEST_USERNAME` 和 `MYSQL_TEST_PASSWORD` 后运行 `MySqlFlywayIntegrationTest`。
 
 ## 生产部署
 
@@ -172,6 +175,8 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 - `PASSWORD_RESET_TOKEN`：可选的高熵密码恢复口令
 - `UPLOAD_DIR`：上传文件目录，默认 `./data/uploads`
 - `MEDIA_MAX_BYTES`、`MEDIA_TOTAL_MAX_BYTES`：上传配额
+- `DATA_EXPORT_MAX_CONCURRENT`：同时进行的数据导出数量，默认 1
+- `LOGIN_MAX_ATTEMPTS_PER_IP`、`LOGIN_MAX_FAILURES_PER_IDENTITY`：登录 IP 级和账号/IP 级限流
 - `CORS_ALLOWED_ORIGINS`：允许的前端来源
 - `VITE_API_BASE_URL`：前端 API 基础路径
 - `VITE_MAP_TILE_URL`、`VITE_MAP_TILE_ATTRIBUTION`：地图瓦片服务地址及署名；部署网络无法访问默认服务时可替换

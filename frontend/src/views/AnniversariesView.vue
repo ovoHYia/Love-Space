@@ -4,6 +4,7 @@ import { Bell, CalendarDays, CalendarHeart, CakeSlice, HeartHandshake, MapPinned
 import { api } from '../api'
 import { errorMessage } from '../api/client'
 import { useToast } from '../composables/toast'
+import { useResourceSync } from '../composables/resourceSync'
 import BaseModal from '../components/BaseModal.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
@@ -32,6 +33,7 @@ const sorted = computed(() => [...anniversaries.value].sort((a, b) => {
 }))
 
 onMounted(load)
+useResourceSync(['anniversaries'], load)
 
 async function load() {
   loading.value = true

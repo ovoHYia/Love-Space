@@ -33,7 +33,16 @@ app:
   media-max-bytes: ${MEDIA_MAX_BYTES:209715200}
   media-total-max-bytes: ${MEDIA_TOTAL_MAX_BYTES:2147483648}
   media-min-free-bytes: ${MEDIA_MIN_FREE_BYTES:67108864}
+  data-export:
+    max-concurrent: ${DATA_EXPORT_MAX_CONCURRENT:1}
   security:
+    login:
+      max-attempts-per-ip: ${LOGIN_MAX_ATTEMPTS_PER_IP:30}
+      max-failures-per-identity: ${LOGIN_MAX_FAILURES_PER_IDENTITY:8}
+      max-tracked-entries: ${LOGIN_MAX_TRACKED_ENTRIES:5000}
+      window-minutes: ${LOGIN_WINDOW_MINUTES:15}
+      lock-minutes: ${LOGIN_LOCK_MINUTES:15}
+      evict-after-minutes: ${LOGIN_EVICT_AFTER_MINUTES:30}
     password-reset:
       max-attempts-per-ip: ${PASSWORD_RESET_MAX_ATTEMPTS_PER_IP:20}
       max-failures-per-identity: ${PASSWORD_RESET_MAX_FAILURES_PER_IDENTITY:5}

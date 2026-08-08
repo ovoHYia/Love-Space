@@ -8,6 +8,7 @@ import BaseModal from '../components/BaseModal.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
+import { useResourceSync } from '../composables/resourceSync'
 import type { CalendarEntry, CalendarEventInput, CalendarSource } from '../types'
 import { formatDate, formatDateTime, todayInput } from '../utils'
 
@@ -89,6 +90,7 @@ const entriesByDate = computed(() => {
 const selectedEntries = computed(() => entriesByDate.value.get(selectedDate.value) || [])
 
 onMounted(load)
+useResourceSync(['calendar', 'anniversaries', 'wishes', 'memories', 'diaries', 'messages'], load)
 
 function dateKey(value: Date) {
   const year = value.getFullYear()

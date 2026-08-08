@@ -345,5 +345,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  html:focus-within { scroll-behavior: auto; }
+  .button-spinner, .spinner, .spin, .burst-heart, .modal-card { animation: none !important; }
+  .button, .icon-button, .toast-enter-active, .toast-leave-active,
+  .step-enter-active, .step-leave-active, .wax-seal, .album-tile img,
+  .album-tile video { transition: none !important; }
+  .notif-pop-enter-active, .notif-pop-leave-active, .wish-progress span,
+  .wish-card { transition: none !important; }
+  .toast-enter-from, .toast-leave-to, .step-enter-from, .step-leave-to { transform: none; }
 }

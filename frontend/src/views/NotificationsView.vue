@@ -10,6 +10,7 @@ import { errorMessage } from '../api/client'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
+import { useResourceSync } from '../composables/resourceSync'
 import { refreshUnreadCount } from '../stores/notifications'
 import type { AppNotification, NotificationList, NotificationPreferences } from '../types'
 import { formatDateTime, sameId } from '../utils'
@@ -62,6 +63,9 @@ const allSelected = computed(() => Boolean(data.value?.items.length)
 
 onMounted(async () => {
   await Promise.all([load(), loadPreferences()])
+})
+useResourceSync(['notifications'], async () => {
+  await Promise.all([load(), refreshUnreadCount()])
 })
 watch([status, category], async () => {
   page.value = 0

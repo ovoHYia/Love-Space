@@ -44,8 +44,9 @@ public class GameController {
     }
 
     @DeleteMapping("/{id}/canvas")
-    public GameSessionView clearCanvas(Authentication auth, @PathVariable @Positive Long id) {
-        return games.clearCanvas(auth, id);
+    public GameSessionView clearCanvas(Authentication auth, @PathVariable @Positive Long id,
+                                       @RequestParam @Positive int roundNumber) {
+        return games.clearCanvas(auth, id, roundNumber);
     }
 
     @PostMapping("/{id}/guess")

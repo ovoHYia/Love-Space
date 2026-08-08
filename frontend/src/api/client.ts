@@ -113,32 +113,14 @@ export function jsonRequest<T>(
   return request<T>(path, { ...init, method, body: JSON.stringify(body) })
 }
 
-export async function download(path: string): Promise<{ blob: Blob; filename?: string }> {
-  let response: Response
-  try {
-    response = await fetch(`${API_BASE}${path}`, { credentials: 'include' })
-  } catch {
-    throw new ApiError('暂时连接不上服务器，请确认服务已启动后重试。', 0, 'NETWORK_ERROR')
-  }
-  if (!response.ok) {
-    let payload: Record<string, unknown> = {}
-    try { payload = await response.json() as Record<string, unknown> } catch { /* use fallback below */ }
-    if (response.status === 401) {
-      window.dispatchEvent(new CustomEvent('love-space-unauthenticated', {
-        detail: { code: payload.code ? String(payload.code) : undefined },
-      }))
-    }
-    throw new ApiError(String(payload.message || '导出没有成功，请稍后重试。'), response.status,
-      payload.code ? String(payload.code) : undefined)
-  }
-  const disposition = response.headers.get('content-disposition') || ''
-  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1]
-  const plain = /filename="?([^";]+)"?/i.exec(disposition)?.[1]
-  let filename = plain
-  if (encoded) {
-    try { filename = decodeURIComponent(encoded) } catch { filename = encoded }
-  }
-  return { blob: await response.blob(), filename }
+export function startDownload(path: string) {
+  const anchor = document.createElement('a')
+  anchor.href = `${API_BASE}${path}`
+  anchor.download = ''
+  anchor.rel = 'noopener'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
 }
 
 export function mediaUrl(id?: number | string | null, directUrl?: string | null) {

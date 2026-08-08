@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell, BellRing, Check } from 'lucide-vue-next'
 import { errorMessage } from '../api/client'
@@ -20,6 +20,9 @@ const route = useRoute()
 const router = useRouter()
 const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
+const triggerEl = ref<HTMLButtonElement | null>(null)
+const panelEl = ref<HTMLElement | null>(null)
+const panelId = computed(() => `notification-popover-${props.variant}`)
 
 const items = computed(() => notificationState.items)
 const unreadCount = computed(() => notificationState.unreadCount)
@@ -75,22 +78,65 @@ function onDocumentClick(event: MouseEvent) {
   if (rootEl.value && !rootEl.value.contains(event.target as Node)) open.value = false
 }
 
-watch(open, (value) => {
-  if (value) document.addEventListener('click', onDocumentClick, true)
-  else document.removeEventListener('click', onDocumentClick, true)
+function focusableElements() {
+  return Array.from(panelEl.value?.querySelectorAll<HTMLElement>(
+    'button:not(:disabled), a[href], input:not(:disabled), [tabindex]:not([tabindex="-1"])',
+  ) || [])
+}
+
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (!open.value) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    open.value = false
+    void nextTick(() => triggerEl.value?.focus())
+    return
+  }
+  if (event.key !== 'Tab') return
+  const focusable = focusableElements()
+  if (!focusable.length) {
+    event.preventDefault()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable.at(-1)!
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+watch(open, async (value) => {
+  if (value) {
+    document.addEventListener('click', onDocumentClick, true)
+    document.addEventListener('keydown', onDocumentKeydown)
+    await nextTick()
+    focusableElements()[0]?.focus()
+  } else {
+    document.removeEventListener('click', onDocumentClick, true)
+    document.removeEventListener('keydown', onDocumentKeydown)
+  }
 })
 watch(() => route.fullPath, () => { open.value = false })
-onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick, true))
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick, true)
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
 </script>
 
 <template>
   <div class="notif" :class="variant" ref="rootEl">
     <button
+      ref="triggerEl"
       class="notif-trigger"
       :class="[variant, { active: open || (variant === 'sidebar' && route.name === 'notifications') }]"
       type="button"
       :aria-label="unreadCount ? `通知，有 ${unreadCount} 条未读` : '通知'"
       :aria-expanded="open"
+      :aria-controls="variant === 'header' ? panelId : undefined"
       @click="toggle"
     >
       <component :is="unreadCount ? BellRing : Bell" :size="variant === 'sidebar' ? 20 : 21" aria-hidden="true" />
@@ -99,7 +145,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick, tru
     </button>
 
     <transition name="notif-pop">
-      <div v-if="open" class="notif-panel" :class="variant" role="dialog" aria-label="通知列表">
+      <div v-if="open" :id="panelId" ref="panelEl" class="notif-panel" :class="variant" role="dialog" aria-label="通知列表" aria-modal="false">
         <header class="notif-head">
           <strong>提醒</strong>
           <button v-if="unreadCount" class="notif-readall" type="button" @click="readAll">
@@ -135,7 +181,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick, tru
 
 /* Trigger — header (mobile top bar) variant is a round icon button */
 .notif-trigger { position: relative; display: inline-flex; align-items: center; justify-content: center; border: none; cursor: pointer; color: #82666d; transition: .18s ease; }
-.notif-trigger.header { width: 42px; height: 42px; border-radius: 13px; background: rgba(255, 243, 243, .8); }
+.notif-trigger.header { width: 44px; height: 44px; border-radius: 13px; background: rgba(255, 243, 243, .8); }
 .notif-trigger.header:hover, .notif-trigger.header.active { background: #ffe7e9; color: var(--rose-dark); }
 
 /* Trigger — sidebar variant looks like a side nav item */
@@ -152,7 +198,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick, tru
 
 .notif-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; border-bottom: 1px solid var(--line, #efdadd); }
 .notif-head strong { font-size: 15px; }
-.notif-readall { display: inline-flex; align-items: center; gap: 4px; border: none; background: none; cursor: pointer; color: var(--rose-dark, #b23f52); font-size: 12px; font-weight: 700; }
+.notif-readall { min-height: 44px; display: inline-flex; align-items: center; gap: 4px; border: none; background: none; cursor: pointer; color: var(--rose-dark, #b23f52); font-size: 12px; font-weight: 700; }
 .notif-readall:hover { text-decoration: underline; }
 
 .notif-scroll { min-height: 0; max-height: min(60vh, 380px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
@@ -171,7 +217,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick, tru
 .notif-text { font-size: 12px; line-height: 1.5; color: #8a6f75; }
 .notif-time { font-size: 10px; color: var(--muted, #a98d93); }
 .notif-footer { padding: 8px; border-top: 1px solid var(--line, #efdadd); }
-.notif-footer button { width: 100%; padding: 8px; border: 0; border-radius: 10px; background: var(--rose-pale, #fff1f2); color: var(--rose-dark, #b23f52); cursor: pointer; font-size: 11px; font-weight: 800; }
+.notif-footer button { width: 100%; min-height: 44px; padding: 8px; border: 0; border-radius: 10px; background: var(--rose-pale, #fff1f2); color: var(--rose-dark, #b23f52); cursor: pointer; font-size: 11px; font-weight: 800; }
 .notif-footer button:hover { background: #ffe4e7; }
 
 .notif-pop-enter-active, .notif-pop-leave-active { transition: opacity .16s ease, transform .16s ease; }

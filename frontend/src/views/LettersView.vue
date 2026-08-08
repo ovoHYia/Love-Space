@@ -4,6 +4,7 @@ import { CalendarClock, Clock3, Heart, Mail, MailCheck, Mails as MailHeart, PenL
 import { api } from '../api'
 import { errorMessage } from '../api/client'
 import { useToast } from '../composables/toast'
+import { useResourceSync } from '../composables/resourceSync'
 import { authState } from '../stores/auth'
 import BaseAvatar from '../components/BaseAvatar.vue'
 import BaseModal from '../components/BaseModal.vue'
@@ -32,6 +33,7 @@ onMounted(() => {
   load()
   clockTimer = window.setInterval(() => { now.value = Date.now() }, 30000)
 })
+useResourceSync(['messages'], load)
 onBeforeUnmount(() => {
   if (clockTimer !== undefined) window.clearInterval(clockTimer)
 })

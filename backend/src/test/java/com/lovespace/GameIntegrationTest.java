@@ -2,6 +2,7 @@ package com.lovespace;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -12,6 +13,7 @@ import com.lovespace.repository.CoupleRepository;
 import com.lovespace.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +28,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -36,6 +40,7 @@ class GameIntegrationTest {
     @Autowired CoupleRepository couples;
     @Autowired UserRepository users;
     @Autowired PasswordEncoder encoder;
+    @Autowired ObjectMapper objectMapper;
 
     private MockHttpSession alice;
     private MockHttpSession bob;
@@ -64,16 +69,20 @@ class GameIntegrationTest {
     @Test
     void tacitAnswersStayHiddenUntilBothSubmit() throws Exception {
         long gameId = createGame(alice, "TACIT_QUIZ");
+        JsonNode firstRound = getGame(alice, gameId);
+        String firstPrompt = firstRound.get("prompt").asText();
+        String answer = firstRound.get("options").get(0).asText();
+        String answerBody = objectMapper.writeValueAsString(Map.of("answer", answer));
 
         mvc.perform(post("/api/games/{id}/answer", gameId).with(csrf()).session(alice)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"answer\":\"宅家看电影\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content(answerBody))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.myAnswer").value("宅家看电影"))
+                .andExpect(jsonPath("$.myAnswer").value(answer))
                 .andExpect(jsonPath("$.partnerAnswer").value(nullValue()))
                 .andExpect(jsonPath("$.answersRevealed").value(false));
 
         mvc.perform(post("/api/games/{id}/answer", gameId).with(csrf()).session(alice)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"answer\":\"去吃好吃的\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content(answerBody))
                 .andExpect(status().isConflict());
 
         mvc.perform(get("/api/games/{id}", gameId).session(bob))
@@ -82,17 +91,21 @@ class GameIntegrationTest {
                 .andExpect(jsonPath("$.partnerAnswer").value(nullValue()));
 
         mvc.perform(post("/api/games/{id}/answer", gameId).with(csrf()).session(bob)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"answer\":\"宅家看电影\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content(answerBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.answersRevealed").value(true))
                 .andExpect(jsonPath("$.matched").value(true))
                 .andExpect(jsonPath("$.score").value(1));
 
-        mvc.perform(post("/api/games/{id}/next", gameId).with(csrf()).session(alice))
+        MvcResult nextRoundResult = mvc.perform(post("/api/games/{id}/next", gameId).with(csrf()).session(alice))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.roundNumber").value(2))
                 .andExpect(jsonPath("$.answersRevealed").value(false))
-                .andExpect(jsonPath("$.score").value(1));
+                .andExpect(jsonPath("$.score").value(1))
+                .andReturn();
+        String nextPrompt = objectMapper.readTree(nextRoundResult.getResponse()
+                .getContentAsString(StandardCharsets.UTF_8)).get("prompt").asText();
+        assertNotEquals(firstPrompt, nextPrompt, "相邻两轮不应抽到同一道默契题");
     }
 
     @Test
@@ -109,11 +122,12 @@ class GameIntegrationTest {
     @Test
     void drawingAndGuessingRespectRolesAndSwitchEachRound() throws Exception {
         long gameId = createGame(alice, "DRAW_GUESS");
+        String firstWord = getGame(alice, gameId).get("secretWord").asText();
 
         mvc.perform(get("/api/games/{id}", gameId).session(alice))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentTurnUserId").value(aliceId))
-                .andExpect(jsonPath("$.secretWord").value("奶茶"));
+                .andExpect(jsonPath("$.secretWord").value(firstWord));
         mvc.perform(get("/api/games/{id}", gameId).session(bob))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.secretWord").value(nullValue()));
@@ -157,23 +171,28 @@ class GameIntegrationTest {
                 .andExpect(jsonPath("$.strokes", hasSize(3)));
 
         mvc.perform(post("/api/games/{id}/guess", gameId).with(csrf()).session(alice)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"guess\":\"奶茶\"}"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("guess", firstWord))))
                 .andExpect(status().isForbidden());
         mvc.perform(post("/api/games/{id}/guess", gameId).with(csrf()).session(bob)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"guess\":\"咖啡\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"guess\":\"这肯定不是题库答案\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.roundComplete").value(false));
         mvc.perform(post("/api/games/{id}/guess", gameId).with(csrf()).session(bob)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"guess\":\"奶茶\"}"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("guess", firstWord))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.roundComplete").value(true))
-                .andExpect(jsonPath("$.secretWord").value("奶茶"))
+                .andExpect(jsonPath("$.secretWord").value(firstWord))
                 .andExpect(jsonPath("$.score").value(1));
 
-        mvc.perform(post("/api/games/{id}/next", gameId).with(csrf()).session(bob))
+        MvcResult nextRoundResult = mvc.perform(post("/api/games/{id}/next", gameId).with(csrf()).session(bob))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.roundNumber").value(2))
-                .andExpect(jsonPath("$.secretWord").value("玫瑰"))
-                .andExpect(jsonPath("$.strokes", hasSize(0)));
+                .andExpect(jsonPath("$.strokes", hasSize(0)))
+                .andReturn();
+        String nextWord = objectMapper.readTree(nextRoundResult.getResponse()
+                .getContentAsString(StandardCharsets.UTF_8)).get("secretWord").asText();
+        assertNotEquals(firstWord, nextWord, "相邻两轮不应抽到同一个你画我猜词语");
 
         mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
                         .contentType(MediaType.APPLICATION_JSON).content(stroke))
@@ -220,6 +239,13 @@ class GameIntegrationTest {
         Matcher matcher = Pattern.compile("\\\"id\\\":(\\d+)").matcher(response);
         if (!matcher.find()) throw new AssertionError("response has no id: " + response);
         return Long.parseLong(matcher.group(1));
+    }
+
+    private JsonNode getGame(MockHttpSession session, long gameId) throws Exception {
+        String response = mvc.perform(get("/api/games/{id}", gameId).session(session))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(response);
     }
 
     private User newUser(Couple couple, String username, String nickname, String password) {

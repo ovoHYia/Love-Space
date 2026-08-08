@@ -106,6 +106,7 @@ export const api = {
   clearGameCanvas: (id: GameSession['id'], roundNumber: number) =>
     request<GameSession>(`/games/${id}/canvas?roundNumber=${roundNumber}`, { method: 'DELETE' }),
   guessGame: (id: GameSession['id'], guess: string) => jsonRequest<GameSession>(`/games/${id}/guess`, 'POST', { guess }),
-  nextGameRound: (id: GameSession['id']) => request<GameSession>(`/games/${id}/next`, { method: 'POST' }),
+  nextGameRound: (id: GameSession['id'], roundNumber: number) =>
+    request<GameSession>(`/games/${id}/next?roundNumber=${roundNumber}`, { method: 'POST' }),
   finishGame: (id: GameSession['id']) => request<GameSession>(`/games/${id}/finish`, { method: 'PATCH' }),
 }

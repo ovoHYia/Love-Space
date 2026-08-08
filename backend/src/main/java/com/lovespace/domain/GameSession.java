@@ -12,6 +12,8 @@ public class GameSession {
     public static final String STATUS_FINISHED = "FINISHED";
     public static final String TYPE_TACIT_QUIZ = "TACIT_QUIZ";
     public static final String TYPE_DRAW_GUESS = "DRAW_GUESS";
+    public static final String TYPE_MEMORY_GUESS = "MEMORY_GUESS";
+    public static final String TYPE_TRUTH_CARD = "TRUTH_CARD";
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

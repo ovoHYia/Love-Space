@@ -33,7 +33,7 @@ async function answer(value: string) {
 async function nextRound() {
   busy.value = true
   try {
-    emit('updated', await api.nextGameRound(props.session.id))
+    emit('updated', await api.nextGameRound(props.session.id, props.session.roundNumber))
   } catch (cause) {
     show(errorMessage(cause), 'error')
   } finally {

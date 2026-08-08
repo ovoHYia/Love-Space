@@ -150,7 +150,7 @@ public final class ApiDtos {
             LocalDateTime updatedAt) {}
 
     public record GameCreateRequest(
-            @NotBlank @Pattern(regexp = "TACIT_QUIZ|DRAW_GUESS") String gameType) {}
+            @NotBlank @Pattern(regexp = "TACIT_QUIZ|DRAW_GUESS|MEMORY_GUESS|TRUTH_CARD") String gameType) {}
     public record GameAnswerRequest(@NotBlank @Size(max = 80) String answer) {}
     public record GameGuessRequest(@NotBlank @Size(max = 80) String guess) {}
     public record GamePointRequest(
@@ -167,12 +167,15 @@ public final class ApiDtos {
             @NotEmpty @Size(max = 12) List<@Valid GameStrokeRequest> strokes) {}
     public record GameGuessView(Long userId, String nickname, String text,
                                 boolean correct, LocalDateTime createdAt) {}
+    public record GameMemoryView(String imageUrl, String title, String description,
+                                 LocalDateTime eventAt, String location) {}
     public record GameSessionView(
             Long id, String gameType, String status, Long createdBy, String createdByNickname,
             int roundNumber, Long currentTurnUserId, String prompt, List<String> options,
             String myAnswer, String partnerAnswer, boolean answersRevealed, Boolean matched,
             int score, String secretWord, List<GameStrokeRequest> strokes,
-            List<GameGuessView> guesses, boolean roundComplete,
+            List<GameGuessView> guesses, boolean roundComplete, String cardCategory,
+            GameMemoryView memory,
             LocalDateTime createdAt, LocalDateTime updatedAt, LocalDateTime finishedAt) {}
 
     public record DashboardResponse(MeResponse account, List<MoodView> todayMoods,

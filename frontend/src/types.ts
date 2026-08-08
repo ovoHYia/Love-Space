@@ -132,7 +132,7 @@ export interface SyncEvent {
   occurredAt: string
 }
 
-export type GameType = 'TACIT_QUIZ' | 'DRAW_GUESS'
+export type GameType = 'TACIT_QUIZ' | 'DRAW_GUESS' | 'MEMORY_GUESS' | 'TRUTH_CARD'
 export type GameStatus = 'ACTIVE' | 'FINISHED'
 
 export interface GamePoint {
@@ -155,6 +155,14 @@ export interface GameGuess {
   createdAt: string
 }
 
+export interface GameMemory {
+  imageUrl?: string | null
+  title?: string | null
+  description?: string | null
+  eventAt?: string | null
+  location?: string | null
+}
+
 export interface GameSession {
   id: number | string
   gameType: GameType
@@ -174,6 +182,8 @@ export interface GameSession {
   strokes: GameStroke[]
   guesses: GameGuess[]
   roundComplete: boolean
+  cardCategory?: string | null
+  memory?: GameMemory | null
   createdAt: string
   updatedAt: string
   finishedAt?: string | null

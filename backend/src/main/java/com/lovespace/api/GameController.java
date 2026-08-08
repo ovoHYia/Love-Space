@@ -56,8 +56,9 @@ public class GameController {
     }
 
     @PostMapping("/{id}/next")
-    public GameSessionView nextRound(Authentication auth, @PathVariable @Positive Long id) {
-        return games.nextRound(auth, id);
+    public GameSessionView nextRound(Authentication auth, @PathVariable @Positive Long id,
+                                     @RequestParam(required = false) @Positive Integer roundNumber) {
+        return games.nextRound(auth, id, roundNumber);
     }
 
     @PatchMapping("/{id}/finish")

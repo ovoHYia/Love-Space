@@ -4,14 +4,20 @@ import static com.lovespace.api.dto.ApiDtos.*;
 
 import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.GameSession;
+import com.lovespace.domain.Media;
+import com.lovespace.domain.Memory;
 import com.lovespace.domain.User;
 import com.lovespace.repository.CoupleRepository;
 import com.lovespace.repository.GameSessionRepository;
+import com.lovespace.repository.MediaRepository;
+import com.lovespace.repository.MemoryRepository;
 import com.lovespace.security.CurrentUserService;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +29,7 @@ public class GameService {
     private static final int MAX_STROKES = 500;
     private static final int MAX_POINTS = 20_000;
     private static final int MAX_STROKE_OPERATION_IDS = 100;
+    private static final DateTimeFormatter MEMORY_DATE = DateTimeFormatter.ofPattern("yyyy年M月d日");
     private static final List<Question> QUESTIONS = List.of(
             new Question("周末最想和对方一起做什么？", List.of("宅家看电影", "去吃好吃的", "户外散步", "随性出发")),
             new Question("如果突然多出三天假期，最想怎么过？", List.of("去旅行", "回家休息", "逛吃逛吃", "一起学新东西")),
@@ -77,16 +84,53 @@ public class GameService {
             "大树", "向日葵", "椰子树", "高山", "小桥", "灯塔",
             "热气球", "望远镜", "机器人", "风筝", "滑板", "游泳圈"
     );
+    private static final List<TruthCard> TRUTH_CARDS = List.of(
+            new TruthCard(1, "轻松开场", "最近哪一个瞬间让你忍不住想到我？"),
+            new TruthCard(2, "轻松开场", "如果今天可以立刻出发约会，你最想去哪里？"),
+            new TruthCard(3, "轻松开场", "我做过最让你觉得可爱的一件小事是什么？"),
+            new TruthCard(4, "轻松开场", "我们最适合一起解锁哪项新技能？"),
+            new TruthCard(5, "轻松开场", "用三个词形容现在的我们，你会选什么？"),
+            new TruthCard(6, "轻松开场", "哪一道食物最像我们的相处方式？为什么？"),
+            new TruthCard(7, "轻松开场", "如果把我们拍成电影，你想给它取什么名字？"),
+            new TruthCard(8, "轻松开场", "你最想和我重复哪一次普通的约会？"),
+            new TruthCard(9, "轻松开场", "我哪一个习惯已经悄悄影响了你？"),
+            new TruthCard(10, "轻松开场", "下一次合照，你最想选什么场景和姿势？"),
+            new TruthCard(11, "心动时刻", "第一次觉得“就是这个人了”是在什么时候？"),
+            new TruthCard(12, "心动时刻", "我说过哪句话让你记到现在？"),
+            new TruthCard(13, "心动时刻", "你最喜欢我怎样表达爱？"),
+            new TruthCard(14, "心动时刻", "最近一次被我照顾到的瞬间是什么？"),
+            new TruthCard(15, "心动时刻", "你最希望我们一直保留哪个小仪式？"),
+            new TruthCard(16, "心动时刻", "哪一段共同回忆会让你一想起来就微笑？"),
+            new TruthCard(17, "心动时刻", "现在的我，有哪一点比刚认识时更吸引你？"),
+            new TruthCard(18, "心动时刻", "如果给未来的我们留一句话，你会写什么？"),
+            new TruthCard(19, "心动时刻", "你最想收到我怎样的一次用心陪伴？"),
+            new TruthCard(20, "心动时刻", "有什么感谢一直想说，却还没有认真说过？"),
+            new TruthCard(21, "认真聊聊", "当你情绪低落时，希望我先陪伴、倾听，还是一起解决？"),
+            new TruthCard(22, "认真聊聊", "我们意见不同时，怎样沟通会让你更有安全感？"),
+            new TruthCard(23, "认真聊聊", "最近有什么压力，是我可以和你一起分担的？"),
+            new TruthCard(24, "认真聊聊", "你希望我们在忙碌时怎样守住彼此的连接？"),
+            new TruthCard(25, "认真聊聊", "我们之间哪一个误会最值得重新讲清楚？"),
+            new TruthCard(26, "认真聊聊", "关于个人空间，你希望我更理解哪条边界？"),
+            new TruthCard(27, "认真聊聊", "未来一年，你最希望我们共同完成什么？"),
+            new TruthCard(28, "认真聊聊", "当你需要被肯定时，最想从我这里听见什么？"),
+            new TruthCard(29, "认真聊聊", "我们的相处里，哪件事做得很好，哪件事还能更好？"),
+            new TruthCard(30, "认真聊聊", "此刻你最想让我真正理解的一件事是什么？")
+    );
 
     private final GameSessionRepository games;
     private final CoupleRepository couples;
+    private final MemoryRepository memories;
+    private final MediaRepository media;
     private final CurrentUserService current;
     private final ObjectMapper objectMapper;
 
     public GameService(GameSessionRepository games, CoupleRepository couples,
+                       MemoryRepository memories, MediaRepository media,
                        CurrentUserService current, ObjectMapper objectMapper) {
         this.games = games;
         this.couples = couples;
+        this.memories = memories;
+        this.media = media;
         this.current = current;
         this.objectMapper = objectMapper;
     }
@@ -130,11 +174,22 @@ public class GameService {
             game.setStateJson(write(new StoredGameState(
                     question.prompt(), question.options(), Map.of(), 0,
                     null, List.of(), List.of(), false, List.of())));
-        } else {
+        } else if (GameSession.TYPE_DRAW_GUESS.equals(input.gameType())) {
             game.setCurrentTurnUserId(user.getId());
             game.setStateJson(write(new StoredGameState(
                     null, List.of(), Map.of(), 0,
                     randomItem(DRAW_WORDS, null), List.of(), List.of(), false, List.of())));
+        } else if (GameSession.TYPE_MEMORY_GUESS.equals(input.gameType())) {
+            game.setCurrentTurnUserId(null);
+            MemoryRound round = drawMemoryRound(coupleId, List.of());
+            game.setStateJson(write(memoryState(round, Map.of(), 0, false)));
+        } else if (GameSession.TYPE_TRUTH_CARD.equals(input.gameType())) {
+            game.setCurrentTurnUserId(user.getId());
+            TruthDeckDraw draw = drawTruthCard(List.of());
+            game.setStateJson(write(new StoredTruthCardState(
+                    draw.card().prompt(), draw.card().category(), draw.usedCardIds())));
+        } else {
+            throw ApiException.badRequest("不支持的游戏类型");
         }
         return view(games.save(game), user, partner);
     }
@@ -144,7 +199,17 @@ public class GameService {
         User user = current.user(auth);
         User partner = current.partner(user);
         GameSession game = findLocked(user, id);
-        requireActiveType(game, GameSession.TYPE_TACIT_QUIZ);
+        requireActive(game);
+        if (GameSession.TYPE_TACIT_QUIZ.equals(game.getGameType())) {
+            return answerTacit(game, user, partner, input);
+        }
+        if (GameSession.TYPE_MEMORY_GUESS.equals(game.getGameType())) {
+            return answerMemory(game, user, partner, input);
+        }
+        throw ApiException.badRequest("当前游戏不支持答题操作");
+    }
+
+    private GameSessionView answerTacit(GameSession game, User user, User partner, GameAnswerRequest input) {
         StoredGameState state = read(game);
         if (state.answers().containsKey(user.getId())) {
             throw ApiException.conflict("你已经回答过本题，请等待对方");
@@ -159,6 +224,30 @@ public class GameService {
         saveState(game, new StoredGameState(
                 state.prompt(), state.options(), answers, score,
                 null, List.of(), List.of(), answers.size() == 2, state.appliedStrokeOperationIds()));
+        return view(game, user, partner);
+    }
+
+    private GameSessionView answerMemory(GameSession game, User user, User partner, GameAnswerRequest input) {
+        StoredMemoryGuessState state = readMemory(game);
+        if (state.answers().containsKey(user.getId())) {
+            throw ApiException.conflict("你已经猜过这张回忆，请等待对方");
+        }
+        if (state.answers().size() >= 2) throw ApiException.conflict("本轮答案已经揭晓，请进入下一张");
+        String answer = input.answer().trim();
+        if (!state.options().contains(answer)) throw ApiException.badRequest("请选择页面提供的答案");
+        Map<Long, String> answers = new LinkedHashMap<>(state.answers());
+        answers.put(user.getId(), answer);
+        boolean complete = answers.size() == 2;
+        int score = state.score();
+        if (complete) {
+            score += (int) answers.values().stream()
+                    .filter(value -> normalized(value).equals(normalized(state.correctAnswer())))
+                    .count();
+        }
+        saveMemoryState(game, new StoredMemoryGuessState(
+                state.prompt(), state.options(), answers, score, state.correctAnswer(), complete,
+                state.memoryId(), state.mediaId(), state.memoryTitle(), state.memoryDescription(),
+                state.memoryEventAt(), state.memoryLocation(), state.usedMemoryIds()));
         return view(game, user, partner);
     }
 
@@ -232,28 +321,53 @@ public class GameService {
     }
 
     @Transactional
-    public GameSessionView nextRound(Authentication auth, Long id) {
+    public GameSessionView nextRound(Authentication auth, Long id, Integer expectedRound) {
         User user = current.user(auth);
         User partner = current.partner(user);
         GameSession game = findLocked(user, id);
         requireActive(game);
-        StoredGameState state = read(game);
-        int nextRound = game.getRoundNumber() + 1;
-        game.setRoundNumber(nextRound);
+        boolean roundRequired = GameSession.TYPE_MEMORY_GUESS.equals(game.getGameType())
+                || GameSession.TYPE_TRUTH_CARD.equals(game.getGameType());
+        if (roundRequired && expectedRound == null) {
+            throw ApiException.badRequest("请刷新游戏状态后再进入下一轮");
+        }
+        if (expectedRound != null) requireRound(game, expectedRound);
         if (GameSession.TYPE_TACIT_QUIZ.equals(game.getGameType())) {
+            StoredGameState state = read(game);
             if (state.answers().size() < 2) throw ApiException.conflict("双方都回答后才能进入下一题");
             Question question = randomItem(QUESTIONS, new Question(state.prompt(), state.options()));
+            game.setRoundNumber(game.getRoundNumber() + 1);
             saveState(game, new StoredGameState(
                     question.prompt(), question.options(), Map.of(), state.score(),
                     null, List.of(), List.of(), false, List.of()));
-        } else {
+        } else if (GameSession.TYPE_DRAW_GUESS.equals(game.getGameType())) {
+            StoredGameState state = read(game);
             if (!state.roundComplete()) throw ApiException.conflict("猜中后才能进入下一轮");
             Long nextDrawer = Objects.equals(game.getCurrentTurnUserId(), user.getId())
                     ? partner.getId() : user.getId();
             game.setCurrentTurnUserId(nextDrawer);
+            game.setRoundNumber(game.getRoundNumber() + 1);
             saveState(game, new StoredGameState(
                     null, List.of(), Map.of(), state.score(),
                     randomItem(DRAW_WORDS, state.secretWord()), List.of(), List.of(), false, List.of()));
+        } else if (GameSession.TYPE_MEMORY_GUESS.equals(game.getGameType())) {
+            StoredMemoryGuessState state = readMemory(game);
+            if (!state.roundComplete()) throw ApiException.conflict("双方都猜过后才能进入下一张");
+            MemoryRound round = drawMemoryRound(game.getCoupleId(), state.usedMemoryIds());
+            game.setRoundNumber(game.getRoundNumber() + 1);
+            saveMemoryState(game, memoryState(round, Map.of(), state.score(), false));
+        } else if (GameSession.TYPE_TRUTH_CARD.equals(game.getGameType())) {
+            if (!Objects.equals(game.getCurrentTurnUserId(), user.getId())) {
+                throw ApiException.forbidden("这一张要等对方回答完再继续");
+            }
+            StoredTruthCardState state = readTruth(game);
+            TruthDeckDraw draw = drawTruthCard(state.usedCardIds());
+            game.setCurrentTurnUserId(partner.getId());
+            game.setRoundNumber(game.getRoundNumber() + 1);
+            saveTruthState(game, new StoredTruthCardState(
+                    draw.card().prompt(), draw.card().category(), draw.usedCardIds()));
+        } else {
+            throw ApiException.badRequest("当前游戏不支持进入下一轮");
         }
         return view(game, user, partner);
     }
@@ -298,7 +412,7 @@ public class GameService {
 
     private void requireRound(GameSession game, int roundNumber) {
         if (game.getRoundNumber() != roundNumber) {
-            throw ApiException.conflict("画板局次已经变化，请刷新后重试");
+            throw ApiException.conflict("游戏轮次已经变化，请刷新后重试");
         }
     }
 
@@ -308,6 +422,20 @@ public class GameService {
     }
 
     private GameSessionView view(GameSession game, User user, User partner) {
+        if (GameSession.TYPE_MEMORY_GUESS.equals(game.getGameType())) {
+            return viewMemory(game, user, partner);
+        }
+        if (GameSession.TYPE_TRUTH_CARD.equals(game.getGameType())) {
+            return viewTruth(game, user, partner);
+        }
+        if (GameSession.TYPE_TACIT_QUIZ.equals(game.getGameType())
+                || GameSession.TYPE_DRAW_GUESS.equals(game.getGameType())) {
+            return viewClassic(game, user, partner);
+        }
+        return viewUnknown(game, user, partner);
+    }
+
+    private GameSessionView viewClassic(GameSession game, User user, User partner) {
         StoredGameState state = read(game);
         boolean revealed = state.answers().size() >= 2;
         Boolean matched = revealed
@@ -328,6 +456,53 @@ public class GameService {
                 game.getRoundNumber(), game.getCurrentTurnUserId(), state.prompt(), state.options(),
                 state.answers().get(user.getId()), revealed ? state.answers().get(partner.getId()) : null,
                 revealed, matched, state.score(), secretWord, state.strokes(), guesses, state.roundComplete(),
+                null, null,
+                game.getCreatedAt(), game.getUpdatedAt(), game.getFinishedAt());
+    }
+
+    private GameSessionView viewMemory(GameSession game, User user, User partner) {
+        StoredMemoryGuessState state = readMemory(game);
+        boolean revealed = state.roundComplete() || GameSession.STATUS_FINISHED.equals(game.getStatus());
+        Boolean matched = state.roundComplete()
+                ? Objects.equals(state.answers().get(user.getId()), state.answers().get(partner.getId()))
+                : null;
+        String imageUrl = media.findAccessibleByIdAndCoupleId(state.mediaId(), game.getCoupleId())
+                .map(value -> "/api/media/" + value.getId())
+                .orElse(null);
+        GameMemoryView memory = new GameMemoryView(
+                imageUrl,
+                revealed ? state.memoryTitle() : null,
+                revealed ? state.memoryDescription() : null,
+                revealed ? state.memoryEventAt() : null,
+                revealed ? state.memoryLocation() : null);
+        return new GameSessionView(
+                game.getId(), game.getGameType(), game.getStatus(), game.getCreatedBy(),
+                Objects.equals(game.getCreatedBy(), user.getId()) ? user.getNickname() : partner.getNickname(),
+                game.getRoundNumber(), game.getCurrentTurnUserId(), state.prompt(), state.options(),
+                state.answers().get(user.getId()), revealed ? state.answers().get(partner.getId()) : null,
+                revealed, matched, state.score(), revealed ? state.correctAnswer() : null,
+                List.of(), List.of(), state.roundComplete(), null, memory,
+                game.getCreatedAt(), game.getUpdatedAt(), game.getFinishedAt());
+    }
+
+    private GameSessionView viewTruth(GameSession game, User user, User partner) {
+        StoredTruthCardState state = readTruth(game);
+        return new GameSessionView(
+                game.getId(), game.getGameType(), game.getStatus(), game.getCreatedBy(),
+                Objects.equals(game.getCreatedBy(), user.getId()) ? user.getNickname() : partner.getNickname(),
+                game.getRoundNumber(), game.getCurrentTurnUserId(), state.prompt(), List.of(),
+                null, null, false, null, 0, null, List.of(), List.of(), false,
+                state.category(), null,
+                game.getCreatedAt(), game.getUpdatedAt(), game.getFinishedAt());
+    }
+
+    private GameSessionView viewUnknown(GameSession game, User user, User partner) {
+        return new GameSessionView(
+                game.getId(), game.getGameType(), game.getStatus(), game.getCreatedBy(),
+                Objects.equals(game.getCreatedBy(), user.getId()) ? user.getNickname() : partner.getNickname(),
+                game.getRoundNumber(), game.getCurrentTurnUserId(), null, List.of(),
+                null, null, false, null, 0, null, List.of(), List.of(), false,
+                null, null,
                 game.getCreatedAt(), game.getUpdatedAt(), game.getFinishedAt());
     }
 
@@ -352,12 +527,158 @@ public class GameService {
         }
     }
 
+    private StoredMemoryGuessState readMemory(GameSession game) {
+        try {
+            StoredMemoryGuessState state = objectMapper.readValue(
+                    game.getStateJson(), StoredMemoryGuessState.class);
+            return new StoredMemoryGuessState(
+                    state.prompt(), state.options() == null ? List.of() : state.options(),
+                    state.answers() == null ? Map.of() : state.answers(), state.score(),
+                    state.correctAnswer(), state.roundComplete(), state.memoryId(), state.mediaId(),
+                    state.memoryTitle(), state.memoryDescription(), state.memoryEventAt(),
+                    state.memoryLocation(), state.usedMemoryIds() == null ? List.of() : state.usedMemoryIds());
+        } catch (Exception ex) {
+            throw new IllegalStateException("无法读取回忆游戏状态", ex);
+        }
+    }
+
+    private StoredTruthCardState readTruth(GameSession game) {
+        try {
+            StoredTruthCardState state = objectMapper.readValue(
+                    game.getStateJson(), StoredTruthCardState.class);
+            return new StoredTruthCardState(
+                    state.prompt(), state.category(),
+                    state.usedCardIds() == null ? List.of() : state.usedCardIds());
+        } catch (Exception ex) {
+            throw new IllegalStateException("无法读取真心话卡牌状态", ex);
+        }
+    }
+
+    private void saveMemoryState(GameSession game, StoredMemoryGuessState state) {
+        game.setStateJson(write(state));
+        games.save(game);
+    }
+
+    private void saveTruthState(GameSession game, StoredTruthCardState state) {
+        game.setStateJson(write(state));
+        games.save(game);
+    }
+
+    private StoredMemoryGuessState memoryState(MemoryRound round, Map<Long, String> answers,
+                                                int score, boolean complete) {
+        return new StoredMemoryGuessState(
+                round.prompt(), round.options(), answers, score, round.correctAnswer(), complete,
+                round.memoryId(), round.mediaId(), round.memoryTitle(), round.memoryDescription(),
+                round.memoryEventAt(), round.memoryLocation(), round.usedMemoryIds());
+    }
+
+    private MemoryRound drawMemoryRound(Long coupleId, List<Long> alreadyUsed) {
+        List<Memory> allMemories = memories
+                .findByCoupleIdAndDeletedAtIsNullOrderByEventAtDesc(coupleId);
+        if (allMemories.size() < 2) {
+            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_GAME_NEEDS_MORE_MEMORIES",
+                    "至少记录两段回忆后，才能开始回忆猜猜看");
+        }
+        Set<Long> memoryIds = allMemories.stream().map(Memory::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        Map<Long, List<Media>> imagesByMemory = media.findByMemoryIdIn(memoryIds).stream()
+                .filter(item -> Objects.equals(item.getCoupleId(), coupleId))
+                .filter(item -> "image".equalsIgnoreCase(item.getMediaType()))
+                .collect(java.util.stream.Collectors.groupingBy(Media::getMemoryId));
+        List<Memory> eligible = allMemories.stream()
+                .filter(memory -> !imagesByMemory.getOrDefault(memory.getId(), List.of()).isEmpty())
+                .toList();
+        if (eligible.size() < 2) {
+            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_GAME_NEEDS_PHOTOS",
+                    "至少需要两段带照片的回忆，才能开始这个游戏");
+        }
+
+        Set<Long> eligibleIds = eligible.stream().map(Memory::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        List<Long> used = new ArrayList<>((alreadyUsed == null ? List.<Long>of() : alreadyUsed).stream()
+                .filter(eligibleIds::contains).distinct().toList());
+        if (used.size() >= eligible.size()) {
+            Long previous = used.isEmpty() ? null : used.get(used.size() - 1);
+            used.clear();
+            if (previous != null) used.add(previous);
+        }
+
+        List<Memory> pool = eligible.stream().filter(value -> !used.contains(value.getId()))
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        Collections.shuffle(pool, ThreadLocalRandom.current());
+        for (Memory target : pool) {
+            List<MemoryQuestion> questions = memoryQuestions(target, allMemories);
+            if (questions.isEmpty()) continue;
+            MemoryQuestion question = randomItem(questions, null);
+            List<Media> targetImages = imagesByMemory.get(target.getId());
+            Media selectedImage = randomItem(targetImages, null);
+            List<Long> nextUsed = new ArrayList<>(used);
+            nextUsed.add(target.getId());
+            return new MemoryRound(
+                    question.prompt(), question.options(), question.answer(), target.getId(),
+                    selectedImage.getId(), target.getTitle(), target.getDescription(), target.getEventAt(),
+                    target.getLocation(), List.copyOf(nextUsed));
+        }
+        throw new ApiException(HttpStatus.CONFLICT, "MEMORY_GAME_NEEDS_VARIETY",
+                "回忆内容还不够区分，再补充不同标题、日期或地点后试试吧");
+    }
+
+    private List<MemoryQuestion> memoryQuestions(Memory target, List<Memory> allMemories) {
+        List<MemoryQuestion> questions = new ArrayList<>();
+        memoryQuestion("这张照片属于哪一段回忆？", target.getTitle(),
+                allMemories.stream().map(Memory::getTitle).toList()).ifPresent(questions::add);
+        memoryQuestion("这张照片记录的是哪一天？", MEMORY_DATE.format(target.getEventAt()),
+                allMemories.stream().map(Memory::getEventAt).map(MEMORY_DATE::format).toList())
+                .ifPresent(questions::add);
+        memoryQuestion("这张照片是在哪里留下的？", target.getLocation(),
+                allMemories.stream().map(Memory::getLocation).filter(Objects::nonNull).toList())
+                .ifPresent(questions::add);
+        return questions;
+    }
+
+    private Optional<MemoryQuestion> memoryQuestion(String prompt, String answer, List<String> values) {
+        if (answer == null || answer.isBlank()) return Optional.empty();
+        String cleanAnswer = answer.trim();
+        String answerKey = normalized(cleanAnswer);
+        LinkedHashMap<String, String> distinct = new LinkedHashMap<>();
+        for (String value : values) {
+            if (value == null || value.isBlank()) continue;
+            String cleaned = value.trim();
+            distinct.putIfAbsent(normalized(cleaned), cleaned);
+        }
+        distinct.remove(answerKey);
+        List<String> distractors = new ArrayList<>(distinct.values());
+        if (distractors.isEmpty()) return Optional.empty();
+        Collections.shuffle(distractors, ThreadLocalRandom.current());
+        List<String> options = new ArrayList<>();
+        options.add(cleanAnswer);
+        options.addAll(distractors.subList(0, Math.min(3, distractors.size())));
+        Collections.shuffle(options, ThreadLocalRandom.current());
+        return Optional.of(new MemoryQuestion(prompt, cleanAnswer, List.copyOf(options)));
+    }
+
+    private TruthDeckDraw drawTruthCard(List<Integer> alreadyUsed) {
+        Set<Integer> validIds = TRUTH_CARDS.stream().map(TruthCard::id)
+                .collect(java.util.stream.Collectors.toSet());
+        List<Integer> used = new ArrayList<>((alreadyUsed == null ? List.<Integer>of() : alreadyUsed).stream()
+                .filter(validIds::contains).distinct().toList());
+        if (used.size() >= TRUTH_CARDS.size()) {
+            Integer previous = used.isEmpty() ? null : used.get(used.size() - 1);
+            used.clear();
+            if (previous != null) used.add(previous);
+        }
+        List<TruthCard> available = TRUTH_CARDS.stream().filter(card -> !used.contains(card.id())).toList();
+        TruthCard card = randomItem(available, null);
+        used.add(card.id());
+        return new TruthDeckDraw(card, List.copyOf(used));
+    }
+
     private GameStrokeRequest normalizeStroke(GameStrokeRequest stroke) {
         String tool = "ERASE".equals(stroke.tool()) ? "ERASE" : "DRAW";
         return new GameStrokeRequest(tool, stroke.color(), stroke.width(), stroke.points());
     }
 
-    private String write(StoredGameState state) {
+    private String write(Object state) {
         try {
             return objectMapper.writeValueAsString(state);
         } catch (Exception ex) {
@@ -378,10 +699,24 @@ public class GameService {
     }
 
     private record Question(String prompt, List<String> options) {}
+    private record TruthCard(int id, String category, String prompt) {}
+    private record TruthDeckDraw(TruthCard card, List<Integer> usedCardIds) {}
+    private record MemoryQuestion(String prompt, String answer, List<String> options) {}
+    private record MemoryRound(
+            String prompt, List<String> options, String correctAnswer,
+            Long memoryId, Long mediaId, String memoryTitle, String memoryDescription,
+            LocalDateTime memoryEventAt, String memoryLocation, List<Long> usedMemoryIds) {}
     public record StoredGuess(Long userId, String text, boolean correct, LocalDateTime createdAt) {}
     public record StoredGameState(
             String prompt, List<String> options, Map<Long, String> answers, int score,
             String secretWord, List<GameStrokeRequest> strokes,
             List<StoredGuess> guesses, boolean roundComplete,
             List<String> appliedStrokeOperationIds) {}
+    public record StoredMemoryGuessState(
+            String prompt, List<String> options, Map<Long, String> answers, int score,
+            String correctAnswer, boolean roundComplete, Long memoryId, Long mediaId,
+            String memoryTitle, String memoryDescription, LocalDateTime memoryEventAt,
+            String memoryLocation, List<Long> usedMemoryIds) {}
+    public record StoredTruthCardState(
+            String prompt, String category, List<Integer> usedCardIds) {}
 }

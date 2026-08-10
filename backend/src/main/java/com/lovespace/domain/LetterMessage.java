@@ -26,6 +26,9 @@ public class LetterMessage implements RecoverableContent {
     private LocalDateTime notifiedAt;
     @Column(name = "read_at")
     private LocalDateTime readAt;
+    @Version
+    @Column(nullable = false)
+    private Long version;
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     @Column(name = "deleted_by")
@@ -57,6 +60,7 @@ public class LetterMessage implements RecoverableContent {
     public void setNotifiedAt(LocalDateTime notifiedAt) { this.notifiedAt = notifiedAt; }
     public LocalDateTime getReadAt() { return readAt; }
     public void setReadAt(LocalDateTime readAt) { this.readAt = readAt; }
+    public Long getVersion() { return version; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public Long getDeletedBy() { return deletedBy; }
     public void setDeletedBy(Long deletedBy) { this.deletedBy = deletedBy; }

@@ -9,6 +9,7 @@ import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.text.Normalizer;
 import java.util.*;
 import java.util.stream.Stream;
 import org.springframework.data.domain.*;
@@ -55,7 +56,7 @@ public class MemoryService {
                 predicates.add(cb.lessThan(root.get("eventAt"), start.plusDays(1)));
             }
             if (tag != null && !tag.isBlank()) {
-                predicates.add(cb.equal(cb.lower(root.join("tags")), tag.trim().toLowerCase(Locale.ROOT)));
+                predicates.add(cb.equal(cb.lower(root.join("tags")), tagKey(tag)));
                 query.distinct(true);
             }
             return cb.and(predicates.toArray(Predicate[]::new));
@@ -69,10 +70,16 @@ public class MemoryService {
     @Transactional(readOnly = true)
     public List<MemoryTagView> tags(Authentication auth) {
         User user = current.user(auth);
-        Map<String, Long> counts = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        Map<String, Long> countsByKey = new LinkedHashMap<>();
+        Map<String, String> displayByKey = new LinkedHashMap<>();
         memories.findByCoupleIdAndDeletedAtIsNullOrderByEventAtDesc(user.getCouple().getId()).forEach(memory ->
-                memory.getTags().forEach(tag -> counts.merge(tag, 1L, Long::sum)));
-        return counts.entrySet().stream().map(entry -> new MemoryTagView(entry.getKey(), entry.getValue()))
+                memory.getTags().forEach(tag -> {
+                    String key = tagKey(tag);
+                    displayByKey.putIfAbsent(key, tag);
+                    countsByKey.merge(key, 1L, Long::sum);
+                }));
+        return countsByKey.entrySet().stream()
+                .map(entry -> new MemoryTagView(displayByKey.get(entry.getKey()), entry.getValue()))
                 .sorted(Comparator.comparingLong(MemoryTagView::memoryCount).reversed()
                         .thenComparing(MemoryTagView::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
@@ -87,7 +94,7 @@ public class MemoryService {
         Map<Long, Memory> memoryById = memories
                 .findByCoupleIdAndDeletedAtIsNullOrderByEventAtDesc(user.getCouple().getId()).stream()
                 .filter(memory -> selectedTag == null || memory.getTags().stream()
-                        .anyMatch(value -> value.equalsIgnoreCase(selectedTag)))
+                        .anyMatch(value -> tagKey(value).equals(tagKey(selectedTag))))
                 .filter(memory -> keyword == null || matches(memory, keyword))
                 .collect(java.util.stream.Collectors.toMap(Memory::getId, value -> value));
         List<Media> visualMedia = media.findByCoupleIdAndMediaTypeIn(
@@ -205,12 +212,19 @@ public class MemoryService {
         value.setEventAt(input.eventAt());
         value.setLocation(AccountService.trimToNull(input.location()));
         LinkedHashSet<String> normalizedTags = new LinkedHashSet<>();
+        Map<String, String> displayTagsByKey = new LinkedHashMap<>();
         if (input.tags() != null) {
             for (String tag : input.tags()) {
                 String normalized = tag == null ? null : tag.trim().replaceAll("\\s+", " ");
-                if (normalized != null && !normalized.isBlank()) normalizedTags.add(normalized);
+                if (normalized != null && !normalized.isBlank()) {
+                    // MySQL utf8mb4_unicode_ci is case/accent insensitive. Keep the
+                    // first request spelling for display, but deduplicate by the same
+                    // folded key before Hibernate writes the composite PK.
+                    displayTagsByKey.putIfAbsent(tagKey(normalized), normalized);
+                }
             }
         }
+        normalizedTags.addAll(displayTagsByKey.values());
         if (normalizedTags.size() > 12) throw ApiException.badRequest("每段回忆最多添加 12 个标签");
         value.setTags(normalizedTags);
     }
@@ -224,6 +238,12 @@ public class MemoryService {
         String keyword = search.toLowerCase(Locale.ROOT);
         return Stream.of(memory.getTitle(), memory.getDescription(), memory.getLocation())
                 .filter(Objects::nonNull).anyMatch(value -> value.toLowerCase(Locale.ROOT).contains(keyword));
+    }
+    private String tagKey(String value) {
+        return Normalizer.normalize(value, Normalizer.Form.NFKD)
+                .replaceAll("\\p{M}+", "")
+                .toUpperCase(Locale.ROOT)
+                .toLowerCase(Locale.ROOT);
     }
     private String escapeLike(String text) { return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_"); }
 }

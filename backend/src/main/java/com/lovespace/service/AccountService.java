@@ -86,7 +86,9 @@ public class AccountService {
     }
     @Transactional
     public MoodView setTodayMood(Authentication auth, MoodRequest request) {
-        User user = current.user(auth);
+        // Lock the stable user row before checking the unique (user_id, mood_date) key.
+        // This serializes first writes across H2 and MySQL without dialect-specific upsert SQL.
+        User user = current.userForUpdate(auth);
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
         Mood mood = moods.findByUserIdAndMoodDate(user.getId(), today).orElseGet(Mood::new);
         if (mood.getId() == null) {

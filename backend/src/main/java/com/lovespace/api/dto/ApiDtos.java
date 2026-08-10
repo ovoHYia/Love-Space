@@ -152,17 +152,17 @@ public final class ApiDtos {
     public record GameAnswerRequest(@NotBlank @Size(max = 80) String answer) {}
     public record GameGuessRequest(@NotBlank @Size(max = 80) String guess) {}
     public record GamePointRequest(
-            @DecimalMin("0.0") @DecimalMax("1.0") double x,
-            @DecimalMin("0.0") @DecimalMax("1.0") double y) {}
+            @NotNull @DecimalMin("0.0") @DecimalMax("1.0") Double x,
+            @NotNull @DecimalMin("0.0") @DecimalMax("1.0") Double y) {}
     public record GameStrokeRequest(
-            @Pattern(regexp = "DRAW|ERASE") String tool,
+            @NotNull @NotBlank @Pattern(regexp = "DRAW|ERASE") String tool,
             @NotBlank @Pattern(regexp = "^#[0-9A-Fa-f]{6}$") String color,
             @DecimalMin("1.0") @DecimalMax("32.0") double width,
-            @NotEmpty @Size(max = 600) List<@Valid GamePointRequest> points) {}
+            @NotEmpty @Size(max = 600) List<@NotNull @Valid GamePointRequest> points) {}
     public record GameStrokeBatchRequest(
             @Positive int roundNumber,
             @NotBlank @Size(max = 80) String operationId,
-            @NotEmpty @Size(max = 12) List<@Valid GameStrokeRequest> strokes) {}
+            @NotEmpty @Size(max = 12) List<@NotNull @Valid GameStrokeRequest> strokes) {}
     public record GameGuessView(Long userId, String nickname, String text,
                                 boolean correct, LocalDateTime createdAt) {}
     public record GameMemoryView(String imageUrl, String title, String description,

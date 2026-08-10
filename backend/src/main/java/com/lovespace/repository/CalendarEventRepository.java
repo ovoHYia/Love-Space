@@ -14,7 +14,7 @@ public interface CalendarEventRepository extends JpaRepository<CalendarEvent, Lo
             where e.coupleId = :coupleId
               and e.deletedAt is null
               and e.startAt < :endExclusive
-              and (e.endAt is null or e.endAt >= :startInclusive)
+              and (e.endAt is null or e.endAt > :startInclusive)
             order by e.startAt asc, e.id asc
             """)
     List<CalendarEvent> findActiveInRange(

@@ -343,6 +343,27 @@ class LoveSpaceApiIntegrationTest {
     }
 
     @Test
+    void memoryTagsDeduplicateCaseInsensitivelyAndKeepFirstDisplaySpelling() throws Exception {
+        String json = """
+                {"title":"标签大小写","eventAt":"2026-07-01T18:30:00",
+                 "tags":["Trip"," trip ","TRIP"]}
+                """;
+        MockMultipartFile data = new MockMultipartFile("data", "", "application/json",
+                json.getBytes(StandardCharsets.UTF_8));
+
+        mvc.perform(multipart("/api/memories").file(data).with(csrf()).session(firstSession))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tags", contains("Trip")));
+        mvc.perform(get("/api/memories/tags").session(secondSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].name").value("Trip"))
+                .andExpect(jsonPath("$[0].memoryCount").value(1));
+        mvc.perform(get("/api/memories").session(secondSession).param("tag", "trip"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
     void dashboardMoodAnniversaryAndMemoryFiltersWork() throws Exception {
         mvc.perform(put("/api/moods/today").with(csrf()).session(firstSession).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"emoji\":\"😊\",\"label\":\"开心\",\"note\":\"见到你啦\"}"))

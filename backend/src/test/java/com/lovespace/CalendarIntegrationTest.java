@@ -181,6 +181,23 @@ class CalendarIntegrationTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_REQUEST"));
     }
 
+    @Test
+    void calendarExcludesEventEndingExactlyAtRangeStart() throws Exception {
+        LocalDate day = LocalDate.of(2026, 8, 10);
+        mvc.perform(post("/api/calendar/events").with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"边界结束日程","startAt":"2026-08-09T20:00:00",
+                                 "endAt":"2026-08-10T00:00:00","allDay":false,"category":"OTHER"}
+                                """))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get("/api/calendar").session(alice)
+                        .param("from", day.toString()).param("to", day.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].title", not(hasItem("边界结束日程"))));
+    }
+
     private User user(Couple couple, String username, String nickname, String password) {
         User value = new User();
         value.setCouple(couple);

@@ -18,6 +18,7 @@ app:
     password-reset:
       max-attempts-per-ip: 5
       max-failures-per-identity: 3
+      max-tracked-entries: 100
       window-minutes: 15
       lock-minutes: 15
       evict-after-minutes: 30

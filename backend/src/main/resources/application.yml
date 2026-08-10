@@ -46,6 +46,7 @@ app:
     password-reset:
       max-attempts-per-ip: ${PASSWORD_RESET_MAX_ATTEMPTS_PER_IP:20}
       max-failures-per-identity: ${PASSWORD_RESET_MAX_FAILURES_PER_IDENTITY:5}
+      max-tracked-entries: ${PASSWORD_RESET_MAX_TRACKED_ENTRIES:5000}
       window-minutes: ${PASSWORD_RESET_WINDOW_MINUTES:15}
       lock-minutes: ${PASSWORD_RESET_LOCK_MINUTES:15}
       evict-after-minutes: ${PASSWORD_RESET_EVICT_AFTER_MINUTES:30}

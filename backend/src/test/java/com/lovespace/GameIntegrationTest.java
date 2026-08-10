@@ -248,7 +248,7 @@ class GameIntegrationTest {
                 .andExpect(jsonPath("$.secretWord").value(nullValue()));
 
         String stroke = """
-                {"roundNumber":1,"operationId":"stroke-1","strokes":[{"color":"#c95868","width":5,
+                {"roundNumber":1,"operationId":"stroke-1","strokes":[{"tool":"DRAW","color":"#c95868","width":5,
                 "points":[{"x":0.1,"y":0.2},{"x":0.3,"y":0.4}]}]}
                 """;
         mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(bob)
@@ -322,6 +322,37 @@ class GameIntegrationTest {
                         .content(staleRound.replace("\"roundNumber\":2", "\"roundNumber\":1")
                                 .replace("\"operationId\":\"stale-round\"", "\"operationId\":\"old-round\"")))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void gameStrokeValidationRejectsNullNestedElementsAndMissingTool() throws Exception {
+        long gameId = createGame(alice, "DRAW_GUESS");
+
+        mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roundNumber":1,"operationId":"null-stroke","strokes":[null]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roundNumber":1,"operationId":"null-point","strokes":[
+                                  {"tool":"DRAW","color":"#c95868","width":5,"points":[null]}]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        mvc.perform(post("/api/games/{id}/strokes", gameId).with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roundNumber":1,"operationId":"missing-tool","strokes":[
+                                  {"color":"#c95868","width":5,"points":[{"x":0.1,"y":0.2}]}]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.lovespace;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -136,6 +137,22 @@ class LoveSpaceApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content(setup))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("SETUP_ALREADY_INITIALIZED"));
+    }
+
+    @Test
+    void csrfFailuresHaveIndependentCodesAndDoNotReachTheController() throws Exception {
+        String diary = "{\"title\":\"不会写入\",\"content\":\"csrf\",\"diaryDate\":\"2026-08-10\"}";
+
+        mvc.perform(post("/api/diaries").session(firstSession)
+                        .contentType(MediaType.APPLICATION_JSON).content(diary))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CSRF_TOKEN_MISSING"));
+        mvc.perform(post("/api/diaries").with(csrf().useInvalidToken()).session(firstSession)
+                        .contentType(MediaType.APPLICATION_JSON).content(diary))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CSRF_TOKEN_INVALID"));
+
+        assertEquals(0, jdbc.queryForObject("select count(*) from diaries", Integer.class));
     }
 
     @Test

@@ -24,4 +24,10 @@ describe('resource sync', () => {
 
     expect(calls).toBe(2)
   })
+
+  it('lets the trash page react to both sides of a restore event', () => {
+    const subscribed = ['trash', 'memories', 'diaries', 'messages', 'anniversaries', 'wishes', 'calendar']
+
+    expect(subscribed.every(resource => matchesResource(subscribed, { resource }))).toBe(true)
+  })
 })

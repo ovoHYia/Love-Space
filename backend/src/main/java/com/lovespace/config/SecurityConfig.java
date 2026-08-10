@@ -16,6 +16,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.InvalidCsrfTokenException;
+import org.springframework.security.web.csrf.MissingCsrfTokenException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.*;
 
@@ -46,7 +48,7 @@ public class SecurityConfig {
                         .anyRequest().permitAll())
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((request, response, ex) -> writeError(response, 401, "UNAUTHORIZED", "请先登录"))
-                        .accessDeniedHandler((request, response, ex) -> writeError(response, 403, "FORBIDDEN", "无权执行此操作")))
+                        .accessDeniedHandler((request, response, ex) -> writeAccessDeniedError(response, ex)))
                 .sessionManagement(session -> session.sessionFixation(fixation -> fixation.migrateSession()))
                 .build();
     }
@@ -72,5 +74,19 @@ public class SecurityConfig {
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(response.getWriter(), ApiError.of(status, code, message));
+    }
+
+    private void writeAccessDeniedError(jakarta.servlet.http.HttpServletResponse response,
+                                        org.springframework.security.access.AccessDeniedException ex)
+            throws IOException {
+        if (ex instanceof MissingCsrfTokenException) {
+            writeError(response, 403, "CSRF_TOKEN_MISSING", "安全令牌缺失，请刷新后重试");
+            return;
+        }
+        if (ex instanceof InvalidCsrfTokenException) {
+            writeError(response, 403, "CSRF_TOKEN_INVALID", "安全令牌已失效，请刷新后重试");
+            return;
+        }
+        writeError(response, 403, "FORBIDDEN", "无权执行此操作");
     }
 }

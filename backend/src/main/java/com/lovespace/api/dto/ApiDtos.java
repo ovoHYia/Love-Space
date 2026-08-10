@@ -168,7 +168,7 @@ public final class ApiDtos {
     public record GameMemoryView(String imageUrl, String title, String description,
                                  LocalDateTime eventAt, String location) {}
     public record GameSessionView(
-            Long id, String gameType, String status, Long createdBy, String createdByNickname,
+            Long id, Long revision, String gameType, String status, Long createdBy, String createdByNickname,
             int roundNumber, Long currentTurnUserId, String prompt, List<String> options,
             String myAnswer, String partnerAnswer, boolean answersRevealed, Boolean matched,
             int score, String secretWord, List<GameStrokeRequest> strokes,

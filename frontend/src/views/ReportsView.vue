@@ -14,6 +14,7 @@ import { authState } from '../stores/auth'
 import { useResourceSync } from '../composables/resourceSync'
 import type { MonthlyHighlight, MonthlyReport, UserProfile } from '../types'
 import { formatDate, sameId, todayInput } from '../utils'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 const router = useRouter()
 const report = ref<MonthlyReport | null>(null)
@@ -21,6 +22,7 @@ const loading = ref(true)
 const error = ref('')
 const currentMonth = todayInput().slice(0, 7)
 const month = ref(currentMonth)
+const reportRequests = createRequestGeneration()
 const chartWidth = 760
 const chartHeight = 240
 const plotLeft = 48
@@ -82,14 +84,19 @@ onMounted(load)
 useResourceSync(['moods', 'memories', 'diaries', 'messages', 'wishes'], load)
 
 async function load() {
+  const request = reportRequests.begin()
+  const targetMonth = month.value
   loading.value = true
   error.value = ''
   try {
-    report.value = await api.monthlyReport(month.value)
+    const nextReport = await api.monthlyReport(targetMonth)
+    if (!request.isLatest()) return
+    report.value = nextReport
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 

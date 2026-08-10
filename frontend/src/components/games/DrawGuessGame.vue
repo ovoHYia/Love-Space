@@ -7,7 +7,13 @@ import { useToast } from '../../composables/toast'
 import { authState } from '../../stores/auth'
 import type { GamePoint, GameSession, GameStroke } from '../../types'
 import { sameId } from '../../utils'
-import { createStrokeOperationId, isRetryableStrokeError, strokeRetryDelay } from '../../utils/gameStrokeSync'
+import { isRetryableStrokeError, strokeRetryDelay } from '../../utils/gameStrokeSync'
+import {
+  enqueueGameStroke,
+  flushPendingGameStrokes,
+  pendingStrokesFor,
+  registerGameStrokeCollector,
+} from '../../stores/gameStrokes'
 
 const props = defineProps<{ session: GameSession }>()
 const emit = defineEmits<{ updated: [session: GameSession] }>()
@@ -24,19 +30,25 @@ const guess = ref('')
 const busy = ref(false)
 const syncing = ref(false)
 const currentStroke = ref<GameStroke | null>(null)
-const pendingStrokes: GameStroke[] = []
+const pendingStrokes = ref<GameStroke[]>(pendingStrokesFor(String(props.session.id), props.session.roundNumber))
 const MAX_STROKE_POINTS = 480
-const MAX_BATCH_STROKES = 12
 const TOUCH_ERASER_OFFSET = 44
 const STROKE_RETRY_DELAY = 2000
 const MAX_STROKE_RETRY_DELAY = 30000
-type PendingBatch = { roundNumber: number; operationId: string; strokes: GameStroke[] }
 let observer: ResizeObserver | null = null
 let activePointerId: number | null = null
 let flushRetryTimer: number | null = null
-let activeBatch: PendingBatch | null = null
 let retryAttempt = 0
 let retryNoticeShown = false
+let flushBlocked = false
+const unregisterStrokeCollector = registerGameStrokeCollector(String(props.session.id), () => {
+  if (!currentStroke.value?.points.length) return
+  enqueueGameStroke(String(props.session.id), props.session.roundNumber, {
+    ...currentStroke.value,
+    points: compactPoints(currentStroke.value.points),
+  })
+  currentStroke.value = null
+})
 
 const isDrawer = computed(() => sameId(props.session.currentTurnUserId, authState.user?.id))
 const canDraw = computed(() => props.session.status === 'ACTIVE' && isDrawer.value && !props.session.roundComplete)
@@ -52,6 +64,13 @@ onMounted(() => {
 onBeforeUnmount(() => {
   observer?.disconnect()
   cancelStrokeRetry()
+  unregisterStrokeCollector()
+  if (currentStroke.value?.points.length) {
+    enqueueGameStroke(String(props.session.id), props.session.roundNumber, {
+      ...currentStroke.value,
+      points: compactPoints(currentStroke.value.points),
+    })
+  }
   activePointerId = null
   currentStroke.value = null
   eraserPreview.value = null
@@ -62,7 +81,13 @@ watch(
     props.session.status, props.session.roundComplete] as const,
   (next, previous) => {
     if (!previous || next.every((value, index) => String(value) === String(previous[index]))) return
-    discardPendingStrokes(pendingStrokes.length > 0)
+    if (pendingStrokes.value.length) {
+      show('当前画板还有未同步的笔画，已保留到这局游戏的发送队列。', 'info')
+    }
+    pendingStrokes.value = pendingStrokesFor(String(props.session.id), props.session.roundNumber)
+    retryAttempt = 0
+    retryNoticeShown = false
+    flushBlocked = false
   },
 )
 watch(tool, (value) => {
@@ -86,7 +111,7 @@ function redraw() {
   if (!element || !context) return
   const rect = element.getBoundingClientRect()
   context.clearRect(0, 0, rect.width, rect.height)
-  ;[...props.session.strokes, ...pendingStrokes].forEach((stroke) => drawStroke(context, stroke, rect))
+  ;[...props.session.strokes, ...pendingStrokes.value].forEach((stroke) => drawStroke(context, stroke, rect))
   if (currentStroke.value) drawStroke(context, currentStroke.value, rect)
 }
 
@@ -155,7 +180,8 @@ function endDrawing(event: PointerEvent) {
   currentStroke.value = null
   eraserPreview.value = null
   releaseActivePointer(event.pointerId)
-  pendingStrokes.push(stroke)
+  enqueueGameStroke(String(props.session.id), props.session.roundNumber, stroke)
+  flushBlocked = false
   redraw()
   void flushStrokes()
 }
@@ -174,7 +200,8 @@ function commitKeyboardStroke() {
   const stroke = { ...currentStroke.value, points: compactPoints(currentStroke.value.points) }
   currentStroke.value = null
   keyboardDrawing.value = false
-  pendingStrokes.push(stroke)
+  enqueueGameStroke(String(props.session.id), props.session.roundNumber, stroke)
+  flushBlocked = false
   redraw()
   void flushStrokes()
 }
@@ -256,7 +283,7 @@ function cancelStrokeRetry() {
 }
 
 function scheduleStrokeRetry() {
-  if (flushRetryTimer !== null || !pendingStrokes.length || !canDraw.value || !activeBatch) return
+  if (flushRetryTimer !== null || !pendingStrokes.value.length || !canDraw.value) return
   const delay = strokeRetryDelay(retryAttempt, STROKE_RETRY_DELAY, MAX_STROKE_RETRY_DELAY)
   retryAttempt++
   flushRetryTimer = window.setTimeout(() => {
@@ -265,43 +292,15 @@ function scheduleStrokeRetry() {
   }, delay)
 }
 
-function discardPendingStrokes(notify: boolean) {
-  cancelStrokeRetry()
-  activeBatch = null
-  retryAttempt = 0
-  retryNoticeShown = false
-  pendingStrokes.splice(0)
-  currentStroke.value = null
-  activePointerId = null
-  if (notify) show('画板局次已经变化，上一轮未同步的笔画已停止上传。', 'info')
-  void nextTick(redraw)
-}
-
 async function flushStrokes() {
-  if (syncing.value || !pendingStrokes.length || !canDraw.value) return
-  if (!activeBatch) {
-    activeBatch = {
-      roundNumber: props.session.roundNumber,
-      operationId: createStrokeOperationId(),
-      strokes: pendingStrokes.slice(0, MAX_BATCH_STROKES),
-    }
-  }
-  if (activeBatch.roundNumber !== props.session.roundNumber) {
-    discardPendingStrokes(true)
-    return
-  }
+  if (flushBlocked || syncing.value || !pendingStrokes.value.length || !canDraw.value) return
   syncing.value = true
-  const batch = activeBatch
   try {
-    const updated = await api.addGameStrokes(
-      props.session.id, batch.roundNumber, batch.operationId, batch.strokes,
-    )
-    pendingStrokes.splice(0, batch.strokes.length)
-    activeBatch = null
+    const updated = await flushPendingGameStrokes(String(props.session.id), props.session.roundNumber)
     retryAttempt = 0
     if (retryNoticeShown) show('画笔已经重新同步。', 'success')
     retryNoticeShown = false
-    emit('updated', updated)
+    if (updated) emit('updated', updated)
   } catch (cause) {
     redraw()
     if (isRetryableStrokeError(cause) && canDraw.value) {
@@ -312,11 +311,11 @@ async function flushStrokes() {
       scheduleStrokeRetry()
     } else {
       show(errorMessage(cause), 'error')
-      discardPendingStrokes(false)
+      flushBlocked = true
     }
   } finally {
     syncing.value = false
-    if (pendingStrokes.length && flushRetryTimer === null) void flushStrokes()
+    if (!flushBlocked && pendingStrokes.value.length && flushRetryTimer === null) void flushStrokes()
   }
 }
 
@@ -326,15 +325,15 @@ async function clearCanvas() {
   cancelStrokeRetry()
   try {
     const updated = await api.clearGameCanvas(props.session.id, props.session.roundNumber)
-    pendingStrokes.splice(0)
-    activeBatch = null
+    pendingStrokes.value.splice(0)
+    flushBlocked = false
     retryAttempt = 0
     retryNoticeShown = false
     emit('updated', updated)
   } catch (cause) {
     show(errorMessage(cause), 'error')
     redraw()
-    if (activeBatch && isRetryableStrokeError(cause)) scheduleStrokeRetry()
+    if (pendingStrokes.value.length && isRetryableStrokeError(cause)) scheduleStrokeRetry()
   } finally {
     busy.value = false
   }

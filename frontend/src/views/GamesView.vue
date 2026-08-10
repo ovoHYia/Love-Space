@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type Component } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { ArrowLeft, Brush, Gamepad2, HeartHandshake, LoaderCircle, MessageCircleHeart, Sparkles, Square, Trophy } from 'lucide-vue-next'
 import { api } from '../api'
 import { errorMessage } from '../api/client'
@@ -12,8 +13,14 @@ import LoadingState from '../components/LoadingState.vue'
 import { useResourceSync } from '../composables/resourceSync'
 import { useToast } from '../composables/toast'
 import { realtimeState } from '../stores/realtime'
+import {
+  abandonPendingGameStrokes,
+  flushAllPendingGameStrokes,
+} from '../stores/gameStrokes'
 import type { GameSession, GameType } from '../types'
 import { formatDateTime } from '../utils'
+import { acceptsGameSnapshot } from '../utils/gameSnapshot'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 const { show } = useToast()
 const sessions = ref<GameSession[]>([])
@@ -22,6 +29,7 @@ const loading = ref(true)
 const loadError = ref('')
 const busy = ref<GameType | 'finish' | null>(null)
 const finishConfirmation = ref(false)
+const gameRequests = createRequestGeneration()
 const activeSessions = computed(() => sessions.value.filter((item) => item.status === 'ACTIVE'))
 const recentSessions = computed(() => sessions.value.filter((item) => item.status === 'FINISHED').slice(0, 6))
 
@@ -47,18 +55,23 @@ const GAME_COMPONENTS: Record<GameType, Component> = {
 
 onMounted(() => void load())
 useResourceSync(['games'], refreshFromSync)
+onBeforeRouteLeave(ensurePendingStrokesHandled)
 
 async function load() {
+  const request = gameRequests.begin()
   try {
-    sessions.value = await api.games()
+    const nextSessions = await api.games()
+    if (!request.isLatest()) return
+    nextSessions.forEach(updateSession)
     loadError.value = ''
     if (selected.value) {
       selected.value = sessions.value.find((item) => String(item.id) === String(selected.value?.id)) || null
     }
   } catch (cause) {
+    if (!request.isLatest()) return
     loadError.value = errorMessage(cause)
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 
@@ -107,9 +120,30 @@ async function finish() {
 
 function updateSession(game: GameSession) {
   const index = sessions.value.findIndex((item) => String(item.id) === String(game.id))
+  if (index >= 0 && !acceptsGameSnapshot(sessions.value[index], game)) return
   if (index < 0) sessions.value.unshift(game)
   else sessions.value[index] = game
   if (String(selected.value?.id) === String(game.id)) selected.value = game
+}
+
+async function ensurePendingStrokesHandled() {
+  const result = await flushAllPendingGameStrokes()
+  if (result.completed) return true
+  const abandon = window.confirm(
+    '还有 ' + result.pending + ' 笔画没有同步成功。确定放弃这些笔画并离开游戏页面吗？',
+  )
+  if (!abandon) {
+    show('笔画还在发送队列中，完成同步或确认放弃后才能离开。', 'info')
+    return false
+  }
+  abandonPendingGameStrokes()
+  return true
+}
+
+async function leaveRoom() {
+  if (!(await ensurePendingStrokesHandled())) return
+  selected.value = null
+  finishConfirmation.value = false
 }
 
 function gameName(type: GameType) {
@@ -147,7 +181,7 @@ function progressLabel(game: GameSession) {
 
     <template v-else-if="selected">
       <header class="game-room-header">
-        <button class="text-button room-action" type="button" @click="selected = null; finishConfirmation = false"><ArrowLeft :size="17" />返回游戏柜</button>
+        <button class="text-button room-action" type="button" @click="leaveRoom"><ArrowLeft :size="17" />返回游戏柜</button>
         <div>
           <span :class="{ online: realtimeState.connected }">{{ realtimeState.connected ? '双端同步已连接' : '同步重连中' }}</span>
           <button v-if="selected.status === 'ACTIVE'" class="text-button muted room-action" type="button" :disabled="busy === 'finish'" @click="finishConfirmation = true">结束本局</button>

@@ -16,6 +16,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Service
@@ -84,6 +86,26 @@ public class RealtimeSyncService {
                         .reconnectTime(2_000).data(payload));
             } catch (IOException | IllegalStateException ex) {
                 remove(coupleId, clientId, connection);
+            }
+        });
+    }
+
+    public void publishAfterCommit(Long coupleId, Long actorId, String sourceClientId,
+                                   String action, List<String> resources) {
+        List<String> normalizedResources = resources == null
+                ? List.of()
+                : resources.stream().filter(value -> value != null && !value.isBlank()).distinct().toList();
+        if (normalizedResources.isEmpty()) return;
+        Runnable publish = () -> normalizedResources.forEach(resource ->
+                publish(coupleId, actorId, sourceClientId, action, resource));
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publish.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publish.run();
             }
         });
     }

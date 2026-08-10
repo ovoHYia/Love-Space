@@ -10,6 +10,7 @@ import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
 import type { TrashItem } from '../types'
 import { formatDateTime } from '../utils'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 const { show } = useToast()
 const items = ref<TrashItem[]>([])
@@ -18,6 +19,7 @@ const exporting = ref(false)
 const emptying = ref(false)
 const workingKey = ref('')
 const error = ref('')
+const trashRequests = createRequestGeneration()
 
 const typeLabels: Record<TrashItem['type'], string> = {
   MEMORY: '回忆',
@@ -33,14 +35,18 @@ onMounted(load)
 useResourceSync(['trash', 'memories', 'diaries', 'messages', 'anniversaries', 'wishes', 'calendar'], load)
 
 async function load() {
+  const request = trashRequests.begin()
   loading.value = true
   error.value = ''
   try {
-    items.value = await api.trash()
+    const nextItems = await api.trash()
+    if (!request.isLatest()) return
+    items.value = nextItems
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 

@@ -3,6 +3,7 @@ package com.lovespace;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -322,6 +323,22 @@ class GameIntegrationTest {
                         .content(staleRound.replace("\"roundNumber\":2", "\"roundNumber\":1")
                                 .replace("\"operationId\":\"stale-round\"", "\"operationId\":\"old-round\"")))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void gameSnapshotsExposeARevisionThatIncreasesAfterAStateChange() throws Exception {
+        long gameId = createGame(alice, "DRAW_GUESS");
+        long initialRevision = getGame(alice, gameId).get("revision").asLong();
+        String stroke = """
+                {"roundNumber":1,"operationId":"revision-stroke","strokes":[{"tool":"DRAW","color":"#c95868","width":5,
+                "points":[{"x":0.1,"y":0.2}]}]}
+                """;
+
+        JsonNode updated = objectMapper.readTree(mvc.perform(post("/api/games/{id}/strokes", gameId)
+                        .with(csrf()).session(alice).contentType(MediaType.APPLICATION_JSON).content(stroke))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
+
+        assertTrue(updated.get("revision").asLong() > initialRevision);
     }
 
     @Test

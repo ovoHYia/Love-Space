@@ -191,7 +191,7 @@ public class GameService {
         } else {
             throw ApiException.badRequest("不支持的游戏类型");
         }
-        return view(games.save(game), user, partner);
+        return view(games.saveAndFlush(game), user, partner);
     }
 
     @Transactional
@@ -380,7 +380,7 @@ public class GameService {
         if (GameSession.STATUS_ACTIVE.equals(game.getStatus())) {
             game.setStatus(GameSession.STATUS_FINISHED);
             game.setFinishedAt(LocalDateTime.now(ZONE));
-            games.save(game);
+            games.saveAndFlush(game);
         }
         return view(game, user, partner);
     }
@@ -418,7 +418,11 @@ public class GameService {
 
     private void saveState(GameSession game, StoredGameState state) {
         game.setStateJson(write(state));
-        games.save(game);
+        games.saveAndFlush(game);
+    }
+
+    private long revision(GameSession game) {
+        return game.getVersion() == null ? 0L : game.getVersion();
     }
 
     private GameSessionView view(GameSession game, User user, User partner) {
@@ -451,7 +455,7 @@ public class GameService {
                         guess.text(), guess.correct(), guess.createdAt()))
                 .toList();
         return new GameSessionView(
-                game.getId(), game.getGameType(), game.getStatus(), game.getCreatedBy(),
+                game.getId(), revision(game), game.getGameType(), game.getStatus(), game.getCreatedBy(),
                 Objects.equals(game.getCreatedBy(), user.getId()) ? user.getNickname() : partner.getNickname(),
                 game.getRoundNumber(), game.getCurrentTurnUserId(), state.prompt(), state.options(),
                 state.answers().get(user.getId()), revealed ? state.answers().get(partner.getId()) : null,
@@ -476,7 +480,7 @@ public class GameService {
                 revealed ? state.memoryEventAt() : null,
                 revealed ? state.memoryLocation() : null);
         return new GameSessionView(
-                game.getId(), game.getGameType(), game.getStatus(), game.getCreatedBy(),
+                game.getId(), revision(game), game.getGameType(), game.getStatus(), game.getCreatedBy(),
                 Objects.equals(game.getCreatedBy(), user.getId()) ? user.getNickname() : partner.getNickname(),
                 game.getRoundNumber(), game.getCurrentTurnUserId(), state.prompt(), state.options(),
                 state.answers().get(user.getId()), revealed ? state.answers().get(partner.getId()) : null,
@@ -488,7 +492,7 @@ public class GameService {
     private GameSessionView viewTruth(GameSession game, User user, User partner) {
         StoredTruthCardState state = readTruth(game);
         return new GameSessionView(
-                game.getId(), game.getGameType(), game.getStatus(), game.getCreatedBy(),
+                game.getId(), revision(game), game.getGameType(), game.getStatus(), game.getCreatedBy(),
                 Objects.equals(game.getCreatedBy(), user.getId()) ? user.getNickname() : partner.getNickname(),
                 game.getRoundNumber(), game.getCurrentTurnUserId(), state.prompt(), List.of(),
                 null, null, false, null, 0, null, List.of(), List.of(), false,
@@ -498,7 +502,7 @@ public class GameService {
 
     private GameSessionView viewUnknown(GameSession game, User user, User partner) {
         return new GameSessionView(
-                game.getId(), game.getGameType(), game.getStatus(), game.getCreatedBy(),
+                game.getId(), revision(game), game.getGameType(), game.getStatus(), game.getCreatedBy(),
                 Objects.equals(game.getCreatedBy(), user.getId()) ? user.getNickname() : partner.getNickname(),
                 game.getRoundNumber(), game.getCurrentTurnUserId(), null, List.of(),
                 null, null, false, null, 0, null, List.of(), List.of(), false,
@@ -556,12 +560,12 @@ public class GameService {
 
     private void saveMemoryState(GameSession game, StoredMemoryGuessState state) {
         game.setStateJson(write(state));
-        games.save(game);
+        games.saveAndFlush(game);
     }
 
     private void saveTruthState(GameSession game, StoredTruthCardState state) {
         game.setStateJson(write(state));
-        games.save(game);
+        games.saveAndFlush(game);
     }
 
     private StoredMemoryGuessState memoryState(MemoryRound round, Map<Long, String> answers,

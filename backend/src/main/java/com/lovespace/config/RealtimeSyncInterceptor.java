@@ -2,6 +2,8 @@ package com.lovespace.config;
 
 import com.lovespace.security.SessionPrincipal;
 import com.lovespace.service.RealtimeSyncService;
+import java.util.List;
+import java.util.Locale;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.Authentication;
@@ -33,8 +35,8 @@ public class RealtimeSyncInterceptor implements HandlerInterceptor {
         if (ex != null || response.getStatus() >= 400 || !isMutation(request)) return;
         Object value = request.getAttribute(PRINCIPAL_ATTRIBUTE);
         if (!(value instanceof SessionPrincipal principal)) return;
-        sync.publish(principal.coupleId(), principal.userId(), request.getHeader("X-Love-Client-Id"),
-                request.getMethod(), resourceOf(request.getRequestURI()));
+        sync.publishAfterCommit(principal.coupleId(), principal.userId(),
+                request.getHeader("X-Love-Client-Id"), request.getMethod(), resourcesOf(request.getRequestURI()));
     }
 
     private boolean isMutation(HttpServletRequest request) {
@@ -44,9 +46,27 @@ public class RealtimeSyncInterceptor implements HandlerInterceptor {
         };
     }
 
-    private String resourceOf(String path) {
+    static List<String> resourcesOf(String path) {
         String value = path.startsWith("/api/") ? path.substring(5) : path;
-        int slash = value.indexOf('/');
-        return slash < 0 ? value : value.substring(0, slash);
+        String[] parts = value.split("/");
+        if (parts.length == 0 || parts[0].isBlank()) return List.of();
+        String root = parts[0];
+        if ("trash".equals(root) && parts.length >= 4
+                && "restore".equalsIgnoreCase(parts[3])) {
+            return List.of("trash", trashResource(parts[1]));
+        }
+        return List.of(root);
+    }
+
+    private static String trashResource(String rawType) {
+        return switch (rawType.toUpperCase(Locale.ROOT)) {
+            case "MEMORY" -> "memories";
+            case "DIARY" -> "diaries";
+            case "MESSAGE" -> "messages";
+            case "ANNIVERSARY" -> "anniversaries";
+            case "WISH" -> "wishes";
+            case "CALENDAR_EVENT" -> "calendar";
+            default -> "trash";
+        };
     }
 }

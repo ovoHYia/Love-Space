@@ -163,6 +163,7 @@ export interface GameMemory {
 
 export interface GameSession {
   id: number | string
+  revision: number | string
   gameType: GameType
   status: GameStatus
   createdBy: number | string

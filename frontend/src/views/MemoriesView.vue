@@ -12,6 +12,7 @@ import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
 import type { AlbumItem, MediaItem, Memory, MemoryTag } from '../types'
 import { memoryMediaType, memoryMediaUrl } from '../utils/memoryMedia'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 type MemoryViewMode = 'timeline' | 'album'
 
@@ -30,39 +31,46 @@ const editing = ref<Memory | null>(null)
 const galleryMemory = ref<Memory | null>(null)
 const mediaViewer = ref<{ title: string; media: MediaItem } | null>(null)
 const filters = reactive({ q: '', tag: '' })
+const viewRequests = createRequestGeneration()
+const tagRequests = createRequestGeneration()
 
 const viewOptions = [
   { id: 'timeline' as const, label: '时间线', icon: CalendarDays },
   { id: 'album' as const, label: '我们的相册', icon: Images },
 ]
 
-onMounted(() => Promise.all([loadTimeline(), loadTags()]))
+onMounted(() => { void Promise.all([loadTimeline(), loadTags()]) })
 useResourceSync(['memories', 'media'], async () => {
   await Promise.all([loadCurrentView(), loadTags()])
 })
-watch(activeView, loadCurrentView)
-watch(() => filters.tag, loadCurrentView)
+watch(activeView, () => { void loadCurrentView() })
+watch(() => filters.tag, () => { void loadCurrentView() })
 
 async function loadCurrentView() {
-  if (activeView.value === 'timeline') await loadTimeline()
-  if (activeView.value === 'album') await loadAlbum()
+  const view = activeView.value
+  if (view === 'timeline') await loadTimeline()
+  if (view === 'album') await loadAlbum()
 }
 
 async function loadTimeline() {
+  const request = viewRequests.begin()
   loading.value = true
   error.value = ''
   try {
     const payload = await api.memories(memoryQuery(0))
+    if (!request.isLatest()) return
     memories.value = payload.content
     applyPage(payload)
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 
 async function loadAlbum(targetPage = 0, append = false) {
+  const request = viewRequests.begin()
   loading.value = !append
   loadingMore.value = append
   error.value = ''
@@ -71,21 +79,27 @@ async function loadAlbum(targetPage = 0, append = false) {
     if (filters.q.trim()) query.set('q', filters.q.trim())
     if (filters.tag) query.set('tag', filters.tag)
     const payload = await api.memoryAlbum(query.toString())
+    if (!request.isLatest()) return
     albumItems.value = append ? [...albumItems.value, ...payload.content] : payload.content
     applyPage(payload)
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
   } finally {
-    loading.value = false
-    loadingMore.value = false
+    if (request.isLatest()) {
+      loading.value = false
+      loadingMore.value = false
+    }
   }
 }
 
 async function loadTags() {
+  const request = tagRequests.begin()
   try {
-    availableTags.value = await api.memoryTags()
+    const tags = await api.memoryTags()
+    if (request.isLatest()) availableTags.value = tags
   } catch {
-    availableTags.value = []
+    if (request.isLatest()) availableTags.value = []
   }
 }
 
@@ -95,15 +109,18 @@ async function loadMore() {
     await loadAlbum(page.value + 1, true)
     return
   }
+  const request = viewRequests.begin()
   loadingMore.value = true
   try {
     const payload = await api.memories(memoryQuery(page.value + 1))
+    if (!request.isLatest()) return
     memories.value = [...memories.value, ...payload.content]
     applyPage(payload)
   } catch (cause) {
+    if (!request.isLatest()) return
     show(errorMessage(cause), 'error')
   } finally {
-    loadingMore.value = false
+    if (request.isLatest()) loadingMore.value = false
   }
 }
 

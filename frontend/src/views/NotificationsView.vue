@@ -14,6 +14,7 @@ import { useResourceSync } from '../composables/resourceSync'
 import { refreshUnreadCount } from '../stores/notifications'
 import type { AppNotification, NotificationList, NotificationPreferences } from '../types'
 import { formatDateTime, sameId } from '../utils'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 type StatusFilter = 'ALL' | 'UNREAD' | 'READ'
 type CategoryFilter = 'ALL' | 'ANNIVERSARY' | 'MESSAGE' | 'WISH'
@@ -37,6 +38,8 @@ const preferences = reactive<NotificationPreferences>({
 })
 const preferencesLoading = ref(true)
 const preferencesSaving = ref(false)
+const notificationRequests = createRequestGeneration()
+const preferencesRequests = createRequestGeneration()
 
 const statusFilters: { value: StatusFilter; label: string }[] = [
   { value: 'ALL', label: '全部' },
@@ -74,32 +77,39 @@ watch([status, category], async () => {
 })
 
 async function load() {
+  const request = notificationRequests.begin()
+  const query = {
+    page: page.value,
+    size: 12,
+    status: status.value,
+    category: category.value,
+    keyword: keyword.value,
+  }
   loading.value = true
   error.value = ''
   try {
-    data.value = await api.notifications({
-      page: page.value,
-      size: 12,
-      status: status.value,
-      category: category.value,
-      keyword: keyword.value,
-    })
+    const nextData = await api.notifications(query)
+    if (!request.isLatest()) return
+    data.value = nextData
     selected.value = selected.value.filter(id => data.value?.items.some(item => sameId(item.id, id)))
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 
 async function loadPreferences() {
+  const request = preferencesRequests.begin()
   preferencesLoading.value = true
   try {
-    Object.assign(preferences, await api.notificationPreferences())
+    const nextPreferences = await api.notificationPreferences()
+    if (request.isLatest()) Object.assign(preferences, nextPreferences)
   } catch (cause) {
-    show(errorMessage(cause), 'error')
+    if (request.isLatest()) show(errorMessage(cause), 'error')
   } finally {
-    preferencesLoading.value = false
+    if (request.isLatest()) preferencesLoading.value = false
   }
 }
 

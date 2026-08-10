@@ -11,6 +11,7 @@ import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
 import type { CalendarEntry, CalendarEventInput, CalendarSource } from '../types'
 import { formatDate, formatDateTime, todayInput } from '../utils'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 const router = useRouter()
 const { show } = useToast()
@@ -25,6 +26,7 @@ const modalOpen = ref(false)
 const editing = ref<CalendarEntry | null>(null)
 const saving = ref(false)
 const deleting = ref(false)
+const calendarRequests = createRequestGeneration()
 const allSources: CalendarSource[] = ['CUSTOM', 'ANNIVERSARY', 'WISH', 'MEMORY', 'DIARY', 'LETTER']
 const activeSources = ref<CalendarSource[]>([...allSources])
 const weekdays = ['一', '二', '三', '四', '五', '六', '日']
@@ -105,14 +107,19 @@ function parseDate(value: string) {
 }
 
 async function load() {
+  const request = calendarRequests.begin()
+  const grid = gridDays.value
   loading.value = true
   error.value = ''
   try {
-    entries.value = await api.calendar(gridDays.value[0].key, gridDays.value[41].key)
+    const nextEntries = await api.calendar(grid[0].key, grid[41].key)
+    if (!request.isLatest()) return
+    entries.value = nextEntries
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 

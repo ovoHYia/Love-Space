@@ -90,7 +90,7 @@ public class DataExportService {
         }
 
         Map<String, Object> export = new LinkedHashMap<>();
-        export.put("formatVersion", 2);
+        export.put("formatVersion", 3);
         export.put("generatedAt", now);
         export.put("space", orderedMap(
                 "id", coupleId,
@@ -121,8 +121,6 @@ public class DataExportService {
                 "description", item.getDescription(),
                 "eventAt", item.getEventAt(),
                 "location", item.getLocation(),
-                "latitude", item.getLatitude(),
-                "longitude", item.getLongitude(),
                 "tags", List.copyOf(item.getTags()),
                 "createdAt", item.getCreatedAt(),
                 "updatedAt", item.getUpdatedAt(),

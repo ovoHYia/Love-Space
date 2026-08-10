@@ -67,24 +67,6 @@ public class MemoryService {
     }
 
     @Transactional(readOnly = true)
-    public List<MemoryView> map(Authentication auth, String tag) {
-        User user = current.user(auth);
-        Specification<Memory> spec = (root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(root.get("coupleId"), user.getCouple().getId()));
-            predicates.add(cb.isNull(root.get("deletedAt")));
-            predicates.add(cb.isNotNull(root.get("latitude")));
-            predicates.add(cb.isNotNull(root.get("longitude")));
-            if (tag != null && !tag.isBlank()) {
-                predicates.add(cb.equal(cb.lower(root.join("tags")), tag.trim().toLowerCase(Locale.ROOT)));
-                query.distinct(true);
-            }
-            return cb.and(predicates.toArray(Predicate[]::new));
-        };
-        return views.memories(memories.findAll(spec, Sort.by(Sort.Direction.DESC, "eventAt", "id")));
-    }
-
-    @Transactional(readOnly = true)
     public List<MemoryTagView> tags(Authentication auth) {
         User user = current.user(auth);
         Map<String, Long> counts = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
@@ -222,11 +204,6 @@ public class MemoryService {
         value.setDescription(AccountService.trimToNull(input.description()));
         value.setEventAt(input.eventAt());
         value.setLocation(AccountService.trimToNull(input.location()));
-        if ((input.latitude() == null) != (input.longitude() == null)) {
-            throw ApiException.badRequest("地图坐标需要同时提供纬度和经度");
-        }
-        value.setLatitude(input.latitude());
-        value.setLongitude(input.longitude());
         LinkedHashSet<String> normalizedTags = new LinkedHashSet<>();
         if (input.tags() != null) {
             for (String tag : input.tags()) {

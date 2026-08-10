@@ -216,14 +216,14 @@ class LoveSpaceApiIntegrationTest {
     void mediaIsProtectedAndCoupleScoped() throws Exception {
         MockMultipartFile data = new MockMultipartFile("data", "", "application/json",
                 ("{\"title\":\"海边\",\"description\":\"第一次看海\",\"eventAt\":\"2026-07-01T18:30:00\",\"location\":\"青岛\","
-                        + "\"latitude\":36.0671,\"longitude\":120.3826,\"tags\":[\"旅行\",\"海边\"]}")
+                        + "\"tags\":[\"旅行\",\"海边\"]}")
                         .getBytes(StandardCharsets.UTF_8));
         MockMultipartFile file = new MockMultipartFile("files", "sea.png", "image/png",
                 new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
         String memory = mvc.perform(multipart("/api/memories").file(data).file(file).with(csrf()).session(firstSession))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.media[0].mediaType").value("image"))
-                .andExpect(jsonPath("$.latitude").value(36.0671))
+                .andExpect(jsonPath("$.location").value("青岛"))
                 .andExpect(jsonPath("$.tags", containsInAnyOrder("旅行", "海边")))
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         long mediaId = nestedId(memory, "media");
@@ -233,8 +233,6 @@ class LoveSpaceApiIntegrationTest {
         mvc.perform(multipart("/api/memories/{id}/media", idOf(memory)).file(video).with(csrf()).session(firstSession))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.media[?(@.mediaType == 'video')]").isNotEmpty());
-        mvc.perform(get("/api/memories/map").session(secondSession))
-                .andExpect(status().isOk()).andExpect(jsonPath("$[0].title").value("海边"));
         mvc.perform(get("/api/memories/tags").session(secondSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$[?(@.name == '旅行')].memoryCount").value(hasItem(1)));
         mvc.perform(get("/api/memories").session(secondSession).param("tag", "海边"))

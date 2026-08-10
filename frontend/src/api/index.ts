@@ -6,8 +6,6 @@ export interface MemoryInput {
   description: string
   eventAt: string
   location: string
-  latitude: number | null
-  longitude: number | null
   tags: string[]
 }
 
@@ -32,7 +30,6 @@ export const api = {
   updateMood: (body: { emoji: string; label: string; note: string }) => jsonRequest('/moods/today', 'PUT', body),
   monthlyReport: (month: string) => request<MonthlyReport>(`/reports/monthly?month=${encodeURIComponent(month)}`),
   memories: (query = '') => request<SpringPage<Memory>>(`/memories${query ? `?${query}` : ''}`),
-  memoryMap: (tag = '') => request<Memory[]>(`/memories/map${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`),
   memoryTags: () => request<MemoryTag[]>('/memories/tags'),
   memoryAlbum: (query = '') => request<SpringPage<AlbumItem>>(`/memories/album${query ? `?${query}` : ''}`),
   randomMemory: (excludeId?: Memory['id']) => request<Memory>(`/memories/random${excludeId === undefined ? '' : `?excludeId=${encodeURIComponent(excludeId)}`}`),

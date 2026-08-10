@@ -169,6 +169,7 @@ class DataManagementIntegrationTest {
         assertTrue(entries.containsKey("love-space-data.json"));
         assertTrue(entries.keySet().stream().anyMatch(name -> name.matches("media/\\d+-sea\\.png")));
         String json = new String(entries.get("love-space-data.json"), StandardCharsets.UTF_8);
+        assertTrue(json.contains("\"formatVersion\":3"));
         assertTrue(json.contains("海边"));
         assertTrue(json.contains("夏日记录"));
         assertTrue(json.contains("周末约会"));

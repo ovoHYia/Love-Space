@@ -1,25 +1,23 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { CalendarDays, Images, Map as MapIcon, Plus, RefreshCw, Search, Tags } from 'lucide-vue-next'
+import { CalendarDays, Images, Plus, RefreshCw, Search, Tags } from 'lucide-vue-next'
 import { api } from '../api'
 import { errorMessage } from '../api/client'
 import BaseModal from '../components/BaseModal.vue'
 import LoadingState from '../components/LoadingState.vue'
 import MemoryAlbum from '../components/memories/MemoryAlbum.vue'
 import MemoryEditorModal from '../components/memories/MemoryEditorModal.vue'
-import MemoryMapPanel from '../components/memories/MemoryMapPanel.vue'
 import MemoryTimeline from '../components/memories/MemoryTimeline.vue'
 import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
 import type { AlbumItem, MediaItem, Memory, MemoryTag } from '../types'
 import { memoryMediaType, memoryMediaUrl } from '../utils/memoryMedia'
 
-type MemoryViewMode = 'timeline' | 'map' | 'album'
+type MemoryViewMode = 'timeline' | 'album'
 
 const { show } = useToast()
 const activeView = ref<MemoryViewMode>('timeline')
 const memories = ref<Memory[]>([])
-const mapMemories = ref<Memory[]>([])
 const albumItems = ref<AlbumItem[]>([])
 const availableTags = ref<MemoryTag[]>([])
 const loading = ref(true)
@@ -35,7 +33,6 @@ const filters = reactive({ q: '', tag: '' })
 
 const viewOptions = [
   { id: 'timeline' as const, label: '时间线', icon: CalendarDays },
-  { id: 'map' as const, label: '回忆地图', icon: MapIcon },
   { id: 'album' as const, label: '我们的相册', icon: Images },
 ]
 
@@ -48,7 +45,6 @@ watch(() => filters.tag, loadCurrentView)
 
 async function loadCurrentView() {
   if (activeView.value === 'timeline') await loadTimeline()
-  if (activeView.value === 'map') await loadMap()
   if (activeView.value === 'album') await loadAlbum()
 }
 
@@ -59,18 +55,6 @@ async function loadTimeline() {
     const payload = await api.memories(memoryQuery(0))
     memories.value = payload.content
     applyPage(payload)
-  } catch (cause) {
-    error.value = errorMessage(cause)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadMap() {
-  loading.value = true
-  error.value = ''
-  try {
-    mapMemories.value = await api.memoryMap(filters.tag)
   } catch (cause) {
     error.value = errorMessage(cause)
   } finally {
@@ -158,7 +142,6 @@ async function editorSaved() {
 function replaceMemory(updated: Memory) {
   editing.value = updated
   memories.value = replaceIn(memories.value, updated)
-  mapMemories.value = replaceIn(mapMemories.value, updated)
   if (galleryMemory.value?.id === updated.id) galleryMemory.value = updated
   if (activeView.value === 'album') void loadAlbum()
 }
@@ -195,22 +178,21 @@ async function removeMemory(memory: Memory) {
     </div>
 
     <form class="filter-bar memory-filter" role="search" @submit.prevent="loadCurrentView">
-      <label class="search-field"><Search :size="18" aria-hidden="true" /><span class="sr-only">搜索回忆</span><input v-model="filters.q" placeholder="搜索标题、文字或地点" :disabled="activeView === 'map'" /></label>
+      <label class="search-field"><Search :size="18" aria-hidden="true" /><span class="sr-only">搜索回忆</span><input v-model="filters.q" placeholder="搜索标题、文字或地点" /></label>
       <label class="tag-filter"><Tags :size="17" /><span class="sr-only">按标签筛选</span>
         <select v-model="filters.tag"><option value="">全部标签</option><option v-for="tag in availableTags" :key="tag.name" :value="tag.name">{{ tag.name }} · {{ tag.memoryCount }}</option></select>
       </label>
-      <button v-if="activeView !== 'map'" class="button secondary small" type="submit">筛选</button>
+      <button class="button secondary small" type="submit">筛选</button>
     </form>
 
-    <LoadingState v-if="loading" :label="activeView === 'map' ? '正在铺开回忆地图…' : activeView === 'album' ? '正在翻开相册…' : '正在沿着时间线往回走…'" />
+    <LoadingState v-if="loading" :label="activeView === 'album' ? '正在翻开相册…' : '正在沿着时间线往回走…'" />
     <div v-else-if="error" class="error-panel" role="alert"><p>{{ error }}</p><button class="button secondary" type="button" @click="loadCurrentView"><RefreshCw :size="17" />重新加载</button></div>
     <MemoryTimeline v-else-if="activeView === 'timeline'" :memories="memories"
       @create="openCreate" @edit="openEdit" @remove="removeMemory"
       @select-tag="filters.tag = $event" @open-media="mediaViewer = $event" @open-gallery="galleryMemory = $event" />
-    <MemoryMapPanel v-else-if="activeView === 'map'" :memories="mapMemories" @create="openCreate" @edit="openEdit" />
     <MemoryAlbum v-else :items="albumItems" @create="openCreate" @select-tag="filters.tag = $event" @open-media="mediaViewer = $event" />
 
-    <div v-if="activeView !== 'map' && page + 1 < totalPages && !loading" class="load-more-row">
+    <div v-if="page + 1 < totalPages && !loading" class="load-more-row">
       <button class="button secondary" type="button" :disabled="loadingMore" @click="loadMore">
         <span v-if="loadingMore" class="button-spinner"></span><Plus v-else :size="17" />{{ loadingMore ? '正在翻找…' : (activeView === 'album' ? '加载更多影像' : '加载更早的回忆') }}
       </button>

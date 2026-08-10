@@ -27,11 +27,6 @@ public class MemoryController {
             @RequestParam(required = false) @jakarta.validation.constraints.Size(max = 30) String tag) {
         return memories.list(auth, page, size, q, date, tag);
     }
-    @GetMapping("/map")
-    public List<MemoryView> map(Authentication auth,
-            @RequestParam(required = false) @jakarta.validation.constraints.Size(max = 30) String tag) {
-        return memories.map(auth, tag);
-    }
     @GetMapping("/tags")
     public List<MemoryTagView> tags(Authentication auth) { return memories.tags(auth); }
     @GetMapping("/album")

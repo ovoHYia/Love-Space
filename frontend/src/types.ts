@@ -100,8 +100,6 @@ export interface Memory {
   description?: string
   eventAt: string
   location?: string
-  latitude?: number | null
-  longitude?: number | null
   tags?: string[]
   createdAt?: string
   authorId: number | string

@@ -1,15 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import * as L from 'leaflet'
-import { Camera, Check, FileAudio, FileVideo, Images, LocateFixed, MapPin, Tags, Trash2, UploadCloud, X } from 'lucide-vue-next'
+import { computed, reactive, ref } from 'vue'
+import { Camera, FileAudio, FileVideo, Images, MapPin, Tags, Trash2, UploadCloud, X } from 'lucide-vue-next'
 import { api } from '../../api'
 import type { MemoryInput } from '../../api'
 import { errorMessage } from '../../api/client'
 import { useToast } from '../../composables/toast'
 import type { MediaItem, Memory, MemoryTag } from '../../types'
 import { toLocalDateTimeInput } from '../../utils'
-import { geolocationRequirementMessage, locateDevice } from '../../utils/geolocation'
-import { createMemoryMarkerIcon, createMemoryTileLayer, MEMORY_MAP_CENTER, synchronizeMapSize } from '../../utils/memoryMap'
 import { memoryMediaType, memoryMediaUrl } from '../../utils/memoryMedia'
 import BaseModal from '../BaseModal.vue'
 
@@ -22,36 +19,17 @@ const emit = defineEmits<{
 const { show } = useToast()
 const currentMemory = ref<Memory | null>(props.memory)
 const saving = ref(false)
-const locating = ref(false)
 const selectedFiles = ref<File[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
-const mapElement = ref<HTMLElement | null>(null)
 const tagInput = ref('')
-const locationHint = geolocationRequirementMessage()
 const editing = computed(() => currentMemory.value !== null)
 const form = reactive<MemoryInput>({
   title: props.memory?.title || '',
   description: props.memory?.description || '',
   eventAt: toLocalDateTimeInput(props.memory?.eventAt),
   location: props.memory?.location || '',
-  latitude: props.memory?.latitude ?? null,
-  longitude: props.memory?.longitude ?? null,
   tags: [...(props.memory?.tags || [])],
 })
-let map: L.Map | null = null
-let marker: L.Marker | null = null
-let stopMapSizeSync: (() => void) | null = null
-let tileFailureShown = false
-
-onMounted(async () => {
-  await nextTick()
-  initMap()
-})
-onBeforeUnmount(() => {
-  stopMapSizeSync?.()
-  map?.remove()
-})
-watch([() => form.latitude, () => form.longitude], updateMarker)
 
 function chooseFiles(event: Event) {
   const files = Array.from((event.target as HTMLInputElement).files || [])
@@ -85,8 +63,6 @@ async function save() {
     description: form.description.trim(),
     eventAt: form.eventAt,
     location: form.location.trim(),
-    latitude: form.latitude,
-    longitude: form.longitude,
     tags: form.tags,
   }
   try {
@@ -119,62 +95,6 @@ async function removeMedia(item: MediaItem) {
   }
 }
 
-function initMap() {
-  if (!mapElement.value || map) return
-  const center: L.LatLngExpression = form.latitude != null && form.longitude != null
-    ? [form.latitude, form.longitude]
-    : MEMORY_MAP_CENTER
-  map = L.map(mapElement.value).setView(center, form.latitude == null ? 4 : 13)
-  createMemoryTileLayer(() => {
-    if (tileFailureShown) return
-    tileFailureShown = true
-    show('地图底图加载失败，但坐标仍可保存。请切换网络后重试。', 'error')
-  }).addTo(map)
-  stopMapSizeSync = synchronizeMapSize(map, mapElement.value)
-  map.on('click', (event: L.LeafletMouseEvent) => setCoordinates(event.latlng.lat, event.latlng.lng))
-  updateMarker()
-}
-
-function updateMarker() {
-  if (!map) return
-  if (form.latitude == null || form.longitude == null) {
-    marker?.remove()
-    marker = null
-    return
-  }
-  const point: L.LatLngExpression = [form.latitude, form.longitude]
-  if (!marker) marker = L.marker(point, { icon: createMemoryMarkerIcon() }).addTo(map)
-  else marker.setLatLng(point)
-}
-
-function setCoordinates(latitude: number, longitude: number) {
-  form.latitude = Number(latitude.toFixed(6))
-  form.longitude = Number(longitude.toFixed(6))
-}
-
-async function locateMe() {
-  if (locating.value) return
-  locating.value = true
-  try {
-    const position = await locateDevice()
-    setCoordinates(position.coords.latitude, position.coords.longitude)
-    await nextTick()
-    if (!map) initMap()
-    map?.invalidateSize({ pan: false })
-    map?.setView([position.coords.latitude, position.coords.longitude], 15)
-    show(`已定位，精度约 ${Math.max(1, Math.round(position.coords.accuracy))} 米。`, 'success')
-  } catch (cause) {
-    show(cause instanceof Error ? cause.message : '定位失败，请稍后重试或点击地图选点。', 'error')
-  } finally {
-    locating.value = false
-  }
-}
-
-function clearCoordinates() {
-  form.latitude = null
-  form.longitude = null
-}
-
 function fileIcon(file: File) {
   return file.type.startsWith('video/') ? FileVideo : file.type.startsWith('audio/') ? FileAudio : Camera
 }
@@ -192,15 +112,6 @@ function formatBytes(bytes: number) {
         <label class="field"><span>发生时间</span><input v-model="form.eventAt" required type="datetime-local" /></label>
       </div>
       <label class="field"><span>地点名称（可选）</span><span class="input-with-icon"><MapPin :size="17" /><input v-model="form.location" maxlength="200" placeholder="例如：厦门 · 环岛路" /></span></label>
-      <div class="location-picker">
-        <div class="location-picker-head">
-          <div><strong>地图位置（可选）</strong><small>点击地图选择精确位置，仅在情侣空间内可见</small></div>
-          <div><button class="text-button" type="button" :disabled="locating" @click="locateMe"><span v-if="locating" class="button-spinner"></span><LocateFixed v-else :size="16" />{{ locating ? '正在定位…' : '定位到我' }}</button><button v-if="form.latitude != null" class="text-button muted" type="button" @click="clearCoordinates"><X :size="16" />清除</button></div>
-        </div>
-        <p v-if="locationHint" class="location-warning">{{ locationHint }}</p>
-        <div ref="mapElement" class="picker-map"></div>
-        <p v-if="form.latitude != null && form.longitude != null"><Check :size="15" />已选择 {{ form.latitude.toFixed(6) }}, {{ form.longitude.toFixed(6) }}</p>
-      </div>
       <label class="field"><span>想记住的话（可选）</span><textarea v-model="form.description" maxlength="10000" rows="4" placeholder="那天发生了什么？当时是什么心情？"></textarea><small>{{ form.description.length }}/10000</small></label>
       <div class="tag-editor">
         <label class="field"><span>回忆标签（最多 12 个）</span><div class="tag-input"><Tags :size="17" /><input v-model="tagInput" maxlength="30" placeholder="旅行、约会、美食…" @keydown.enter.prevent="addTag()" @keydown.,.prevent="addTag()" /><button type="button" @click="addTag()">添加</button></div></label>

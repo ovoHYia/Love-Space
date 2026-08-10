@@ -142,8 +142,8 @@ async function remove(letter: Letter) {
     <form class="stack-form letter-form" @submit.prevent="send">
       <div class="letter-paper-input"><span class="paper-to">TO：{{ authState.partner?.nickname || '宝贝' }}</span><textarea v-model="content" required minlength="1" maxlength="2000" rows="10" autofocus placeholder="想对 TA 说些什么？不必很长，真心就好。"></textarea><div class="paper-sign">FROM：{{ authState.user?.nickname }} ♡</div></div>
       <div class="delivery-options" aria-label="选择送达方式">
-        <button type="button" :class="{ selected: deliveryMode === 'now' }" @click="deliveryMode = 'now'"><Send :size="18" /><span><strong>现在寄出</strong><small>马上出现在对方信箱</small></span></button>
-        <button type="button" :class="{ selected: deliveryMode === 'scheduled' }" @click="deliveryMode = 'scheduled'"><CalendarClock :size="18" /><span><strong>封存到未来</strong><small>到约定时间才会出现</small></span></button>
+        <button type="button" :aria-pressed="deliveryMode === 'now'" :class="{ selected: deliveryMode === 'now' }" @click="deliveryMode = 'now'"><Send :size="18" /><span><strong>现在寄出</strong><small>马上出现在对方信箱</small></span></button>
+        <button type="button" :aria-pressed="deliveryMode === 'scheduled'" :class="{ selected: deliveryMode === 'scheduled' }" @click="deliveryMode = 'scheduled'"><CalendarClock :size="18" /><span><strong>封存到未来</strong><small>到约定时间才会出现</small></span></button>
       </div>
       <label v-if="deliveryMode === 'scheduled'" class="field capsule-time"><span>送达时间（北京时间）</span><span class="input-with-icon"><Clock3 :size="17" /><input v-model="deliverAt" type="datetime-local" :min="minimumDelivery" required /></span><small>送达前只有你能看见，也可以随时收回。</small></label>
       <div class="character-row"><span>{{ content.length }}/2000</span><span>{{ deliveryMode === 'scheduled' ? '到约定时间才会送达' : '发送后会出现在对方的信箱' }}</span></div>

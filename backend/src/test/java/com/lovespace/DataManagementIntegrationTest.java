@@ -24,7 +24,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
@@ -32,9 +31,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.junit.jupiter.api.io.TempDir;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -45,7 +47,12 @@ class DataManagementIntegrationTest {
     @Autowired CoupleRepository couples;
     @Autowired UserRepository users;
     @Autowired PasswordEncoder encoder;
-    @Value("${app.upload-dir}") String uploadDir;
+    @TempDir static Path uploadDir;
+
+    @DynamicPropertySource
+    static void registerUploadDirectory(DynamicPropertyRegistry registry) {
+        registry.add("app.upload-dir", () -> uploadDir.toString());
+    }
 
     private MockHttpSession alice;
     private MockHttpSession bob;
@@ -70,7 +77,7 @@ class DataManagementIntegrationTest {
 
     @AfterEach
     void removeUploadedFiles() throws Exception {
-        Path root = Path.of(uploadDir);
+        Path root = uploadDir;
         if (!Files.isDirectory(root)) return;
         try (Stream<Path> paths = Files.list(root)) {
             for (Path path : paths.toList()) Files.deleteIfExists(path);
@@ -187,7 +194,7 @@ class DataManagementIntegrationTest {
         long memoryId = createMemory("缺失文件检查");
         String storedName = jdbc.queryForObject(
                 "select stored_name from media where memory_id = ?", String.class, memoryId);
-        Files.delete(Path.of(uploadDir).resolve(storedName));
+        Files.delete(uploadDir.resolve(storedName));
 
         mvc.perform(get("/api/data/export").session(alice))
                 .andExpect(status().isConflict())
@@ -271,7 +278,7 @@ class DataManagementIntegrationTest {
     }
 
     private void assertNoTemporaryExports() throws Exception {
-        Path root = Path.of(uploadDir);
+        Path root = uploadDir;
         if (!Files.isDirectory(root)) return;
         try (Stream<Path> paths = Files.list(root)) {
             assertEquals(0, paths.filter(path -> path.getFileName().toString().startsWith(".love-space-export-"))

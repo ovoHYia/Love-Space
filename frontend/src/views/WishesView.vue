@@ -167,10 +167,10 @@ async function remove(item: Wish) {
       <div class="wish-progress"><span :style="{ transform: `scaleX(${wishes.length ? completedCount / wishes.length : 0})` }"></span></div>
     </section>
 
-    <div class="wish-filters" role="tablist" aria-label="筛选愿望">
-      <button type="button" :class="{ active: filter === 'ACTIVE' }" @click="filter = 'ACTIVE'">待完成 {{ activeCount }}</button>
-      <button type="button" :class="{ active: filter === 'COMPLETED' }" @click="filter = 'COMPLETED'">已完成 {{ completedCount }}</button>
-      <button type="button" :class="{ active: filter === 'ALL' }" @click="filter = 'ALL'">全部 {{ wishes.length }}</button>
+    <div class="wish-filters" role="group" aria-label="筛选愿望">
+      <button type="button" :aria-pressed="filter === 'ACTIVE'" :class="{ active: filter === 'ACTIVE' }" @click="filter = 'ACTIVE'">待完成 {{ activeCount }}</button>
+      <button type="button" :aria-pressed="filter === 'COMPLETED'" :class="{ active: filter === 'COMPLETED' }" @click="filter = 'COMPLETED'">已完成 {{ completedCount }}</button>
+      <button type="button" :aria-pressed="filter === 'ALL'" :class="{ active: filter === 'ALL' }" @click="filter = 'ALL'">全部 {{ wishes.length }}</button>
     </div>
 
     <LoadingState v-if="loading" label="正在打开愿望清单…" />

@@ -11,7 +11,7 @@ spring:
     enabled: true
 app:
   scheduling-enabled: false
-  upload-dir: ${java.io.tmpdir}/love-space-test-uploads
+  upload-dir: ${java.io.tmpdir}/love-space-test-uploads-${random.uuid}
   cors-allowed-origins: http://localhost:5173
   media-max-bytes: 1048576
   security:

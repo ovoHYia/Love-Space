@@ -113,10 +113,10 @@ function toggle(id: Diary['id']) {
     </header>
 
     <div class="toolbar-row">
-      <div class="segmented" role="tablist" aria-label="按作者筛选">
-        <button role="tab" :aria-selected="filter === 'all'" :class="{ active: filter === 'all' }" @click="filter = 'all'">全部</button>
-        <button role="tab" :aria-selected="filter === 'mine'" :class="{ active: filter === 'mine' }" @click="filter = 'mine'">{{ authState.user?.nickname || '我' }}写的</button>
-        <button role="tab" :aria-selected="filter === 'partner'" :class="{ active: filter === 'partner' }" @click="filter = 'partner'">{{ authState.partner?.nickname || 'TA' }}写的</button>
+      <div class="segmented" role="group" aria-label="按作者筛选">
+        <button type="button" :aria-pressed="filter === 'all'" :class="{ active: filter === 'all' }" @click="filter = 'all'">全部</button>
+        <button type="button" :aria-pressed="filter === 'mine'" :class="{ active: filter === 'mine' }" @click="filter = 'mine'">{{ authState.user?.nickname || '我' }}写的</button>
+        <button type="button" :aria-pressed="filter === 'partner'" :class="{ active: filter === 'partner' }" @click="filter = 'partner'">{{ authState.partner?.nickname || 'TA' }}写的</button>
       </div>
       <label class="search-field compact"><Search :size="17" /><span class="sr-only">搜索日记</span><input v-model="search" placeholder="在日记里找一句话" /></label>
     </div>

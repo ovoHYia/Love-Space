@@ -25,6 +25,9 @@ const avatarInput = ref<HTMLInputElement | null>(null)
 const passwordOpen = ref(false)
 const passwordSaving = ref(false)
 const passwordForm = ref({ currentPassword: '', newPassword: '', confirmPassword: '' })
+const profileFieldErrors = ref<Record<string, string>>({})
+const spaceFieldErrors = ref<Record<string, string>>({})
+const passwordFieldErrors = ref<Record<string, string>>({})
 
 const initials = computed(() => `${authState.user?.nickname?.slice(0, 1) || '我'} & ${authState.partner?.nickname?.slice(0, 1) || 'TA'}`)
 
@@ -43,12 +46,14 @@ onMounted(async () => {
 
 async function saveProfile() {
   saving.value = true
+  profileFieldErrors.value = {}
   try {
     const updated = await api.updateProfile(nickname.value.trim())
     if (updated?.id) authState.user = { ...authState.user!, ...updated }
     else if (authState.user) authState.user.nickname = nickname.value.trim()
     show('昵称已经更新。', 'success')
   } catch (cause) {
+    profileFieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
   } finally {
     saving.value = false
@@ -57,12 +62,14 @@ async function saveProfile() {
 
 async function saveSpaceName() {
   spaceSaving.value = true
+  spaceFieldErrors.value = {}
   try {
     const updated = await api.updateSpaceName(spaceName.value.trim())
     authState.spaceName = updated.spaceName
     spaceName.value = authState.spaceName
     show('空间名称已经更新。', 'success')
   } catch (cause) {
+    spaceFieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
   } finally {
     spaceSaving.value = false
@@ -108,6 +115,7 @@ async function logout() {
 }
 
 async function changePassword() {
+  passwordFieldErrors.value = {}
   if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
     show('两次输入的新密码不一致。', 'error')
     return
@@ -121,6 +129,7 @@ async function changePassword() {
     clearAuth()
     await router.replace({ name: 'login', query: { expired: '1' } })
   } catch (cause) {
+    passwordFieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
   } finally {
     passwordSaving.value = false
@@ -149,7 +158,7 @@ async function changePassword() {
             <div><strong>更换头像</strong><p>选择一张清晰的方形图片效果最好。</p></div>
           </div>
           <form class="stack-form compact-form" @submit.prevent="saveProfile">
-            <label class="field"><span>昵称</span><input v-model="nickname" required maxlength="20" autocomplete="nickname" /></label>
+            <label class="field"><span>昵称</span><input id="profile-nickname" v-model="nickname" required maxlength="20" autocomplete="nickname" :aria-invalid="Boolean(profileFieldErrors.nickname)" :aria-describedby="profileFieldErrors.nickname ? 'profile-nickname-error' : undefined" /><small v-if="profileFieldErrors.nickname" id="profile-nickname-error" class="field-error">{{ profileFieldErrors.nickname }}</small></label>
             <label class="field"><span>登录账号</span><input :value="authState.user?.username || '已设置'" disabled /><small>为了安全，登录账号不能在这里修改。</small></label>
             <button class="button primary" type="submit" :disabled="saving || nickname.trim() === authState.user?.nickname"><span v-if="saving" class="button-spinner"></span><Save v-else :size="17" />{{ saving ? '正在保存…' : '保存资料' }}</button>
             <button class="button secondary" type="button" @click="passwordOpen = true"><KeyRound :size="17" />修改密码</button>
@@ -159,7 +168,7 @@ async function changePassword() {
         <section class="card settings-card">
           <div class="section-heading"><div><p class="eyebrow">OUR SPACE</p><h2>空间信息</h2></div><Heart :size="21" /></div>
           <form class="space-name-editor" @submit.prevent="saveSpaceName">
-            <label class="field"><span>空间名称</span><input v-model="spaceName" required maxlength="100" autocomplete="off" /></label>
+            <label class="field"><span>空间名称</span><input id="space-name" v-model="spaceName" required maxlength="100" autocomplete="off" :aria-invalid="Boolean(spaceFieldErrors.spaceName)" :aria-describedby="spaceFieldErrors.spaceName ? 'space-name-error' : undefined" /><small v-if="spaceFieldErrors.spaceName" id="space-name-error" class="field-error">{{ spaceFieldErrors.spaceName }}</small></label>
             <button class="button primary" type="submit" :disabled="spaceSaving || !spaceName.trim() || spaceName.trim() === authState.spaceName"><span v-if="spaceSaving" class="button-spinner"></span><Save v-else :size="17" />{{ spaceSaving ? '正在保存…' : '保存空间名称' }}</button>
           </form>
           <dl class="space-facts">
@@ -184,9 +193,9 @@ async function changePassword() {
   </div>
   <BaseModal v-if="passwordOpen" title="修改登录密码" description="更新后请使用新密码登录。" @close="passwordOpen = false">
     <form class="stack-form" @submit.prevent="changePassword">
-      <label class="field"><span>当前密码</span><input v-model="passwordForm.currentPassword" required type="password" minlength="8" autocomplete="current-password" /></label>
-      <label class="field"><span>新密码</span><input v-model="passwordForm.newPassword" required type="password" minlength="8" maxlength="72" autocomplete="new-password" /></label>
-      <label class="field"><span>再次输入新密码</span><input v-model="passwordForm.confirmPassword" required type="password" minlength="8" maxlength="72" autocomplete="new-password" /></label>
+      <label class="field"><span>当前密码</span><input id="password-current" v-model="passwordForm.currentPassword" required type="password" minlength="8" autocomplete="current-password" :aria-invalid="Boolean(passwordFieldErrors.currentPassword)" :aria-describedby="passwordFieldErrors.currentPassword ? 'password-current-error' : undefined" /><small v-if="passwordFieldErrors.currentPassword" id="password-current-error" class="field-error">{{ passwordFieldErrors.currentPassword }}</small></label>
+      <label class="field"><span>新密码</span><input id="password-new" v-model="passwordForm.newPassword" required type="password" minlength="8" maxlength="72" autocomplete="new-password" :aria-invalid="Boolean(passwordFieldErrors.newPassword)" :aria-describedby="passwordFieldErrors.newPassword ? 'password-new-error' : undefined" /><small v-if="passwordFieldErrors.newPassword" id="password-new-error" class="field-error">{{ passwordFieldErrors.newPassword }}</small></label>
+      <label class="field"><span>再次输入新密码</span><input id="password-confirm" v-model="passwordForm.confirmPassword" required type="password" minlength="8" maxlength="72" autocomplete="new-password" :aria-invalid="passwordForm.confirmPassword.length > 0 && passwordForm.newPassword !== passwordForm.confirmPassword" :aria-describedby="passwordForm.confirmPassword.length > 0 && passwordForm.newPassword !== passwordForm.confirmPassword ? 'password-confirm-error' : undefined" /><small v-if="passwordForm.confirmPassword.length > 0 && passwordForm.newPassword !== passwordForm.confirmPassword" id="password-confirm-error" class="field-error">两次输入的新密码不一致。</small></label>
       <div class="modal-actions"><button class="button ghost" type="button" @click="passwordOpen = false">取消</button><button class="button primary" type="submit" :disabled="passwordSaving"><span v-if="passwordSaving" class="button-spinner"></span><KeyRound v-else :size="17" />{{ passwordSaving ? '正在更新…' : '更新密码' }}</button></div>
     </form>
   </BaseModal>

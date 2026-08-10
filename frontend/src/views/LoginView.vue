@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Eye, EyeOff, Heart, LogIn } from 'lucide-vue-next'
 import { api } from '../api'
@@ -15,6 +15,7 @@ const password = ref('')
 const reveal = ref(false)
 const loading = ref(false)
 const error = ref('')
+const sessionExpired = computed(() => route.query.expired === '1')
 
 async function login() {
   loading.value = true
@@ -49,10 +50,11 @@ async function login() {
         <p class="eyebrow">WELCOME BACK</p>
         <h2>今天是谁回家啦？</h2>
         <p class="muted">输入你的专属账号，继续收藏两个人的故事。</p>
+        <p v-if="sessionExpired" class="form-error" role="alert" aria-live="assertive">登录状态已过期，请重新登录后继续刚才的操作。</p>
         <p v-if="route.query.server === 'offline'" class="form-error" role="status">暂时没有连接到服务器。确认后端服务启动后，可以直接尝试登录。</p>
-        <label class="field"><span>账号</span><input v-model="username" required autocomplete="username" autofocus placeholder="请输入登录账号" /></label>
-        <label class="field"><span>密码</span><span class="input-action"><input v-model="password" required :type="reveal ? 'text' : 'password'" autocomplete="current-password" placeholder="请输入密码" /><button type="button" :aria-label="reveal ? '隐藏密码' : '显示密码'" @click="reveal = !reveal"><EyeOff v-if="reveal" :size="18" /><Eye v-else :size="18" /></button></span></label>
-        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+        <label class="field"><span>账号</span><input id="login-username" v-model="username" required autocomplete="username" autofocus placeholder="请输入登录账号" :aria-invalid="Boolean(error)" :aria-describedby="error ? 'login-error' : undefined" /></label>
+        <label class="field"><span>密码</span><span class="input-action"><input id="login-password" v-model="password" required :type="reveal ? 'text' : 'password'" autocomplete="current-password" placeholder="请输入密码" :aria-invalid="Boolean(error)" :aria-describedby="error ? 'login-error' : undefined" /><button type="button" :aria-label="reveal ? '隐藏密码' : '显示密码'" @click="reveal = !reveal"><EyeOff v-if="reveal" :size="18" /><Eye v-else :size="18" /></button></span></label>
+        <p v-if="error" id="login-error" class="form-error" role="alert">{{ error }}</p>
         <button class="button primary full" type="submit" :disabled="loading">
           <span v-if="loading" class="button-spinner"></span><LogIn v-else :size="18" />{{ loading ? '正在打开小屋…' : '回到我们的小屋' }}
         </button>

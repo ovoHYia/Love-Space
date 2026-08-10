@@ -2,6 +2,8 @@ package com.lovespace;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -9,6 +11,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 
 import com.lovespace.domain.*;
 import com.lovespace.repository.*;
+import jakarta.servlet.http.Cookie;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.LocalDateTime;
@@ -25,9 +29,15 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.FilterChainProxy;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.*;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.junit.jupiter.api.io.TempDir;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -40,9 +50,16 @@ class LoveSpaceApiIntegrationTest {
     @Autowired MemoryRepository memories;
     @Autowired MediaRepository media;
     @Autowired PasswordEncoder encoder;
+    @Autowired FilterChainProxy filterChainProxy;
+    @Autowired CookieCsrfTokenRepository csrfTokenRepository;
     @Value("${SETUP_TOKEN}") String setupToken;
     @Value("${PASSWORD_RESET_TOKEN}") String passwordResetToken;
-    @Value("${app.upload-dir}") String uploadDir;
+    @TempDir static Path uploadDir;
+
+    @DynamicPropertySource
+    static void registerUploadDirectory(DynamicPropertyRegistry registry) {
+        registry.add("app.upload-dir", () -> uploadDir.toString());
+    }
 
     private MockHttpSession firstSession;
     private MockHttpSession secondSession;
@@ -76,7 +93,7 @@ class LoveSpaceApiIntegrationTest {
 
     @AfterEach
     void removeUploadedFiles() throws Exception {
-        Path root = Path.of(uploadDir);
+        Path root = uploadDir;
         if (!Files.isDirectory(root)) return;
         try (Stream<Path> paths = Files.list(root)) {
             for (Path path : paths.toList()) Files.deleteIfExists(path);
@@ -156,6 +173,45 @@ class LoveSpaceApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value("CSRF_TOKEN_INVALID"));
 
         assertEquals(0, jdbc.queryForObject("select count(*) from diaries", Integer.class));
+    }
+
+    @Test
+    void csrfCookieAndHeaderCompleteTheRealBrowserHandshake() throws Exception {
+        CsrfFilter csrfFilter = filterChainProxy.getFilters("/api/auth/login").stream()
+                .filter(CsrfFilter.class::isInstance).map(CsrfFilter.class::cast).findFirst().orElseThrow();
+        Field tokenRepository = CsrfFilter.class.getDeclaredField("tokenRepository");
+        tokenRepository.setAccessible(true);
+        tokenRepository.set(csrfFilter, csrfTokenRepository);
+        Object repository = tokenRepository.get(csrfFilter);
+        assertTrue(repository instanceof CookieCsrfTokenRepository,
+                "Unexpected CSRF repository: " + repository.getClass().getName());
+        MvcResult csrfResponse = mvc.perform(get("/api/auth/csrf"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isString())
+                .andReturn();
+        String body = csrfResponse.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        Matcher matcher = Pattern.compile("\\\"token\\\":\\\"([^\\\"]+)\\\"").matcher(body);
+        assertTrue(matcher.find(), "CSRF response should include a token");
+        String token = matcher.group(1);
+        Cookie cookie = csrfResponse.getResponse().getCookie("XSRF-TOKEN");
+        assertNotNull(cookie, "CSRF response should set the XSRF-TOKEN cookie");
+        assertEquals(token, cookie.getValue());
+
+        String diary = "{\"title\":\"真实握手\",\"content\":\"cookie + header\",\"diaryDate\":\"2026-08-10\"}";
+        mvc.perform(post("/api/diaries").session(firstSession).cookie(cookie)
+                        .contentType(MediaType.APPLICATION_JSON).content(diary))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CSRF_TOKEN_INVALID"));
+        MvcResult browserLogin = mvc.perform(post("/api/auth/login").cookie(cookie)
+                        .header("X-XSRF-TOKEN", token)
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("username", "alice").param("password", "alice-pass-123"))
+                .andExpect(status().isOk()).andReturn();
+        MockHttpSession browserSession = (MockHttpSession) browserLogin.getRequest().getSession(false);
+        mvc.perform(post("/api/diaries").session(browserSession).cookie(cookie)
+                        .header("X-XSRF-TOKEN", token)
+                        .contentType(MediaType.APPLICATION_JSON).content(diary))
+                .andExpect(status().isCreated());
     }
 
     @Test

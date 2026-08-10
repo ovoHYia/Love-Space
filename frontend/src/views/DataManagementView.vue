@@ -127,7 +127,7 @@ async function emptyTrash() {
         <p>下载 ZIP 压缩包，包含可访问内容的 JSON 数据和媒体原文件，不包含密码等安全信息。</p>
         <div class="privacy-note"><ShieldCheck :size="16" />未送达的对方定时信笺不会进入你的导出文件。</div>
       </div>
-      <button class="button primary" type="button" :disabled="exporting" @click="exportData">
+      <button class="button primary" type="button" :disabled="exporting" :aria-busy="exporting" @click="exportData">
         <span v-if="exporting" class="button-spinner"></span><Download v-else :size="17" />
         {{ exporting ? '正在打包…' : '下载数据' }}
       </button>

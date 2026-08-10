@@ -285,8 +285,8 @@ function typeMeta(item: AppNotification) {
     <section class="notification-layout">
       <div class="notification-main">
         <section class="notification-toolbar card">
-          <div class="status-tabs" aria-label="通知状态筛选">
-            <button v-for="item in statusFilters" :key="item.value" type="button" :class="{ active: status === item.value }" @click="status = item.value">{{ item.label }}</button>
+          <div class="status-tabs" role="group" aria-label="通知状态筛选">
+            <button v-for="item in statusFilters" :key="item.value" type="button" :aria-pressed="status === item.value" :class="{ active: status === item.value }" @click="status = item.value">{{ item.label }}</button>
           </div>
           <form class="notification-search" @submit.prevent="search">
             <Search :size="16" />

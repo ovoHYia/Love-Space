@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { Camera, FileAudio, FileVideo, Images, MapPin, Tags, Trash2, UploadCloud, X } from 'lucide-vue-next'
 import { api } from '../../api'
 import type { MemoryInput } from '../../api'
-import { errorMessage } from '../../api/client'
+import { ApiError, errorMessage } from '../../api/client'
 import { useToast } from '../../composables/toast'
 import type { MediaItem, Memory, MemoryTag } from '../../types'
 import { toBeijingOffsetDateTime, toLocalDateTimeInput } from '../../utils'
@@ -19,6 +19,7 @@ const emit = defineEmits<{
 const { show } = useToast()
 const currentMemory = ref<Memory | null>(props.memory)
 const saving = ref(false)
+const fieldErrors = ref<Record<string, string>>({})
 const selectedFiles = ref<File[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const tagInput = ref('')
@@ -58,6 +59,7 @@ function addTag(value = tagInput.value) {
 async function save() {
   if (tagInput.value.trim()) addTag()
   saving.value = true
+  fieldErrors.value = {}
   const payload: MemoryInput = {
     title: form.title.trim(),
     description: form.description.trim(),
@@ -77,6 +79,7 @@ async function save() {
     }
     emit('saved')
   } catch (cause) {
+    fieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
   } finally {
     saving.value = false
@@ -108,13 +111,13 @@ function formatBytes(bytes: number) {
   <BaseModal :title="editing ? '编辑这段回忆' : '收藏一段新回忆'" description="照片、地点和标签会一起同步给彼此。" wide @close="emit('close')">
     <form class="stack-form" @submit.prevent="save">
       <div class="form-two">
-        <label class="field"><span>回忆标题</span><input v-model="form.title" required maxlength="120" placeholder="例如：海边吹风的那个下午" /></label>
-        <label class="field"><span>发生时间</span><input v-model="form.eventAt" required type="datetime-local" /></label>
+        <label class="field"><span>回忆标题</span><input id="memory-title" v-model="form.title" required maxlength="120" placeholder="例如：海边吹风的那个下午" :aria-invalid="Boolean(fieldErrors.title)" :aria-describedby="fieldErrors.title ? 'memory-title-error' : undefined" /><small v-if="fieldErrors.title" id="memory-title-error" class="field-error">{{ fieldErrors.title }}</small></label>
+        <label class="field"><span>发生时间</span><input id="memory-event-at" v-model="form.eventAt" required type="datetime-local" :aria-invalid="Boolean(fieldErrors.eventAt)" :aria-describedby="fieldErrors.eventAt ? 'memory-event-at-error' : undefined" /><small v-if="fieldErrors.eventAt" id="memory-event-at-error" class="field-error">{{ fieldErrors.eventAt }}</small></label>
       </div>
-      <label class="field"><span>地点名称（可选）</span><span class="input-with-icon"><MapPin :size="17" /><input v-model="form.location" maxlength="200" placeholder="例如：厦门 · 环岛路" /></span></label>
-      <label class="field"><span>想记住的话（可选）</span><textarea v-model="form.description" maxlength="10000" rows="4" placeholder="那天发生了什么？当时是什么心情？"></textarea><small>{{ form.description.length }}/10000</small></label>
+      <label class="field"><span>地点名称（可选）</span><span class="input-with-icon"><MapPin :size="17" /><input id="memory-location" v-model="form.location" maxlength="200" placeholder="例如：厦门 · 环岛路" :aria-invalid="Boolean(fieldErrors.location)" :aria-describedby="fieldErrors.location ? 'memory-location-error' : undefined" /></span><small v-if="fieldErrors.location" id="memory-location-error" class="field-error">{{ fieldErrors.location }}</small></label>
+      <label class="field"><span>想记住的话（可选）</span><textarea id="memory-description" v-model="form.description" maxlength="10000" rows="4" placeholder="那天发生了什么？当时是什么心情？" :aria-invalid="Boolean(fieldErrors.description)" :aria-describedby="fieldErrors.description ? 'memory-description-error' : undefined"></textarea><small v-if="fieldErrors.description" id="memory-description-error" class="field-error">{{ fieldErrors.description }}</small><small>{{ form.description.length }}/10000</small></label>
       <div class="tag-editor">
-        <label class="field"><span>回忆标签（最多 12 个）</span><div class="tag-input"><Tags :size="17" /><input v-model="tagInput" maxlength="30" placeholder="旅行、约会、美食…" @keydown.enter.prevent="addTag()" @keydown.,.prevent="addTag()" /><button type="button" @click="addTag()">添加</button></div></label>
+        <label class="field"><span>回忆标签（最多 12 个）</span><div class="tag-input"><Tags :size="17" /><input id="memory-tags" v-model="tagInput" maxlength="30" placeholder="旅行、约会、美食…" :aria-invalid="Boolean(fieldErrors.tags)" :aria-describedby="fieldErrors.tags ? 'memory-tags-error' : undefined" @keydown.enter.prevent="addTag()" @keydown.,.prevent="addTag()" /><button type="button" @click="addTag()">添加</button></div><small v-if="fieldErrors.tags" id="memory-tags-error" class="field-error">{{ fieldErrors.tags }}</small></label>
         <div v-if="form.tags.length" class="tag-row editable"><button v-for="(tag, index) in form.tags" :key="tag" type="button" @click="form.tags.splice(index, 1)"># {{ tag }} <X :size="12" /></button></div>
         <div v-if="availableTags.length" class="known-tags"><span>常用：</span><button v-for="tag in availableTags.slice(0, 8)" :key="tag.name" type="button" @click="addTag(tag.name)">{{ tag.name }}</button></div>
       </div>

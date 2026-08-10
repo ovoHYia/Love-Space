@@ -16,6 +16,8 @@
     <properties>
         <java.version>17</java.version>
         <jackson-bom.version>3.1.5</jackson-bom.version>
+        <h2.version>2.3.232</h2.version>
+        <dependency-check.version>12.2.2</dependency-check.version>
     </properties>
     <dependencies>
         <dependency>
@@ -122,4 +124,37 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <id>security-scan</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <version>${dependency-check.version}</version>
+                        <configuration>
+                            <formats>
+                                <format>HTML</format>
+                                <format>JSON</format>
+                            </formats>
+                            <outputDirectory>${project.build.directory}/dependency-check</outputDirectory>
+                            <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <failOnError>false</failOnError>
+                            <ossIndexWarnOnlyOnRemoteErrors>true</ossIndexWarnOnlyOnRemoteErrors>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>dependency-check</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

@@ -16,17 +16,18 @@ import java.util.concurrent.*;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.junit.jupiter.api.io.TempDir;
 
 @SpringBootTest(properties = {
-        "app.upload-dir=${java.io.tmpdir}/love-space-concurrent-upload-test",
         "app.media-max-bytes=1024",
         "app.media-total-max-bytes=20",
         "app.media-min-free-bytes=0"
@@ -40,7 +41,12 @@ class MediaStorageConcurrencyIntegrationTest {
     @Autowired PasswordEncoder encoder;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactions;
-    @Value("${app.upload-dir}") String uploadDir;
+    @TempDir static Path uploadDir;
+
+    @DynamicPropertySource
+    static void registerUploadDirectory(DynamicPropertyRegistry registry) {
+        registry.add("app.upload-dir", () -> uploadDir.toString());
+    }
 
     private Long ownerId;
 
@@ -103,7 +109,7 @@ class MediaStorageConcurrencyIntegrationTest {
             assertTrue(outcomes.contains("STORED"));
             assertTrue(outcomes.contains("STORAGE_QUOTA_EXCEEDED"));
             assertEquals(1, media.count());
-            try (Stream<Path> paths = Files.list(Path.of(uploadDir))) {
+            try (Stream<Path> paths = Files.list(uploadDir)) {
                 assertEquals(1, paths.count());
             }
         } finally {
@@ -123,7 +129,7 @@ class MediaStorageConcurrencyIntegrationTest {
                 }));
 
         assertEquals(0, media.count());
-        try (Stream<Path> paths = Files.list(Path.of(uploadDir))) {
+        try (Stream<Path> paths = Files.list(uploadDir)) {
             assertEquals(0, paths.count());
         }
     }
@@ -136,7 +142,7 @@ class MediaStorageConcurrencyIntegrationTest {
     }
 
     private void clearUploadDirectory() throws Exception {
-        Path root = Path.of(uploadDir);
+        Path root = uploadDir;
         Files.createDirectories(root);
         try (Stream<Path> paths = Files.list(root)) {
             for (Path path : paths.toList()) Files.deleteIfExists(path);

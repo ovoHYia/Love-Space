@@ -186,9 +186,9 @@ async function removeMemory(memory: Memory) {
       <button class="button primary" type="button" @click="openCreate"><Plus :size="18" />收藏回忆</button>
     </header>
 
-    <div class="memory-view-switch" role="tablist" aria-label="回忆视图">
-      <button v-for="option in viewOptions" :key="option.id" type="button" role="tab"
-        :aria-selected="activeView === option.id" :class="{ active: activeView === option.id }"
+    <div class="memory-view-switch" role="group" aria-label="回忆视图筛选">
+      <button v-for="option in viewOptions" :key="option.id" type="button"
+        :aria-pressed="activeView === option.id" :class="{ active: activeView === option.id }"
         @click="activeView = option.id">
         <component :is="option.icon" :size="18" />{{ option.label }}
       </button>

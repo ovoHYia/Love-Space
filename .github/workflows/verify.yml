@@ -65,12 +65,12 @@ jobs:
           npm test
           npm run build
           npm audit --audit-level=high --registry=https://registry.npmjs.org/
-      - name: 后端测试、打包和真实 MySQL 迁移验证
+      - name: 后端测试、打包、依赖扫描和真实 MySQL 业务验证
         env:
           MYSQL_TEST_URL: jdbc:mysql://127.0.0.1:3306/love_space_test?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
           MYSQL_TEST_USERNAME: root
           MYSQL_TEST_PASSWORD: test-password
-        run: mvn -f backend/pom.xml clean package
+        run: mvn -f backend/pom.xml clean verify -Psecurity-scan
       - name: 检查最终 JAR 的前端首页和静态资源
         run: |
           test -f frontend/dist/index.html

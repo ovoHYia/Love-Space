@@ -273,6 +273,7 @@ function Assert-JarContainsStaticFrontend {
     if (-not (Test-Path -LiteralPath $JarPath -PathType Leaf)) {
         throw "Cannot find packaged JAR: $JarPath"
     }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
     try {
         $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })

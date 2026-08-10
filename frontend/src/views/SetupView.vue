@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Heart, KeyRound, Sparkles, UsersRound } from 'lucide-vue-next'
 import { api } from '../api'
-import { errorMessage } from '../api/client'
+import { ApiError, errorMessage } from '../api/client'
 import { authState } from '../stores/auth'
 import { useToast } from '../composables/toast'
 import { formatDateTime, toBeijingOffsetDateTime } from '../utils'
@@ -14,6 +14,7 @@ const step = ref(1)
 const saving = ref(false)
 const reveal = ref(false)
 const error = ref('')
+const fieldErrors = ref<Record<string, string>>({})
 const form = reactive({
   spaceName: '我们的小时光',
   loveStartedAt: '',
@@ -32,6 +33,7 @@ const canNext = computed(() => {
 
 function next() {
   error.value = ''
+  fieldErrors.value = {}
   if (!canNext.value) {
     error.value = step.value === 1 ? '请先写下空间名称和在一起的时间。' : '账号需为 3–50 位字母、数字或 _.-，两个账号不能相同，密码至少 8 位。'
     return
@@ -42,6 +44,7 @@ function next() {
 async function submit() {
   saving.value = true
   error.value = ''
+  fieldErrors.value = {}
   try {
     if (!canNext.value) {
       error.value = '请填入 .env 中的初始化口令。'
@@ -57,6 +60,7 @@ async function submit() {
     show('你们的小世界准备好了，现在登录看看吧。', 'success')
     await router.replace('/login')
   } catch (cause) {
+    fieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     error.value = errorMessage(cause)
   } finally {
     saving.value = false
@@ -90,8 +94,8 @@ async function submit() {
             <p class="eyebrow">第一步 · 为爱命名</p>
             <h2>先布置你们的小空间</h2>
             <p class="muted">这些信息会出现在首页，也会用来计算在一起的每一秒。</p>
-            <label class="field"><span>空间名称</span><input v-model="form.spaceName" required maxlength="30" autocomplete="off" placeholder="例如：我们的小时光" /></label>
-            <label class="field"><span>在一起的日期与时间</span><input v-model="form.loveStartedAt" required type="datetime-local" /></label>
+            <label class="field"><span>空间名称</span><input id="setup-space-name" v-model="form.spaceName" required maxlength="30" autocomplete="off" placeholder="例如：我们的小时光" :aria-invalid="Boolean(fieldErrors.spaceName)" :aria-describedby="fieldErrors.spaceName ? 'setup-space-name-error' : undefined" /><small v-if="fieldErrors.spaceName" id="setup-space-name-error" class="field-error">{{ fieldErrors.spaceName }}</small></label>
+            <label class="field"><span>在一起的日期与时间</span><input id="setup-love-started-at" v-model="form.loveStartedAt" required type="datetime-local" :aria-invalid="Boolean(fieldErrors.loveStartedAt)" :aria-describedby="fieldErrors.loveStartedAt ? 'setup-love-started-at-error' : undefined" /><small v-if="fieldErrors.loveStartedAt" id="setup-love-started-at-error" class="field-error">{{ fieldErrors.loveStartedAt }}</small></label>
             <p v-if="error" class="form-error" role="alert">{{ error }}</p>
             <button class="button primary full" type="submit">下一步 <ArrowRight :size="18" /></button>
           </form>
@@ -104,15 +108,15 @@ async function submit() {
             <div class="account-grid">
               <fieldset>
                 <legend>♡ 第一个人</legend>
-                <label class="field"><span>昵称</span><input v-model="form.firstUser.nickname" required maxlength="20" autocomplete="nickname" placeholder="你希望对方看到的名字" /></label>
-                <label class="field"><span>登录账号</span><input v-model="form.firstUser.username" required minlength="3" maxlength="50" pattern="[A-Za-z0-9_.-]+" autocomplete="username" placeholder="3 位以上字母、数字或 _.-" /></label>
-                <label class="field"><span>密码</span><span class="input-action"><input v-model="form.firstUser.password" required minlength="8" maxlength="72" :type="reveal ? 'text' : 'password'" autocomplete="new-password" placeholder="至少 8 位" /><button type="button" :aria-label="reveal ? '隐藏密码' : '显示密码'" @click="reveal = !reveal"><EyeOff v-if="reveal" :size="18" /><Eye v-else :size="18" /></button></span></label>
+                <label class="field"><span>昵称</span><input id="setup-first-nickname" v-model="form.firstUser.nickname" required maxlength="20" autocomplete="nickname" placeholder="你希望对方看到的名字" :aria-invalid="Boolean(fieldErrors['firstUser.nickname'])" :aria-describedby="fieldErrors['firstUser.nickname'] ? 'setup-first-nickname-error' : undefined" /><small v-if="fieldErrors['firstUser.nickname']" id="setup-first-nickname-error" class="field-error">{{ fieldErrors['firstUser.nickname'] }}</small></label>
+                <label class="field"><span>登录账号</span><input id="setup-first-username" v-model="form.firstUser.username" required minlength="3" maxlength="50" pattern="[A-Za-z0-9_.-]+" autocomplete="username" placeholder="3 位以上字母、数字或 _.-" :aria-invalid="Boolean(fieldErrors['firstUser.username'])" :aria-describedby="fieldErrors['firstUser.username'] ? 'setup-first-username-error' : undefined" /><small v-if="fieldErrors['firstUser.username']" id="setup-first-username-error" class="field-error">{{ fieldErrors['firstUser.username'] }}</small></label>
+                <label class="field"><span>密码</span><span class="input-action"><input id="setup-first-password" v-model="form.firstUser.password" required minlength="8" maxlength="72" :type="reveal ? 'text' : 'password'" autocomplete="new-password" placeholder="至少 8 位" :aria-invalid="Boolean(fieldErrors['firstUser.password'])" :aria-describedby="fieldErrors['firstUser.password'] ? 'setup-first-password-error' : undefined" /><button type="button" :aria-label="reveal ? '隐藏密码' : '显示密码'" @click="reveal = !reveal"><EyeOff v-if="reveal" :size="18" /><Eye v-else :size="18" /></button></span><small v-if="fieldErrors['firstUser.password']" id="setup-first-password-error" class="field-error">{{ fieldErrors['firstUser.password'] }}</small></label>
               </fieldset>
               <fieldset>
                 <legend>♡ 第二个人</legend>
-                <label class="field"><span>昵称</span><input v-model="form.secondUser.nickname" required maxlength="20" autocomplete="nickname" placeholder="对方的昵称" /></label>
-                <label class="field"><span>登录账号</span><input v-model="form.secondUser.username" required minlength="3" maxlength="50" pattern="[A-Za-z0-9_.-]+" autocomplete="username" placeholder="与第一个账号不同" /></label>
-                <label class="field"><span>密码</span><input v-model="form.secondUser.password" required minlength="8" maxlength="72" :type="reveal ? 'text' : 'password'" autocomplete="new-password" placeholder="至少 8 位" /></label>
+                <label class="field"><span>昵称</span><input id="setup-second-nickname" v-model="form.secondUser.nickname" required maxlength="20" autocomplete="nickname" placeholder="对方的昵称" :aria-invalid="Boolean(fieldErrors['secondUser.nickname'])" :aria-describedby="fieldErrors['secondUser.nickname'] ? 'setup-second-nickname-error' : undefined" /><small v-if="fieldErrors['secondUser.nickname']" id="setup-second-nickname-error" class="field-error">{{ fieldErrors['secondUser.nickname'] }}</small></label>
+                <label class="field"><span>登录账号</span><input id="setup-second-username" v-model="form.secondUser.username" required minlength="3" maxlength="50" pattern="[A-Za-z0-9_.-]+" autocomplete="username" placeholder="与第一个账号不同" :aria-invalid="Boolean(fieldErrors['secondUser.username'])" :aria-describedby="fieldErrors['secondUser.username'] ? 'setup-second-username-error' : undefined" /><small v-if="fieldErrors['secondUser.username']" id="setup-second-username-error" class="field-error">{{ fieldErrors['secondUser.username'] }}</small></label>
+                <label class="field"><span>密码</span><input id="setup-second-password" v-model="form.secondUser.password" required minlength="8" maxlength="72" :type="reveal ? 'text' : 'password'" autocomplete="new-password" placeholder="至少 8 位" :aria-invalid="Boolean(fieldErrors['secondUser.password'])" :aria-describedby="fieldErrors['secondUser.password'] ? 'setup-second-password-error' : undefined" /><small v-if="fieldErrors['secondUser.password']" id="setup-second-password-error" class="field-error">{{ fieldErrors['secondUser.password'] }}</small></label>
               </fieldset>
             </div>
             <p v-if="error" class="form-error" role="alert">{{ error }}</p>
@@ -129,7 +133,7 @@ async function submit() {
               <p>{{ form.firstUser.nickname }} & {{ form.secondUser.nickname }}</p>
             <small>从 {{ formatDateTime(form.loveStartedAt) }} 开始</small>
             </div>
-            <label class="field"><span>初始化口令</span><input v-model="form.setupToken" required minlength="32" autocomplete="one-time-code" placeholder="填写 .env 中的 SETUP_TOKEN" /><small>它只在第一次创建空间时使用，不会保存到网站。</small></label>
+            <label class="field"><span>初始化口令</span><input id="setup-token" v-model="form.setupToken" required minlength="32" autocomplete="one-time-code" placeholder="填写 .env 中的 SETUP_TOKEN" :aria-invalid="Boolean(fieldErrors.setupToken)" :aria-describedby="fieldErrors.setupToken ? 'setup-token-error' : 'setup-token-hint'" /><small v-if="fieldErrors.setupToken" id="setup-token-error" class="field-error">{{ fieldErrors.setupToken }}</small><small v-else id="setup-token-hint">它只在第一次创建空间时使用，不会保存到网站。</small></label>
             <p class="privacy-note">只有知道账号和密码的你们能够进入。初始化完成后，为保护已有回忆，页面不会再次开放。</p>
             <p v-if="error" class="form-error" role="alert">{{ error }}</p>
             <div class="button-row"><button class="button ghost" type="button" :disabled="saving" @click="step = 2"><ArrowLeft :size="18" />返回</button><button class="button primary" type="button" :disabled="saving" @click="submit"><span v-if="saving" class="button-spinner"></span><Heart v-else :size="18" fill="currentColor" />{{ saving ? '正在准备…' : '创建 Love Space' }}</button></div>

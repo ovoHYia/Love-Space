@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 import { api } from '../api'
-import { errorMessage } from '../api/client'
+import { ApiError, errorMessage } from '../api/client'
 import BaseModal from '../components/BaseModal.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
@@ -26,6 +26,7 @@ const modalOpen = ref(false)
 const editing = ref<CalendarEntry | null>(null)
 const saving = ref(false)
 const deleting = ref(false)
+const fieldErrors = ref<Record<string, string>>({})
 const calendarRequests = createRequestGeneration()
 const allSources: CalendarSource[] = ['CUSTOM', 'ANNIVERSARY', 'WISH', 'MEMORY', 'DIARY', 'LETTER']
 const activeSources = ref<CalendarSource[]>([...allSources])
@@ -151,6 +152,7 @@ function selectDay(day: { key: string; current: boolean; value: Date }) {
 
 function resetForm(date = selectedDate.value) {
   editing.value = null
+  fieldErrors.value = {}
   Object.assign(form, {
     title: '',
     description: '',
@@ -171,6 +173,7 @@ function openCreate(date = selectedDate.value) {
 
 function openEdit(item: CalendarEntry) {
   if (!item.editable) return
+  fieldErrors.value = {}
   const start = toLocalDateTimeInput(item.startAt)
   const end = item.endAt ? toLocalDateTimeInput(item.endAt) : ''
   editing.value = item
@@ -206,6 +209,7 @@ function input(): CalendarEventInput {
 
 async function save() {
   saving.value = true
+  fieldErrors.value = {}
   try {
     if (editing.value) {
       await api.updateCalendarEvent(editing.value.id, input())
@@ -217,6 +221,7 @@ async function save() {
     modalOpen.value = false
     await load()
   } catch (cause) {
+    fieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
   } finally {
     saving.value = false
@@ -264,6 +269,7 @@ function openSource(item: CalendarEntry) {
       <button class="button ghost small" type="button" @click="goToday">回到今天</button>
       <div class="calendar-filters" aria-label="日历来源筛选">
         <button v-for="source in allSources" :key="source" type="button"
+          :aria-pressed="activeSources.includes(source)"
           :class="['source-filter', `source-${source.toLowerCase()}`, { inactive: !activeSources.includes(source) }]"
           @click="toggleSource(source)">
           <i></i>{{ sourceMeta[source].label }}
@@ -297,20 +303,21 @@ function openSource(item: CalendarEntry) {
           </div>
           <EmptyState v-if="!selectedEntries.length" title="这一天还很轻盈" description="双击日期，或点击加号安排一个属于你们的约定。" />
           <div v-else class="agenda-list">
-            <article v-for="item in selectedEntries" :key="`${item.sourceType}-${item.id}-${item.startAt}`"
-              :class="['agenda-item', `source-${item.sourceType.toLowerCase()}`]" @click="openSource(item)">
+            <button v-for="item in selectedEntries" :key="`${item.sourceType}-${item.id}-${item.startAt}`" type="button"
+              :class="['agenda-item', `source-${item.sourceType.toLowerCase()}`]"
+              :aria-label="`${item.title}，${sourceMeta[item.sourceType].label}`" @click="openSource(item)">
               <span class="agenda-dot"></span>
-              <div>
+              <span class="agenda-content">
                 <small>{{ sourceMeta[item.sourceType].label }} · {{ item.createdByNickname }}</small>
-                <h3>{{ item.title }}</h3>
-                <p v-if="item.description">{{ item.description }}</p>
-                <footer>
+                <span class="agenda-title">{{ item.title }}</span>
+                <span v-if="item.description" class="agenda-description">{{ item.description }}</span>
+                <span class="agenda-meta">
                   <span><CalendarDays v-if="item.allDay" :size="13" /><Clock3 v-else :size="13" />{{ item.allDay ? '全天' : formatDateTime(item.startAt) }}</span>
                   <span v-if="item.location"><MapPin :size="13" />{{ item.location }}</span>
-                </footer>
-              </div>
+                </span>
+              </span>
               <Pencil v-if="item.editable" :size="15" class="agenda-edit" />
-            </article>
+            </button>
           </div>
         </aside>
       </section>
@@ -319,21 +326,21 @@ function openSource(item: CalendarEntry) {
 
   <BaseModal v-if="modalOpen" :title="editing ? '编辑共享日程' : '添加共享日程'" description="日程会同时出现在你们两个人的日历中。" @close="modalOpen = false">
     <form class="stack-form" @submit.prevent="save">
-      <label class="field"><span>日程名称</span><input v-model="form.title" required maxlength="120" placeholder="例如：一起去看展" /></label>
+      <label class="field"><span>日程名称</span><input id="calendar-title" v-model="form.title" required maxlength="120" placeholder="例如：一起去看展" :aria-invalid="Boolean(fieldErrors.title)" :aria-describedby="fieldErrors.title ? 'calendar-title-error' : undefined" /><small v-if="fieldErrors.title" id="calendar-title-error" class="field-error">{{ fieldErrors.title }}</small></label>
       <div class="form-two">
-        <label class="field"><span>日期</span><input v-model="form.date" required type="date" /></label>
-        <label class="field"><span>时间</span><input v-model="form.time" :disabled="form.allDay" required type="time" /></label>
+        <label class="field"><span>日期</span><input id="calendar-start-date" v-model="form.date" required type="date" :aria-invalid="Boolean(fieldErrors.startAt)" :aria-describedby="fieldErrors.startAt ? 'calendar-start-error' : undefined" /><small v-if="fieldErrors.startAt" id="calendar-start-error" class="field-error">{{ fieldErrors.startAt }}</small></label>
+        <label class="field"><span>时间</span><input id="calendar-start-time" v-model="form.time" :disabled="form.allDay" required type="time" :aria-invalid="Boolean(fieldErrors.startAt)" :aria-describedby="fieldErrors.startAt ? 'calendar-start-error' : undefined" /></label>
       </div>
       <label class="check-row"><input v-model="form.allDay" type="checkbox" /><span><strong>全天日程</strong><small>不显示具体开始时间</small></span></label>
       <div class="form-two">
-        <label class="field"><span>结束日期（可选）</span><input v-model="form.endDate" type="date" :min="form.date" /></label>
-        <label class="field"><span>结束时间</span><input v-model="form.endTime" :disabled="form.allDay || !form.endDate" type="time" /></label>
+        <label class="field"><span>结束日期（可选）</span><input id="calendar-end-date" v-model="form.endDate" type="date" :min="form.date" :aria-invalid="Boolean(fieldErrors.endAt)" :aria-describedby="fieldErrors.endAt ? 'calendar-end-error' : undefined" /><small v-if="fieldErrors.endAt" id="calendar-end-error" class="field-error">{{ fieldErrors.endAt }}</small></label>
+        <label class="field"><span>结束时间</span><input id="calendar-end-time" v-model="form.endTime" :disabled="form.allDay || !form.endDate" type="time" :aria-invalid="Boolean(fieldErrors.endAt)" :aria-describedby="fieldErrors.endAt ? 'calendar-end-error' : undefined" /></label>
       </div>
       <div class="form-two">
-        <label class="field"><span>分类</span><select v-model="form.category"><option v-for="item in categories" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
-        <label class="field"><span>地点（可选）</span><input v-model="form.location" maxlength="200" placeholder="在哪里见面" /></label>
+        <label class="field"><span>分类</span><select id="calendar-category" v-model="form.category" :aria-invalid="Boolean(fieldErrors.category)" :aria-describedby="fieldErrors.category ? 'calendar-category-error' : undefined"><option v-for="item in categories" :key="item.value" :value="item.value">{{ item.label }}</option></select><small v-if="fieldErrors.category" id="calendar-category-error" class="field-error">{{ fieldErrors.category }}</small></label>
+        <label class="field"><span>地点（可选）</span><input id="calendar-location" v-model="form.location" maxlength="200" placeholder="在哪里见面" :aria-invalid="Boolean(fieldErrors.location)" :aria-describedby="fieldErrors.location ? 'calendar-location-error' : undefined" /><small v-if="fieldErrors.location" id="calendar-location-error" class="field-error">{{ fieldErrors.location }}</small></label>
       </div>
-      <label class="field"><span>说明（可选）</span><textarea v-model="form.description" maxlength="1000" rows="4" placeholder="写下需要准备的事情或一句期待…" /></label>
+      <label class="field"><span>说明（可选）</span><textarea id="calendar-description" v-model="form.description" maxlength="1000" rows="4" placeholder="写下需要准备的事情或一句期待…" :aria-invalid="Boolean(fieldErrors.description)" :aria-describedby="fieldErrors.description ? 'calendar-description-error' : undefined" /><small v-if="fieldErrors.description" id="calendar-description-error" class="field-error">{{ fieldErrors.description }}</small></label>
       <div class="modal-actions">
         <button v-if="editing" class="button danger-button" type="button" :disabled="deleting || saving" @click="remove(editing)"><Trash2 :size="16" />移入回收站</button>
         <button class="button ghost" type="button" @click="modalOpen = false">取消</button>
@@ -370,14 +377,15 @@ function openSource(item: CalendarEntry) {
 .agenda-heading h2 { margin: 2px 0 0; font-size: 20px; }
 .day-agenda .empty-state { min-height: 300px; padding: 20px 5px; border: 0; background: transparent; }
 .agenda-list { display: grid; gap: 9px; }
-.agenda-item { position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: 9px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: white; cursor: pointer; }
+.agenda-item { position: relative; display: grid; grid-template-columns: auto 1fr auto; width: 100%; gap: 9px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: white; color: inherit; cursor: pointer; font: inherit; text-align: left; }
 .agenda-item:hover { border-color: #eabcc3; transform: translateY(-1px); }
 .agenda-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: currentColor; }
 .agenda-item small { color: var(--muted); font-size: 8px; font-weight: 800; }
-.agenda-item h3 { margin: 3px 0 4px; font-size: 15px; }
-.agenda-item p { display: -webkit-box; overflow: hidden; margin: 0 0 7px; color: var(--muted); font-size: 10px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.agenda-item footer { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 9px; }
-.agenda-item footer span { display: inline-flex; align-items: center; gap: 4px; }
+.agenda-content { min-width: 0; }
+.agenda-item .agenda-title { display: block; margin: 3px 0 4px; font-size: 15px; font-weight: 700; }
+.agenda-item .agenda-description { display: -webkit-box; overflow: hidden; margin: 0 0 7px; color: var(--muted); font-size: 10px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.agenda-item .agenda-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 9px; }
+.agenda-item .agenda-meta > span { display: inline-flex; align-items: center; gap: 4px; }
 .agenda-edit { color: var(--muted); }
 .source-custom { color: #d45d73; }
 .source-anniversary { color: #c88745; }

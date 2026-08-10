@@ -29,6 +29,7 @@ backend/        Spring Boot 后端、数据库迁移和后端测试
 frontend/       Vue 3 前端
 scripts/        PowerShell 开发、构建、数据库和部署脚本
 data/           本地上传数据（不提交）
+work/           本地日志和发布暂存目录（不提交）
 outputs/        构建和发布产物（不提交）
 ```
 
@@ -127,17 +128,45 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\build.ps1
 
 只有明确传入 `-SkipTests` 才会跳过前端和后端测试；`-SkipInstall` 只适合已经确认依赖完整且未改变的场景。
 
-### 单独执行测试
+如需生成可分发 ZIP，可在构建成功后执行：
 
 ```powershell
-mvn -f backend/pom.xml test
+pwsh -ExecutionPolicy Bypass -File .\scripts\package-release.ps1
 ```
 
-前端单元测试和生产构建：
+默认产物为 `outputs/Love-Space-v1.0-fixed.zip`；可通过 `-Version` 指定 ZIP 文件名。
+
+### 单独执行测试
+
+前端单元测试使用 Vitest：
 
 ```powershell
 Push-Location frontend
 npm test
+Pop-Location
+```
+
+后端测试默认使用 Spring `test` profile 和 H2。由于 Maven 在 `validate` 阶段会检查前端产物是否存在且新鲜，先构建前端再执行后端测试：
+
+```powershell
+Push-Location frontend
+npm run build
+Pop-Location
+mvn -f backend/pom.xml test
+```
+
+直接执行 `mvn test` 不会读取根目录 `.env`。真实 MySQL 测试请使用下面的构建命令；它会显式加载 `.env`，使用 `MYSQL_TEST_PASSWORD`，或在未设置时回退到 `.env` 的 `DB_PASSWORD`。真实测试库必须是本机数据库名以 `_test` 结尾的数据库，并且需要预先创建。
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File .\scripts\build.ps1 -MySqlTests
+```
+
+如果只想手动执行真实 MySQL 测试，可在当前 PowerShell 进程设置 `MYSQL_TEST_URL`、`MYSQL_TEST_PASSWORD`，以及可选的 `MYSQL_TEST_USERNAME`（默认 `root`），然后按上面的后端测试命令执行。不要把生产数据库或生产密码用于测试。
+
+前端生产构建：
+
+```powershell
+Push-Location frontend
 npm run build
 Pop-Location
 ```
@@ -150,11 +179,13 @@ npm audit --audit-level=high --registry=https://registry.npmjs.org/
 Pop-Location
 ```
 
-仓库中的 `.github/workflows/verify.yml` 会在提交和拉取请求上执行前端测试、构建、依赖审计、
-`mvn clean package`，检查 JAR 内的 `BOOT-INF/classes/static/index.html` 和静态资源，并使用真实
-MySQL 8.4 验证全部 Flyway 迁移。前端 CI 步骤不会加载后端数据库和令牌变量。
+仓库中的 `.github/workflows/verify.yml` 会在提交和拉取请求上执行前端测试、构建、依赖审计，
+`mvn -f backend/pom.xml clean verify -Psecurity-scan`，检查 JAR 内的
+`BOOT-INF/classes/static/index.html` 和静态资源，并使用真实 MySQL 8.4 验证业务流程和全部
+Flyway 迁移。前端 CI 步骤不会加载后端数据库和令牌变量。
 需要在本机验证真实 MySQL 时，可执行下面的构建命令。`-MySqlTests` 会自动使用本机
-`love_space_test` 数据库和 `root` 用户，并复用本地 `.env` 中的 `DB_PASSWORD`，因此不需要再次输入密码。
+`love_space_test` 数据库和 `root` 用户，并复用本地 `.env` 中的 `DB_PASSWORD`，因此不需要再次输入密码；
+请先确保该本机测试数据库已经创建，构建脚本不会把应用数据库自动改成测试数据库。
 如果测试库密码与应用数据库密码不同，可在未提交的 `.env` 中单独配置 `MYSQL_TEST_PASSWORD`；该配置优先级更高。
 
 ```powershell
@@ -162,7 +193,8 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\build.ps1 -MySqlTests
 ```
 
 如果只想运行真实 MySQL 测试，也可以手动设置仅指向本机且数据库名以 `_test` 结尾的
-`MYSQL_TEST_URL`、`MYSQL_TEST_USERNAME` 和 `MYSQL_TEST_PASSWORD` 后运行相应的 Maven 测试。
+`MYSQL_TEST_URL`、`MYSQL_TEST_PASSWORD`，以及可选的 `MYSQL_TEST_USERNAME`（默认 `root`），
+然后运行相应的 Maven 测试。
 
 ## 生产部署
 
@@ -212,7 +244,10 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 - `SETUP_ENABLED`：是否开放初始化入口；生产环境可显式设为 `false` 禁用
 - `PASSWORD_RESET_TOKEN`：可选的高熵密码恢复口令
 - `UPLOAD_DIR`：上传文件目录，默认 `./data/uploads`
-- `MEDIA_MAX_BYTES`、`MEDIA_TOTAL_MAX_BYTES`：上传配额
+- `SERVER_ADDRESS`、`SERVER_PORT`：后端监听地址和端口；生产环境强制使用回环地址
+- `FRONTEND_HOST`、`FRONTEND_PORT`、`VITE_BACKEND_URL`：前端开发服务器和 Vite 代理配置
+- `MAX_FILE_SIZE`、`MAX_REQUEST_SIZE`：单文件和单请求大小上限
+- `MEDIA_MAX_BYTES`、`MEDIA_TOTAL_MAX_BYTES`、`MEDIA_MIN_FREE_BYTES`：上传配额和磁盘剩余空间保护
 - `DATA_EXPORT_MAX_CONCURRENT`：同时进行的数据导出数量，默认 1
 - `LOGIN_MAX_ATTEMPTS_PER_IP`、`LOGIN_MAX_FAILURES_PER_IDENTITY`：登录 IP 级和账号/IP 级限流
 - `CORS_ALLOWED_ORIGINS`：允许的前端来源

@@ -1,7 +1,10 @@
 package com.lovespace;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -10,11 +13,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,8 +47,10 @@ class MySqlBusinessIntegrationTest {
     @DynamicPropertySource
     static void registerMySqlAndUploadDirectory(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", MySqlBusinessIntegrationTest::dataSourceUrl);
-        registry.add("spring.datasource.username", () -> environment("MYSQL_TEST_USERNAME", "root"));
-        registry.add("spring.datasource.password", () -> environment("MYSQL_TEST_PASSWORD", ""));
+        registry.add("spring.datasource.username", () -> mysqlConfigured()
+                ? environment("MYSQL_TEST_USERNAME", "root") : "sa");
+        registry.add("spring.datasource.password", () -> mysqlConfigured()
+                ? requiredEnvironment("MYSQL_TEST_PASSWORD") : "");
         registry.add("spring.datasource.driver-class-name", () -> mysqlConfigured()
                 ? "com.mysql.cj.jdbc.Driver" : "org.h2.Driver");
         registry.add("app.upload-dir", () -> uploadDir.toString());
@@ -68,8 +75,8 @@ class MySqlBusinessIntegrationTest {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = "MYSQL_TEST_URL", matches = ".+")
     void springJpaBusinessFlowWorksAgainstRealMySql() throws Exception {
+        requireMySqlConfiguration();
         String setup = """
                 {"spaceName":"真实数据库小屋","loveStartedAt":"2025-02-14T20:00:00",
                  "firstUser":{"username":"alice","password":"alice-pass-123","nickname":"小爱"},
@@ -86,23 +93,94 @@ class MySqlBusinessIntegrationTest {
                 .andExpect(status().isCreated());
 
         MockMultipartFile data = new MockMultipartFile("data", "", "application/json",
-                "{\"title\":\"MySQL 回忆\",\"eventAt\":\"2026-08-10T18:30:00\",\"tags\":[\"真实库\"]}"
-                        .getBytes(StandardCharsets.UTF_8));
+                ("{\"title\":\"MySQL 回忆\",\"description\":\"MySQL 描述\","
+                        + "\"eventAt\":\"2026-08-10T18:30:00\",\"location\":\"MySQL 地点\","
+                        + "\"tags\":[\"MySQL Tag\"]}").getBytes(StandardCharsets.UTF_8));
         MockMultipartFile image = new MockMultipartFile("files", "mysql.png", "image/png",
                 new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
-        mvc.perform(multipart("/api/memories").file(data).file(image).with(csrf()).session(session))
+        String firstMemory = mvc.perform(multipart("/api/memories").file(data).file(image)
+                        .with(csrf()).session(session))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.title").value("MySQL 回忆"))
-                .andExpect(jsonPath("$.media[0].mediaType").value("image"));
+                .andExpect(jsonPath("$.media[0].mediaType").value("image"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        long firstMemoryId = idOf(firstMemory);
+
+        MockMultipartFile video = new MockMultipartFile("files", "mysql.mp4", "video/mp4",
+                new byte[]{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 0, 0,
+                        'i', 's', 'o', 'm', 'm', 'p', '4', '2'});
+        mvc.perform(multipart("/api/memories/{id}/media", firstMemoryId).file(video)
+                        .with(csrf()).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.media[?(@.mediaType == 'video')]").isNotEmpty());
+
+        MockMultipartFile olderData = new MockMultipartFile("data", "", "application/json",
+                ("{\"title\":\"MySQL 旧回忆\",\"description\":\"旧描述\","
+                        + "\"eventAt\":\"2026-08-09T18:30:00\",\"location\":\"旧地点\","
+                        + "\"tags\":[\"其他\"]}").getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile olderImage = new MockMultipartFile("files", "mysql-old.png", "image/png",
+                new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
+        mvc.perform(multipart("/api/memories").file(olderData).file(olderImage)
+                        .with(csrf()).session(session))
+                .andExpect(status().isCreated());
 
         assertEquals(1, jdbc.queryForObject("select count(*) from couples", Integer.class));
         assertEquals(2, jdbc.queryForObject("select count(*) from users", Integer.class));
         assertEquals(1, jdbc.queryForObject("select count(*) from diaries", Integer.class));
-        assertEquals(1, jdbc.queryForObject("select count(*) from memories", Integer.class));
-        assertEquals(1, jdbc.queryForObject("select count(*) from media", Integer.class));
+        assertEquals(2, jdbc.queryForObject("select count(*) from memories", Integer.class));
+        assertEquals(3, jdbc.queryForObject("select count(*) from media", Integer.class));
         try (var paths = Files.list(uploadDir)) {
-            assertEquals(1, paths.count());
+            assertEquals(3, paths.count());
         }
+
+        mvc.perform(get("/api/memories/album").session(session)
+                        .param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.content", hasSize(3)))
+                .andExpect(jsonPath("$.content[0].memoryTitle").value("MySQL 回忆"))
+                .andExpect(jsonPath("$.content[0].media.mediaType").value("video"))
+                .andExpect(jsonPath("$.content[1].media.mediaType").value("image"))
+                .andExpect(jsonPath("$.content[2].memoryTitle").value("MySQL 旧回忆"));
+        mvc.perform(get("/api/memories/album").session(session)
+                        .param("q", "MySQL 地点").param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+        mvc.perform(get("/api/memories/album").session(session)
+                        .param("tag", " mysql   tag ").param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+        mvc.perform(get("/api/memories/album").session(session)
+                        .param("page", "1").param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].memoryTitle").value("MySQL 旧回忆"));
+    }
+
+    @Test
+    void albumExplainPlansAreAvailableAgainstRealMySql() {
+        requireMySqlConfiguration();
+        assertIndex("memories", "idx_memories_couple_event");
+        assertIndex("media", "idx_media_couple");
+        assertMemoryTagsPrimaryKey();
+
+        String noFilter = String.format(ALBUM_EXPLAIN_BASE, "");
+        String tagFilter = String.format(ALBUM_EXPLAIN_BASE,
+                "and exists (select 1 from memory_tags mt where mt.memory_id = mem.id and lower(mt.tag) = ?)");
+        String keywordFilter = String.format(ALBUM_EXPLAIN_BASE,
+                "and (lower(mem.title) like ? or lower(mem.description) like ? or lower(mem.location) like ?)");
+
+        List<Map<String, Object>> noFilterPlan = jdbc.queryForList("explain " + noFilter, 0L, 0L);
+        List<Map<String, Object>> tagPlan = jdbc.queryForList("explain " + tagFilter, 0L, 0L, "mysql tag");
+        List<Map<String, Object>> keywordPlan = jdbc.queryForList(
+                "explain " + keywordFilter, 0L, 0L, "%mysql%", "%mysql%", "%mysql%");
+        assertFalse(noFilterPlan.isEmpty());
+        assertFalse(tagPlan.isEmpty());
+        assertFalse(keywordPlan.isEmpty());
+        System.out.println("MySQL EXPLAIN album no-filter: " + noFilterPlan);
+        System.out.println("MySQL EXPLAIN album tag-filter: " + tagPlan);
+        System.out.println("MySQL EXPLAIN album keyword-filter: " + keywordPlan);
     }
 
     private MockHttpSession login(String username, String password) throws Exception {
@@ -120,8 +198,11 @@ class MySqlBusinessIntegrationTest {
     }
 
     private static boolean mysqlConfigured() {
-        String value = System.getenv("MYSQL_TEST_URL");
-        return value != null && !value.isBlank();
+        String url = System.getenv("MYSQL_TEST_URL");
+        String password = System.getenv("MYSQL_TEST_PASSWORD");
+        return url != null && !url.isBlank()
+                && password != null && !password.isBlank()
+                && isLocalTestDatabase(url);
     }
 
     private static String dataSourceUrl() {
@@ -136,8 +217,63 @@ class MySqlBusinessIntegrationTest {
 
     private static void assertTrueLocalTestDatabase() {
         String url = requiredEnvironment("MYSQL_TEST_URL");
-        if (!url.matches("jdbc:mysql://(127\\.0\\.1|localhost):\\d+/[A-Za-z0-9_]*_test(?:\\?.*)?")) {
+        if (!isLocalTestDatabase(url)) {
             throw new IllegalStateException("MYSQL_TEST_URL must target a local database whose name ends with _test");
         }
     }
+
+    private static boolean isLocalTestDatabase(String url) {
+        return url.matches("jdbc:mysql://(127\\.0\\.1|localhost):\\d+/[A-Za-z0-9_]*_test(?:\\?.*)?");
+    }
+
+    private static void requireMySqlConfiguration() {
+        String message = "BLOCKED: 真实 MySQL 测试需要 MYSQL_TEST_URL（本机 *_test 数据库）和非空 MYSQL_TEST_PASSWORD；"
+                + "当前未提供安全测试库配置，未使用生产 .env 密码。";
+        if (!mysqlConfigured()) System.err.println(message);
+        Assumptions.assumeTrue(mysqlConfigured(), message);
+        assertTrueLocalTestDatabase();
+    }
+
+    private void assertIndex(String table, String index) {
+        Integer count = jdbc.queryForObject(
+                "select count(*) from information_schema.statistics "
+                        + "where table_schema = database() and table_name = ? and index_name = ?",
+                Integer.class, table, index);
+        assertEquals(1, count);
+    }
+
+    private void assertMemoryTagsPrimaryKey() {
+        Integer memoryIdFirst = jdbc.queryForObject(
+                "select count(*) from information_schema.statistics "
+                        + "where table_schema = database() and table_name = 'memory_tags' "
+                        + "and index_name = 'PRIMARY' and column_name = 'memory_id' and seq_in_index = 1",
+                Integer.class);
+        Integer tagSecond = jdbc.queryForObject(
+                "select count(*) from information_schema.statistics "
+                        + "where table_schema = database() and table_name = 'memory_tags' "
+                        + "and index_name = 'PRIMARY' and column_name = 'tag' and seq_in_index = 2",
+                Integer.class);
+        assertEquals(1, memoryIdFirst);
+        assertEquals(1, tagSecond);
+    }
+
+    private static long idOf(String json) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\\"id\\\":(\\d+)")
+                .matcher(json);
+        if (!matcher.find()) throw new AssertionError("response has no id: " + json);
+        return Long.parseLong(matcher.group(1));
+    }
+
+    private static final String ALBUM_EXPLAIN_BASE = """
+            select m.id
+            from media m
+            join memories mem on mem.id = m.memory_id
+            where m.couple_id = ?
+              and (lower(m.media_type) = 'image' or lower(m.media_type) = 'video')
+              and mem.couple_id = ?
+              and mem.deleted_at is null
+              %s
+            order by mem.event_at desc, m.id desc
+            limit 30 offset 0
+            """;
 }

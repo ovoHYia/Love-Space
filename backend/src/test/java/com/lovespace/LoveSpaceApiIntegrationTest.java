@@ -501,6 +501,125 @@ class LoveSpaceApiIntegrationTest {
     }
 
     @Test
+    void albumSupportsDefaultMixedFilteringPagingDeletionAndCoupleIsolation() throws Exception {
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.content", hasSize(0)));
+
+        User alice = users.findByUsernameIgnoreCase("alice").orElseThrow();
+        Memory photoVideo = albumMemory(alice, "相册标题", "描述关键词", "上海外滩",
+                LocalDateTime.of(2026, 8, 10, 18, 30), List.of("Trip Day"));
+        addAlbumMedia(alice, photoVideo, "image", "photo.png");
+        addAlbumMedia(alice, photoVideo, "video", "video.mp4");
+
+        Memory description = albumMemory(alice, "描述标题", "描述关键词", "杭州",
+                LocalDateTime.of(2026, 8, 9, 18, 30), List.of("Trip Day"));
+        addAlbumMedia(alice, description, "image", "description.png");
+
+        Memory location = albumMemory(alice, "地点标题", "没有匹配", "上海外滩",
+                LocalDateTime.of(2026, 8, 8, 18, 30), List.of("Other"));
+        addAlbumMedia(alice, location, "image", "location.png");
+
+        Memory tag = albumMemory(alice, "标签标题", "没有匹配", "南京",
+                LocalDateTime.of(2026, 8, 7, 18, 30), List.of("Trip Day"));
+        addAlbumMedia(alice, tag, "image", "tag.png");
+
+        Memory deleted = albumMemory(alice, "已删除回忆", "描述关键词", "上海外滩",
+                LocalDateTime.of(2026, 8, 11, 18, 30), List.of("Trip Day"));
+        deleted.setDeletedAt(LocalDateTime.of(2026, 8, 12, 18, 30));
+        memories.saveAndFlush(deleted);
+        addAlbumMedia(alice, deleted, "image", "deleted.png");
+
+        Memory audioOnly = albumMemory(alice, "音频回忆", "声音描述", "录音室",
+                LocalDateTime.of(2026, 8, 6, 18, 30), List.of("Other"));
+        addAlbumMedia(alice, audioOnly, "audio", "audio.mp3");
+
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(5))
+                .andExpect(jsonPath("$.totalPages").value(1))
+                .andExpect(jsonPath("$.content", hasSize(5)))
+                .andExpect(jsonPath("$.content[0].memoryTitle").value("相册标题"))
+                .andExpect(jsonPath("$.content[0].media.mediaType").value("video"))
+                .andExpect(jsonPath("$.content[1].media.mediaType").value("image"))
+                .andExpect(jsonPath("$.content[2].memoryTitle").value("描述标题"))
+                .andExpect(jsonPath("$.content[4].memoryTitle").value("标签标题"));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("q", "相册标题").param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("q", "描述关键词").param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(3));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("q", "上海外滩").param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(3));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("tag", "  trip   day ").param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(4));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("page", "1").param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(5))
+                .andExpect(jsonPath("$.totalPages").value(3))
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content[0].memoryTitle").value("描述标题"))
+                .andExpect(jsonPath("$.content[1].memoryTitle").value("地点标题"));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("page", "0").param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalPages").value(5))
+                .andExpect(jsonPath("$.content", hasSize(1)));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("page", "2147483647").param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(5))
+                .andExpect(jsonPath("$.content", hasSize(0)))
+                .andExpect(jsonPath("$.last").value(true));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("q", "已删除回忆").param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("q", "音频回忆").param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/memories/album").session(secondSession).param("size", "0"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/memories/album").session(secondSession).param("size", "101"))
+                .andExpect(status().isBadRequest());
+
+        Couple outsiderCouple = new Couple();
+        outsiderCouple.setSpaceName("另一个空间");
+        outsiderCouple.setLoveStartedAt(LocalDateTime.of(2024, 1, 1, 0, 0));
+        couples.saveAndFlush(outsiderCouple);
+        User outsider = new User();
+        outsider.setCouple(outsiderCouple);
+        outsider.setUsername("album-outsider");
+        outsider.setNickname("相册路人");
+        outsider.setPasswordHash(encoder.encode("outsider-pass"));
+        users.saveAndFlush(outsider);
+        User outsiderPartner = new User();
+        outsiderPartner.setCouple(outsiderCouple);
+        outsiderPartner.setUsername("album-outsider-2");
+        outsiderPartner.setNickname("相册路人2");
+        outsiderPartner.setPasswordHash(encoder.encode("outsider-pass-2"));
+        users.saveAndFlush(outsiderPartner);
+        MockHttpSession outsiderSession = login("album-outsider", "outsider-pass");
+        mvc.perform(get("/api/memories/album").session(outsiderSession)
+                        .param("page", "0").param("size", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.content", hasSize(0)));
+    }
+
+    @Test
     void dashboardMoodAnniversaryAndMemoryFiltersWork() throws Exception {
         mvc.perform(put("/api/moods/today").with(csrf()).session(firstSession).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"emoji\":\"😊\",\"label\":\"开心\",\"note\":\"见到你啦\"}"))
@@ -578,5 +697,32 @@ class LoveSpaceApiIntegrationTest {
         Matcher matcher = Pattern.compile("\\\"" + property + "\\\":\\[\\{\\\"id\\\":(\\d+)").matcher(json);
         if (!matcher.find()) throw new AssertionError("response has no nested id: " + json);
         return Long.parseLong(matcher.group(1));
+    }
+
+    private Memory albumMemory(User owner, String title, String description, String location,
+                               LocalDateTime eventAt, List<String> tags) {
+        Memory memory = new Memory();
+        memory.setCoupleId(owner.getCouple().getId());
+        memory.setAuthorId(owner.getId());
+        memory.setTitle(title);
+        memory.setDescription(description);
+        memory.setEventAt(eventAt);
+        memory.setLocation(location);
+        memory.setTags(tags);
+        return memories.saveAndFlush(memory);
+    }
+
+    private Media addAlbumMedia(User owner, Memory memory, String mediaType, String originalName) {
+        Media value = new Media();
+        value.setCoupleId(owner.getCouple().getId());
+        value.setOwnerId(owner.getId());
+        value.setMemoryId(memory.getId());
+        value.setStoredName(UUID.randomUUID().toString());
+        value.setOriginalName(originalName);
+        value.setContentType("audio".equals(mediaType) ? "audio/mpeg"
+                : "video".equals(mediaType) ? "video/mp4" : "image/png");
+        value.setMediaType(mediaType);
+        value.setByteSize(1);
+        return media.saveAndFlush(value);
     }
 }

@@ -85,14 +85,13 @@ public class MemoryService {
         String keyword = AccountService.trimToNull(search);
         String keywordPattern = keyword == null ? null : "%" + escapeLike(keyword.toLowerCase(Locale.ROOT)) + "%";
         String selectedTag = normalizeTagForQuery(tag);
-        List<String> mediaTypes = List.of("image", "video");
         Long coupleId = user.getCouple().getId();
         if (!offsetFitsJpa(page, size)) {
-            return emptyPage(page, size, media.countAlbumMedia(coupleId, mediaTypes, keywordPattern, selectedTag));
+            return emptyPage(page, size, media.countAlbumMedia(coupleId, keywordPattern, selectedTag));
         }
-        Page<Media> result = media.findAlbumMedia(coupleId, mediaTypes, keywordPattern, selectedTag,
-                PageRequest.of(page, size));
-        List<Media> visualMedia = result.getContent();
+        int offset = (int) ((long) page * size);
+        List<Media> visualMedia = media.findAlbumMedia(coupleId, keywordPattern, selectedTag, offset, size);
+        long total = media.countAlbumMedia(coupleId, keywordPattern, selectedTag);
         Map<Long, Memory> memoryById = memories.findAllById(visualMedia.stream()
                         .map(Media::getMemoryId).filter(Objects::nonNull).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(Memory::getId, value -> value));
@@ -101,7 +100,7 @@ public class MemoryService {
             return new AlbumItemView(views.media(item), memory.getId(), memory.getTitle(),
                     BeijingTime.toOffset(memory.getEventAt()), memory.getLocation(), List.copyOf(memory.getTags()));
         }).toList();
-        return pageResponse(page, size, result.getTotalElements(), content);
+        return pageResponse(page, size, total, content);
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)

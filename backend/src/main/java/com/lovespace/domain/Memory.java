@@ -23,6 +23,8 @@ public class Memory implements RecoverableContent {
     private String description;
     @Column(name = "event_at", nullable = false)
     private LocalDateTime eventAt;
+    @Column(name = "event_time_known", nullable = false)
+    private boolean eventTimeKnown = true;
     @Column(length = 200)
     private String location;
     @ElementCollection(fetch = FetchType.LAZY)
@@ -57,6 +59,8 @@ public class Memory implements RecoverableContent {
     public void setDescription(String description) { this.description = description; }
     public LocalDateTime getEventAt() { return eventAt; }
     public void setEventAt(LocalDateTime eventAt) { this.eventAt = eventAt; }
+    public boolean isEventTimeKnown() { return eventTimeKnown; }
+    public void setEventTimeKnown(boolean eventTimeKnown) { this.eventTimeKnown = eventTimeKnown; }
     public String getLocation() { return location; }
     public void setLocation(String location) { this.location = location; }
     public Set<String> getTags() { return tags; }

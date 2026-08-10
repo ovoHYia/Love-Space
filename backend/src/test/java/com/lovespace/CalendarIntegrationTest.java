@@ -89,7 +89,8 @@ class CalendarIntegrationTest {
         memory.setCoupleId(coupleId);
         memory.setAuthorId(aliceId);
         memory.setTitle("夏日海边");
-        memory.setEventAt(day4.atTime(18, 30));
+        memory.setEventAt(day4.atStartOfDay());
+        memory.setEventTimeKnown(false);
         memories.save(memory);
 
         Diary diary = new Diary();
@@ -137,6 +138,7 @@ class CalendarIntegrationTest {
                 .andExpect(jsonPath("$", hasSize(6)))
                 .andExpect(jsonPath("$[*].sourceType", containsInAnyOrder(
                         "CUSTOM", "ANNIVERSARY", "MEMORY", "DIARY", "WISH", "LETTER")))
+                .andExpect(jsonPath("$[?(@.sourceType == 'MEMORY')].allDay", contains(true)))
                 .andExpect(jsonPath("$[?(@.sourceType == 'ANNIVERSARY')].startAt",
                         contains(day3 + "T00:00:00+08:00")));
         mvc.perform(get("/api/calendar").session(bob)

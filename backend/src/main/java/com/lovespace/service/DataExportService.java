@@ -138,6 +138,7 @@ public class DataExportService {
                 "title", item.getTitle(),
                 "description", item.getDescription(),
                 "eventAt", moment(item.getEventAt()),
+                "eventTimeKnown", item.isEventTimeKnown(),
                 "location", item.getLocation(),
                 "tags", List.copyOf(item.getTags()),
                 "createdAt", moment(item.getCreatedAt()),

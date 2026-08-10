@@ -14,13 +14,17 @@ class FlywayMigrationIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test
-    void h2AppliesMessageVersionMigration() {
-        assertEquals("16", jdbc.queryForObject(
+    void h2AppliesMemoryEventTimeMigration() {
+        assertEquals("17", jdbc.queryForObject(
                 "select version from flyway_schema_history where success = 1 order by installed_rank desc limit 1",
                 String.class));
         assertEquals(1, jdbc.queryForObject(
                 "select count(*) from information_schema.columns "
                         + "where lower(table_name) = 'messages' and lower(column_name) = 'version'",
+                Integer.class));
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from information_schema.columns "
+                        + "where lower(table_name) = 'memories' and lower(column_name) = 'event_time_known'",
                 Integer.class));
     }
 }

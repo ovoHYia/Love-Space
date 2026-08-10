@@ -12,6 +12,7 @@ export interface MemoryEditorFormValues {
   title: string
   description: string
   eventAt: string
+  eventTimeKnown: boolean
   location: string
   tags: readonly string[]
 }
@@ -25,6 +26,7 @@ export interface MemoryDraftForm {
   title: string
   description: string
   eventAt: string
+  eventTimeKnown: boolean
   location: string
   tags: string[]
   tagInput: string
@@ -66,6 +68,7 @@ export function createMemoryEditorSnapshot(
     title: trimmed(form.title),
     description: trimmed(form.description),
     eventAt: trimmed(form.eventAt),
+    eventTimeKnown: form.eventTimeKnown !== false,
     location: trimmed(form.location),
     tags: form.tags.map(trimmed),
     tagInput: trimmed(tagInput),
@@ -101,6 +104,7 @@ export function createMemoryDraft(
       title: form.title,
       description: form.description,
       eventAt: form.eventAt,
+      eventTimeKnown: form.eventTimeKnown !== false,
       location: form.location,
       tags: [...form.tags],
       tagInput,
@@ -117,6 +121,7 @@ export function serializeMemoryDraft(draft: MemoryDraft) {
       title: draft.form.title,
       description: draft.form.description,
       eventAt: draft.form.eventAt,
+      eventTimeKnown: draft.form.eventTimeKnown !== false,
       location: draft.form.location,
       tags: [...draft.form.tags],
       tagInput: draft.form.tagInput,
@@ -158,6 +163,7 @@ export function parseMemoryDraft(raw: string | null, now = Date.now()): MemoryDr
         title: form.title,
         description: form.description,
         eventAt: form.eventAt,
+        eventTimeKnown: form.eventTimeKnown !== false,
         location: form.location,
         tags: [...form.tags],
         tagInput: form.tagInput,

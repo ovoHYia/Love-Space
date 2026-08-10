@@ -338,6 +338,24 @@ class LoveSpaceApiIntegrationTest {
     }
 
     @Test
+    void memoryDateCanBeSavedWithoutKnowingTheEventTime() throws Exception {
+        MockMultipartFile data = new MockMultipartFile("data", "", "application/json",
+                ("{\"title\":\"只记得这一天\",\"eventAt\":\"2026-07-03T00:00:00\","
+                        + "\"eventTimeKnown\":false,\"tags\":[]}")
+                        .getBytes(StandardCharsets.UTF_8));
+
+        String response = mvc.perform(multipart("/api/memories").file(data).with(csrf()).session(firstSession))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.eventAt").value("2026-07-03T00:00:00+08:00"))
+                .andExpect(jsonPath("$.eventTimeKnown").value(false))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        Memory saved = memories.findById(idOf(response)).orElseThrow();
+        assertEquals(LocalDateTime.of(2026, 7, 3, 0, 0), saved.getEventAt());
+        assertFalse(saved.isEventTimeKnown());
+    }
+
+    @Test
     void mediaIsProtectedAndCoupleScoped() throws Exception {
         MockMultipartFile data = new MockMultipartFile("data", "", "application/json",
                 ("{\"title\":\"海边\",\"description\":\"第一次看海\",\"eventAt\":\"2026-07-01T18:30:00\",\"location\":\"青岛\","

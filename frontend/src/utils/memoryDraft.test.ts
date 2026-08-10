@@ -14,6 +14,7 @@ const form = {
   title: '  海边  ',
   description: '  风很轻  ',
   eventAt: ' 2026-08-10T18:30 ',
+  eventTimeKnown: true,
   location: ' 厦门 ',
   tags: ['  旅行 ', '约会'],
 }

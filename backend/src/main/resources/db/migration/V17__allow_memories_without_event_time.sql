@@ -1,0 +1,1 @@
+ALTER TABLE memories ADD COLUMN event_time_known BOOLEAN NOT NULL DEFAULT TRUE;

@@ -99,6 +99,7 @@ export interface Memory {
   title: string
   description?: string
   eventAt: string
+  eventTimeKnown: boolean
   location?: string
   tags?: string[]
   createdAt?: string

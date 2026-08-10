@@ -5,6 +5,7 @@ export interface MemoryInput {
   title: string
   description: string
   eventAt: string
+  eventTimeKnown: boolean
   location: string
   tags: string[]
 }

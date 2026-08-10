@@ -196,7 +196,10 @@ public class MemoryService {
     private void apply(Memory value, MemoryRequest input) {
         value.setTitle(input.title().trim());
         value.setDescription(AccountService.trimToNull(input.description()));
-        value.setEventAt(BeijingTime.toLocal(input.eventAt()));
+        LocalDateTime eventAt = BeijingTime.toLocal(input.eventAt());
+        boolean eventTimeKnown = input.eventTimeKnown() == null || input.eventTimeKnown();
+        value.setEventTimeKnown(eventTimeKnown);
+        value.setEventAt(eventTimeKnown ? eventAt : eventAt.toLocalDate().atStartOfDay());
         value.setLocation(AccountService.trimToNull(input.location()));
         LinkedHashSet<String> normalizedTags = new LinkedHashSet<>();
         Map<String, String> displayTagsByKey = new LinkedHashMap<>();

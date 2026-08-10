@@ -236,7 +236,7 @@ class MySqlBusinessIntegrationTest {
 
     private void assertIndex(String table, String index) {
         Integer count = jdbc.queryForObject(
-                "select count(*) from information_schema.statistics "
+                "select count(distinct index_name) from information_schema.statistics "
                         + "where table_schema = database() and table_name = ? and index_name = ?",
                 Integer.class, table, index);
         assertEquals(1, count);

@@ -62,7 +62,7 @@ public class CalendarService {
         memories.findByCoupleIdAndDeletedAtIsNullAndEventAtGreaterThanEqualAndEventAtLessThanOrderByEventAt(
                 coupleId, start, end).forEach(item -> result.add(entry(
                         "MEMORY", item.getId(), item.getTitle(), item.getDescription(), item.getEventAt(),
-                        null, false, "MEMORY", item.getLocation(), false, item.getAuthorId(), names)));
+                        null, !item.isEventTimeKnown(), "MEMORY", item.getLocation(), false, item.getAuthorId(), names)));
         diaries.findByCoupleIdAndDeletedAtIsNullAndDiaryDateBetweenOrderByDiaryDate(coupleId, from, to)
                 .forEach(item -> result.add(entry(
                         "DIARY", item.getId(), item.getTitle(), item.getMood(), item.getDiaryDate().atStartOfDay(),

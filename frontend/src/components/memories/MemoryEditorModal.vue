@@ -53,13 +53,36 @@ type ConfirmationState =
 const editing = computed(() => currentMemory.value !== null)
 const busy = computed(() => saving.value || deletingMediaId.value !== null)
 const draftStorageKey = memoryDraftKey(props.memory?.id)
+const initialEventAt = props.memory?.eventAt ? toLocalDateTimeInput(props.memory.eventAt) : toLocalDateTimeInput()
+const initialEventTimeKnown = props.memory?.eventTimeKnown !== false
+const eventDate = ref(initialEventAt.slice(0, 10))
+const eventTime = ref(initialEventTimeKnown ? initialEventAt.slice(11, 16) : '')
 const form = reactive<MemoryInput>({
   title: props.memory?.title || '',
   description: props.memory?.description || '',
-  eventAt: toLocalDateTimeInput(props.memory?.eventAt),
+  eventAt: initialEventAt,
+  eventTimeKnown: initialEventTimeKnown,
   location: props.memory?.location || '',
   tags: [...(props.memory?.tags || [])],
 })
+
+function syncEventAt() {
+  form.eventAt = eventDate.value ? `${eventDate.value}T${eventTime.value || '00:00'}` : ''
+  form.eventTimeKnown = Boolean(eventTime.value)
+}
+
+function setEventAt(value: string, timeKnown = true) {
+  if (!value) {
+    eventDate.value = ''
+    eventTime.value = ''
+    syncEventAt()
+    return
+  }
+  const local = toLocalDateTimeInput(value)
+  eventDate.value = local.slice(0, 10)
+  eventTime.value = timeKnown ? local.slice(11, 16) : ''
+  syncEventAt()
+}
 
 function fileSnapshot(file: File): MemoryFileSnapshot {
   return { name: file.name, size: file.size, type: file.type }
@@ -74,6 +97,7 @@ function pendingMediaSnapshots() {
 }
 
 function currentSnapshot(): MemoryEditorSnapshot {
+  syncEventAt()
   return createMemoryEditorSnapshot(form, tagInput.value, pendingMediaSnapshots())
 }
 
@@ -169,7 +193,7 @@ function restoreDraft() {
   if (!candidate) return
   form.title = candidate.form.title
   form.description = candidate.form.description
-  form.eventAt = candidate.form.eventAt
+  setEventAt(candidate.form.eventAt, candidate.form.eventTimeKnown)
   form.location = candidate.form.location
   form.tags.splice(0, form.tags.length, ...candidate.form.tags)
   tagInput.value = candidate.form.tagInput
@@ -244,6 +268,12 @@ function requestClose(source: CloseRequestSource = 'button'): Promise<boolean> {
 
 async function save() {
   if (busy.value) return
+  syncEventAt()
+  if (!eventDate.value) {
+    fieldErrors.value = { eventAt: '请选择发生日期' }
+    show('请先选择发生日期。', 'info')
+    return
+  }
   if (tagInput.value.trim()) addTag()
   if (tagInput.value.trim()) {
     show('标签已经达到上限，请先删除一个标签或清空输入。', 'info')
@@ -255,6 +285,7 @@ async function save() {
     title: form.title.trim(),
     description: form.description.trim(),
     eventAt: toBeijingOffsetDateTime(form.eventAt),
+    eventTimeKnown: Boolean(eventTime.value),
     location: form.location.trim(),
     tags: form.tags.map((tag) => tag.trim()),
   }
@@ -339,6 +370,8 @@ watch(
   { deep: true },
 )
 
+watch([eventDate, eventTime], syncEventAt)
+
 onBeforeRouteLeave(() => requestClose('route'))
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
@@ -377,7 +410,8 @@ onBeforeUnmount(() => {
         <form class="stack-form" :inert="Boolean(draftCandidate)" @submit.prevent="save">
           <div class="form-two">
             <label class="field"><span>回忆标题</span><input id="memory-title" v-model="form.title" required maxlength="120" placeholder="例如：海边吹风的那个下午" :aria-invalid="Boolean(fieldErrors.title)" :aria-describedby="fieldErrors.title ? 'memory-title-error' : undefined" /><small v-if="fieldErrors.title" id="memory-title-error" class="field-error">{{ fieldErrors.title }}</small></label>
-            <label class="field"><span>发生时间</span><input id="memory-event-at" v-model="form.eventAt" required type="datetime-local" :aria-invalid="Boolean(fieldErrors.eventAt)" :aria-describedby="fieldErrors.eventAt ? 'memory-event-at-error' : undefined" /><small v-if="fieldErrors.eventAt" id="memory-event-at-error" class="field-error">{{ fieldErrors.eventAt }}</small></label>
+            <label class="field"><span>发生日期</span><input id="memory-event-date" v-model="eventDate" required type="date" :aria-invalid="Boolean(fieldErrors.eventAt)" :aria-describedby="fieldErrors.eventAt ? 'memory-event-at-error' : undefined" /><small v-if="fieldErrors.eventAt" id="memory-event-at-error" class="field-error">{{ fieldErrors.eventAt }}</small></label>
+            <label class="field"><span>时刻（可选）</span><input id="memory-event-time" v-model="eventTime" type="time" /><small>只记得哪一天时可以留空。</small></label>
           </div>
           <label class="field"><span>地点名称（可选）</span><span class="input-with-icon"><MapPin :size="17" /><input id="memory-location" v-model="form.location" maxlength="200" placeholder="例如：厦门 · 环岛路" :aria-invalid="Boolean(fieldErrors.location)" :aria-describedby="fieldErrors.location ? 'memory-location-error' : undefined" /></span><small v-if="fieldErrors.location" id="memory-location-error" class="field-error">{{ fieldErrors.location }}</small></label>
           <label class="field"><span>想记住的话（可选）</span><textarea id="memory-description" v-model="form.description" maxlength="10000" rows="4" placeholder="那天发生了什么？当时是什么心情？" :aria-invalid="Boolean(fieldErrors.description)" :aria-describedby="fieldErrors.description ? 'memory-description-error' : undefined"></textarea><small v-if="fieldErrors.description" id="memory-description-error" class="field-error">{{ fieldErrors.description }}</small><small>{{ form.description.length }}/10000</small></label>

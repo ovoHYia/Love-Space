@@ -63,12 +63,13 @@ public final class ApiDtos {
             @NotBlank @Size(max = 120) String title,
             @Size(max = 10000) String description,
             @NotNull @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class) OffsetDateTime eventAt,
+            Boolean eventTimeKnown,
             @Size(max = 200) String location,
             @Size(max = 12) List<@NotBlank @Size(max = 30) String> tags) {}
     public record MediaView(Long id, String originalName, String contentType, String mediaType,
                             long byteSize, String url, OffsetDateTime createdAt) {}
     public record MemoryView(Long id, Long authorId, String authorNickname, String title,
-                             String description, OffsetDateTime eventAt, String location,
+                             String description, OffsetDateTime eventAt, boolean eventTimeKnown, String location,
                              List<String> tags,
                              List<MediaView> media, OffsetDateTime createdAt, OffsetDateTime updatedAt) {}
     public record MemoryTagView(String name, long memoryCount) {}

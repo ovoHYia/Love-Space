@@ -51,9 +51,9 @@ const form = reactive({
   title: '',
   description: '',
   date: today,
-  time: '18:00',
+  time: '',
   endDate: '',
-  endTime: '19:00',
+  endTime: '',
   allDay: false,
   category: 'DATE' as CalendarEventInput['category'],
   location: '',
@@ -157,9 +157,9 @@ function resetForm(date = selectedDate.value) {
     title: '',
     description: '',
     date,
-    time: '18:00',
+    time: '',
     endDate: '',
-    endTime: '19:00',
+    endTime: '',
     allDay: false,
     category: 'DATE',
     location: '',
@@ -181,9 +181,9 @@ function openEdit(item: CalendarEntry) {
     title: item.title,
     description: item.description || '',
     date: start.slice(0, 10),
-    time: start.slice(11, 16) || '18:00',
+    time: item.allDay ? '' : start.slice(11, 16),
     endDate: end.slice(0, 10),
-    endTime: end.slice(11, 16) || '19:00',
+    endTime: item.allDay ? '' : end.slice(11, 16),
     allDay: item.allDay,
     category: categories.some(value => value.value === item.category) ? item.category : 'OTHER',
     location: item.location || '',
@@ -192,16 +192,17 @@ function openEdit(item: CalendarEntry) {
 }
 
 function input(): CalendarEventInput {
-  const startAt = `${form.date}T${form.allDay ? '00:00' : form.time}:00`
+  const allDay = form.allDay || !form.time
+  const startAt = `${form.date}T${allDay ? '00:00' : form.time}:00`
   const endAt = form.endDate
-    ? `${form.endDate}T${form.allDay ? '23:59' : form.endTime}:00`
+    ? `${form.endDate}T${allDay || !form.endTime ? '23:59' : form.endTime}:00`
     : null
   return {
     title: form.title.trim(),
     description: form.description.trim(),
     startAt: toBeijingOffsetDateTime(startAt),
     endAt: endAt ? toBeijingOffsetDateTime(endAt) : null,
-    allDay: form.allDay,
+    allDay,
     category: form.category,
     location: form.location.trim(),
   }
@@ -329,12 +330,12 @@ function openSource(item: CalendarEntry) {
       <label class="field"><span>日程名称</span><input id="calendar-title" v-model="form.title" required maxlength="120" placeholder="例如：一起去看展" :aria-invalid="Boolean(fieldErrors.title)" :aria-describedby="fieldErrors.title ? 'calendar-title-error' : undefined" /><small v-if="fieldErrors.title" id="calendar-title-error" class="field-error">{{ fieldErrors.title }}</small></label>
       <div class="form-two">
         <label class="field"><span>日期</span><input id="calendar-start-date" v-model="form.date" required type="date" :aria-invalid="Boolean(fieldErrors.startAt)" :aria-describedby="fieldErrors.startAt ? 'calendar-start-error' : undefined" /><small v-if="fieldErrors.startAt" id="calendar-start-error" class="field-error">{{ fieldErrors.startAt }}</small></label>
-        <label class="field"><span>时间</span><input id="calendar-start-time" v-model="form.time" :disabled="form.allDay" required type="time" :aria-invalid="Boolean(fieldErrors.startAt)" :aria-describedby="fieldErrors.startAt ? 'calendar-start-error' : undefined" /></label>
+        <label class="field"><span>时间（可选）</span><input id="calendar-start-time" v-model="form.time" :disabled="form.allDay" type="time" :aria-invalid="Boolean(fieldErrors.startAt)" :aria-describedby="fieldErrors.startAt ? 'calendar-start-error' : undefined" /><small>不记得具体时刻时可留空，日程会按全天显示。</small></label>
       </div>
       <label class="check-row"><input v-model="form.allDay" type="checkbox" /><span><strong>全天日程</strong><small>不显示具体开始时间</small></span></label>
       <div class="form-two">
         <label class="field"><span>结束日期（可选）</span><input id="calendar-end-date" v-model="form.endDate" type="date" :min="form.date" :aria-invalid="Boolean(fieldErrors.endAt)" :aria-describedby="fieldErrors.endAt ? 'calendar-end-error' : undefined" /><small v-if="fieldErrors.endAt" id="calendar-end-error" class="field-error">{{ fieldErrors.endAt }}</small></label>
-        <label class="field"><span>结束时间</span><input id="calendar-end-time" v-model="form.endTime" :disabled="form.allDay || !form.endDate" type="time" :aria-invalid="Boolean(fieldErrors.endAt)" :aria-describedby="fieldErrors.endAt ? 'calendar-end-error' : undefined" /></label>
+        <label class="field"><span>结束时间（可选）</span><input id="calendar-end-time" v-model="form.endTime" :disabled="form.allDay || !form.endDate" type="time" :aria-invalid="Boolean(fieldErrors.endAt)" :aria-describedby="fieldErrors.endAt ? 'calendar-end-error' : undefined" /></label>
       </div>
       <div class="form-two">
         <label class="field"><span>分类</span><select id="calendar-category" v-model="form.category" :aria-invalid="Boolean(fieldErrors.category)" :aria-describedby="fieldErrors.category ? 'calendar-category-error' : undefined"><option v-for="item in categories" :key="item.value" :value="item.value">{{ item.label }}</option></select><small v-if="fieldErrors.category" id="calendar-category-error" class="field-error">{{ fieldErrors.category }}</small></label>

@@ -135,6 +135,20 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .modal-header { position: sticky; z-index: 2; top: 0; background: rgba(255,253,251,.96); backdrop-filter: blur(10px); display: flex; justify-content: space-between; align-items: flex-start; gap: 15px; padding: 22px 23px 15px; border-bottom: 1px solid #f2e4e6; }
 .modal-header h2 { margin: 0 0 4px; font-size: 25px; }.modal-header .muted { margin: 0; font-size: 12px; }
 .modal-body { padding: 21px 23px 24px; }
+.memory-editor-shell { position: relative; min-width: 0; }
+.memory-editor-underlay { min-width: 0; }
+.memory-draft-recovery { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 16px; padding: 13px 15px; border: 1px solid #efd6d8; border-radius: 14px; background: #fff7f4; }
+.memory-draft-recovery > div:first-child { min-width: 0; }
+.memory-draft-recovery strong { display: block; color: var(--ink); font-size: 13px; }
+.memory-draft-recovery p { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.memory-draft-recovery-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; }
+.memory-draft-media-note { margin: -7px 0 16px; color: var(--rose-dark); font-size: 11px; line-height: 1.55; }
+.memory-confirmation-layer { position: absolute; z-index: 3; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(255, 253, 251, .88); }
+.memory-confirmation-card { width: min(430px, 100%); padding: 22px; border: 1px solid #efd9dc; border-radius: 18px; background: var(--paper); box-shadow: 0 18px 45px rgba(91, 54, 65, .16); }
+.memory-confirmation-card h3 { margin: 0 0 9px; font: 700 24px/1.3 STKaiti, KaiTi, "Noto Serif SC", serif; color: #51343c; }
+.memory-confirmation-card > p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+.memory-confirmation-card .modal-actions { flex-wrap: wrap; margin-top: 20px; }
+.memory-confirmation-card .modal-actions .button { flex: 1 1 130px; }
 .modal-backdrop.modal-sheet-backdrop { align-items: flex-end; padding: 0; }
 .modal-card.modal-sheet { width: min(560px, 100%); max-height: min(78dvh, 680px); border-radius: 24px 24px 0 0; animation: none; transform-origin: bottom center; }
 .modal-card.modal-sheet .modal-header { padding-top: 12px; }
@@ -285,7 +299,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (max-width: 620px) {
   .page-container { padding-left: 14px; padding-right: 14px; }
   .page-stack { gap: 17px; }.page-header { align-items: stretch; flex-direction: column; gap: 14px; }.page-header h1 { font-size: 33px; }.page-header .button { align-self: flex-start; }
-  .form-two { grid-template-columns: 1fr; }.modal-backdrop { padding: 0; align-items: flex-end; }.modal-card, .modal-card.modal-wide { width: 100%; max-height: 92dvh; border-radius: 24px 24px 0 0; }.modal-header { padding: 19px 17px 13px; }.modal-body { padding: 18px 17px calc(22px + env(safe-area-inset-bottom)); }
+  .form-two { grid-template-columns: 1fr; }.modal-backdrop { padding: 0; align-items: flex-end; }.modal-card, .modal-card.modal-wide { width: 100%; max-height: 92dvh; border-radius: 24px 24px 0 0; }.modal-header { padding: 19px 17px 13px; }.modal-body { padding: 18px 17px calc(22px + env(safe-area-inset-bottom)); }.memory-draft-recovery { align-items: stretch; flex-direction: column; }.memory-draft-recovery-actions .button { flex: 1; }.memory-confirmation-layer { padding: 12px; }.memory-confirmation-card { padding: 19px 17px; }
   .auth-visual { min-height: 205px; padding: 31px 22px; }.visual-copy h1 { font-size: 33px; }.auth-panel { padding: 28px 18px 40px; }.login-card h2, .setup-step h2 { font-size: 27px; }.account-grid { max-height: none; overflow: visible; }.setup-step .button-row { position: sticky; bottom: 0; background: var(--paper); padding-top: 7px; }
   .hero-card { padding: 22px 16px 19px; }.hero-copy { text-align: center; }.hero-copy .eyebrow { justify-content: center; }.hero-copy h1 { font-size: 29px; }.couple-row .avatar-lg { width: 62px; height: 62px; }.heart-seal { width: 43px; height: 43px; }.love-counter { gap: 10px; }.love-counter strong { font-size: 23px; }.love-counter span { font-size: 9px; }
   .dashboard-grid .card, .memory-section { padding: 18px 15px; }.section-heading h2 { font-size: 20px; }.mood-pair { grid-template-columns: 1fr; }.memory-preview-grid { grid-template-columns: 1fr 1fr; }.memory-preview:last-child:nth-child(odd) { display: none; }.preview-media { height: 148px; }.lower-grid { grid-template-columns: 1fr; }

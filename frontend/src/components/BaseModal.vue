@@ -9,8 +9,10 @@ const props = withDefaults(defineProps<{
   open?: boolean
   variant?: 'modal' | 'sheet'
   id?: string
+  closeDisabled?: boolean
 }>(), { open: true, variant: 'modal' })
-const emit = defineEmits<{ close: [] }>()
+type CloseSource = 'escape' | 'backdrop' | 'button'
+const emit = defineEmits<{ close: [source: CloseSource] }>()
 const card = ref<HTMLElement | null>(null)
 const rendered = ref(false)
 const motionState = ref<'closed' | 'entering' | 'open' | 'leaving'>('closed')
@@ -23,13 +25,13 @@ const descriptionId = computed(() => props.id && props.description ? props.id + 
 function focusable() {
   return Array.from(card.value?.querySelectorAll<HTMLElement>(
     'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-  ) || []).filter(item => !item.hasAttribute('hidden'))
+  ) || []).filter(item => !item.hasAttribute('hidden') && !item.closest('[inert]'))
 }
 
 function onKey(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     event.preventDefault()
-    emit('close')
+    if (!props.closeDisabled) emit('close', 'escape')
     return
   }
   if (event.key !== 'Tab') return
@@ -130,7 +132,7 @@ onBeforeUnmount(() => {
         'modal-sheet-leaving': props.variant === 'sheet' && motionState === 'leaving',
       }"
       role="presentation"
-      @click.self="emit('close')"
+      @click.self="!props.closeDisabled && emit('close', 'backdrop')"
     >
         <section
           :id="props.id"
@@ -151,7 +153,14 @@ onBeforeUnmount(() => {
               <h2 :id="titleId">{{ props.title }}</h2>
               <p v-if="props.description" :id="descriptionId" class="muted">{{ props.description }}</p>
             </div>
-            <button class="icon-button" type="button" aria-label="关闭" @click="emit('close')"><X :size="20" /></button>
+            <button
+              class="icon-button"
+              type="button"
+              :disabled="props.closeDisabled"
+              :aria-label="props.closeDisabled ? '关闭（保存中，暂不可关闭）' : '关闭'"
+              :title="props.closeDisabled ? '保存中，暂不可关闭' : '关闭'"
+              @click="!props.closeDisabled && emit('close', 'button')"
+            ><X :size="20" /></button>
           </header>
           <div class="modal-body"><slot /></div>
         </section>

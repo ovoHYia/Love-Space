@@ -9,8 +9,9 @@ Love Space is a two-part application. `frontend/` contains the Vue 3 and TypeScr
 - `powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1` installs missing frontend dependencies and starts Vite plus Spring Boot.
 - `powershell -ExecutionPolicy Bypass -File scripts/setup-db.ps1` creates/configures the MySQL database from root `.env` values.
 - `powershell -ExecutionPolicy Bypass -File scripts/build.ps1` runs the frontend production build, Maven tests, and packages `outputs/Love-Space-v1.0.jar`.
+- `powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -MySqlTests` additionally runs the real MySQL checks against the local `love_space_test` database. The script reads `MYSQL_TEST_PASSWORD` first and falls back to the local `.env` `DB_PASSWORD`; never commit `.env`.
 - `npm run dev` or `npm run build` from `frontend/` starts Vite or type-checks and produces `dist/`.
-- `mvn -f backend/pom.xml test` runs backend integration tests using the `test` profile and H2.
+- `mvn -f backend/pom.xml test` runs backend integration tests using the `test` profile and H2 by default; use the `-MySqlTests` build command when real MySQL validation is required.
 
 ## Coding Style & Naming Conventions
 
@@ -19,6 +20,7 @@ Use 2-space indentation in Vue, TypeScript, JSON, and CSS; retain the existing 4
 ## Testing Guidelines
 
 Add or update tests for backend behavior under `backend/src/test/java/com/lovespace/`. Use descriptive `*Test.java` names and exercise HTTP-facing behavior where practical. Include a Flyway migration for every schema change; migrations must be sequentially named, e.g. `V6__add_event_table.sql`. The frontend has no configured test runner yet, so at minimum run `npm run build` after UI changes.
+Real MySQL tests must target a local database whose name ends with `_test`; do not point them at a production database.
 
 ## Commit & Pull Request Guidelines
 

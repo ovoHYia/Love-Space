@@ -168,7 +168,8 @@ onBeforeUnmount(() => {
           aria-label="更多入口"
           aria-haspopup="dialog"
           :aria-expanded="moreOpen"
-          :aria-controls="moreMenuId"
+          :aria-controls="moreOpen ? moreMenuId : undefined"
+          :aria-current="moreActive ? 'page' : undefined"
           @click="toggleMoreMenu"
           @keydown="handleMoreKeydown"
         >

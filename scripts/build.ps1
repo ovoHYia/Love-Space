@@ -90,11 +90,10 @@ if ($MySqlTests) {
     }
     $mysqlTestPassword = $mysqlTestEnvironment["MYSQL_TEST_PASSWORD"]
     if ([string]::IsNullOrWhiteSpace($mysqlTestPassword)) {
-        $securePassword = Read-Host -Prompt "请输入 root 的 MySQL 测试密码（不会写入项目文件）" -AsSecureString
-        $mysqlTestPassword = $securePassword | ConvertFrom-SecureString -AsPlainText
+        $mysqlTestPassword = [Environment]::GetEnvironmentVariable("DB_PASSWORD", "Process")
     }
     if ([string]::IsNullOrWhiteSpace($mysqlTestPassword)) {
-        throw "MYSQL_TEST_PASSWORD cannot be empty."
+        throw "未找到 MySQL 测试密码。请在本地 .env 中配置 DB_PASSWORD，或设置 MYSQL_TEST_PASSWORD。"
     }
 
     [Environment]::SetEnvironmentVariable("MYSQL_TEST_URL", $mysqlTestUrl, "Process")
@@ -125,7 +124,6 @@ finally {
             }
         }
         $mysqlTestPassword = $null
-        $securePassword = $null
     }
 }
 

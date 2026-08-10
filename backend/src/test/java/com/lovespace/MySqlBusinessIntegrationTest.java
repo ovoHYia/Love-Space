@@ -223,7 +223,7 @@ class MySqlBusinessIntegrationTest {
     }
 
     private static boolean isLocalTestDatabase(String url) {
-        return url.matches("jdbc:mysql://(127\\.0\\.1|localhost):\\d+/[A-Za-z0-9_]*_test(?:\\?.*)?");
+        return url.matches("jdbc:mysql://(127\\.0\\.0\\.1|localhost):\\d+/[A-Za-z0-9_]*_test(?:\\?.*)?");
     }
 
     private static void requireMySqlConfiguration() {

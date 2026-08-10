@@ -154,7 +154,8 @@ Pop-Location
 `mvn clean package`，检查 JAR 内的 `BOOT-INF/classes/static/index.html` 和静态资源，并使用真实
 MySQL 8.4 验证全部 Flyway 迁移。前端 CI 步骤不会加载后端数据库和令牌变量。
 需要在本机验证真实 MySQL 时，可执行下面的构建命令。`-MySqlTests` 会自动使用本机
-`love_space_test` 数据库和 `root` 用户，并在当前构建进程中安全提示输入密码；密码不会写入项目文件。
+`love_space_test` 数据库和 `root` 用户，并复用本地 `.env` 中的 `DB_PASSWORD`，因此不需要再次输入密码。
+如果测试库密码与应用数据库密码不同，可在未提交的 `.env` 中单独配置 `MYSQL_TEST_PASSWORD`；该配置优先级更高。
 
 ```powershell
 pwsh -ExecutionPolicy Bypass -File .\scripts\build.ps1 -MySqlTests

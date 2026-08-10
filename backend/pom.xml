@@ -81,6 +81,42 @@
         </resources>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>verify-frontend-dist</id>
+                        <phase>validate</phase>
+                        <configuration>
+                            <target>
+                                <fail message="frontend/dist/index.html is required. Run npm run build before Maven package.">
+                                    <condition>
+                                        <not>
+                                            <available file="${project.basedir}/../frontend/dist/index.html" type="file" />
+                                        </not>
+                                    </condition>
+                                </fail>
+                                <uptodate property="frontend.dist.fresh"
+                                          targetfile="${project.basedir}/../frontend/dist/index.html">
+                                    <srcfiles file="${project.basedir}/../frontend/index.html" />
+                                    <srcfiles file="${project.basedir}/../frontend/package.json" />
+                                    <srcfiles file="${project.basedir}/../frontend/package-lock.json" />
+                                    <srcfiles file="${project.basedir}/../frontend/vite.config.ts" />
+                                    <srcfiles dir="${project.basedir}/../frontend/src" includes="**/*" />
+                                    <srcfiles dir="${project.basedir}/../frontend/public" includes="**/*" />
+                                </uptodate>
+                                <fail unless="frontend.dist.fresh"
+                                      message="frontend/dist/index.html is stale. Run npm run build again before Maven package." />
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>

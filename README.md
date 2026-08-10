@@ -37,8 +37,12 @@ outputs/        构建和发布产物（不提交）
 - Windows + PowerShell 7（推荐使用 `pwsh`）
 - JDK 17 或更高版本
 - Maven 3.9 或更高版本
-- Node.js 20 LTS 或更高版本
+- Node.js `^20.19.0` 或 `>=22.12.0`（Vite 8 要求）
 - MySQL 8，并确保 `mysql` 客户端在 `PATH` 中
+
+数据库连接统一由 `DB_URL` 提供。根目录 `.env.example` 的回环示例显式使用
+`sslMode=DISABLED`，仅适用于同机开发数据库；远程数据库必须使用
+`sslMode=REQUIRED`、`VERIFY_CA` 或 `VERIFY_IDENTITY`，生产启动和数据库脚本都会拒绝远程非 TLS 配置。
 
 ## 快速启动
 
@@ -89,6 +93,10 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1
 pwsh -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -SkipInstall
 ```
 
+`start-dev.ps1` 会记录 `package-lock.json` 的哈希；锁文件缺失、变化或没有成功安装记录时，
+即使传入 `-SkipInstall` 也会拒绝启动并要求执行 `npm ci`。生产环境运行已经打包的单 JAR 不需要 Node.js，
+Node.js 只用于前端开发和构建。
+
 ### 4. 首次初始化空间
 
 打开前端地址后，未初始化的实例会进入 `/setup`：
@@ -104,7 +112,9 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -SkipInstall
 
 ### 一键构建
 
-该脚本会构建前端、运行 Maven 测试并打包后端。前端静态文件会被嵌入后端 JAR：
+该脚本会在隔离的前端环境中执行 `npm ci`、默认运行 `npm test`，再执行 `npm run build`，最后运行
+`mvn clean package`。每次构建都会先删除旧的 `frontend/dist`；Maven 会拒绝缺少或早于前端源文件的
+`frontend/dist/index.html`，并检查最终 JAR 中的首页和静态资源。前端步骤完成后才加载根目录后端 `.env`：
 
 ```powershell
 pwsh -ExecutionPolicy Bypass -File .\scripts\build.ps1
@@ -114,6 +124,8 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\build.ps1
 
 - 后端 JAR：`backend/target/love-space-backend-1.0.0.jar`
 - 单 JAR 副本：`outputs/Love-Space-v1.0.jar`
+
+只有明确传入 `-SkipTests` 才会跳过前端和后端测试；`-SkipInstall` 只适合已经确认依赖完整且未改变的场景。
 
 ### 单独执行测试
 
@@ -130,7 +142,19 @@ npm run build
 Pop-Location
 ```
 
-仓库中的 `.github/workflows/verify.yml` 会在提交和拉取请求上执行前端测试、构建、依赖审计、后端测试，并使用真实 MySQL 8.4 验证全部 Flyway 迁移。需要在本机验证真实 MySQL 时，可设置仅指向本机且数据库名以 `_test` 结尾的 `MYSQL_TEST_URL`、`MYSQL_TEST_USERNAME` 和 `MYSQL_TEST_PASSWORD` 后运行 `MySqlFlywayIntegrationTest`。
+依赖审计：
+
+```powershell
+Push-Location frontend
+npm audit --audit-level=high --registry=https://registry.npmjs.org/
+Pop-Location
+```
+
+仓库中的 `.github/workflows/verify.yml` 会在提交和拉取请求上执行前端测试、构建、依赖审计、
+`mvn clean package`，检查 JAR 内的 `BOOT-INF/classes/static/index.html` 和静态资源，并使用真实
+MySQL 8.4 验证全部 Flyway 迁移。前端 CI 步骤不会加载后端数据库和令牌变量。
+需要在本机验证真实 MySQL 时，可设置仅指向本机且数据库名以 `_test` 结尾的 `MYSQL_TEST_URL`、
+`MYSQL_TEST_USERNAME` 和 `MYSQL_TEST_PASSWORD` 后运行 `MySqlFlywayIntegrationTest`。
 
 ## 生产部署
 
@@ -146,7 +170,7 @@ SESSION_COOKIE_SECURE=true
 CORS_ALLOWED_ORIGINS=https://你的域名
 ```
 
-生产配置会强制校验：回环地址绑定、安全 Cookie、HTTPS CORS 来源和转发头处理。
+生产配置会强制校验：回环地址绑定、安全 Cookie、HTTPS CORS 来源、转发头处理和数据库 TLS 模式。
 
 ### 2. 构建并启动
 
@@ -155,7 +179,10 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\build.ps1
 pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
 
-生产环境不要使用 `-Lan`，也不要把 Spring Boot 的 8080 端口直接暴露到公网。应由 Nginx、Caddy 或其他反向代理监听 443，并将请求转发到 `127.0.0.1:8080`。前端静态资源已经打进 JAR，反向代理可以直接代理应用入口和 `/api` 请求。
+生产环境不要使用 `-Lan`，也不要把 Spring Boot 的 8080 端口直接暴露到公网。当前生产 profile
+只支持“反向代理与 Love Space JAR 在同一台主机”的拓扑：Nginx、Caddy 或其他反向代理监听 443，
+终止 TLS，并将请求转发到同机的 `127.0.0.1:8080`。前端静态资源已经打进 JAR，反向代理可以直接
+代理应用入口和 `/api` 请求。
 
 示意拓扑：
 
@@ -163,13 +190,16 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 浏览器 -- HTTPS:443 --> 反向代理 -- HTTP:127.0.0.1:8080 --> Love Space JAR
 ```
 
-如果反向代理与应用不在同一台机器上，应使用私有网络地址，并通过防火墙只允许代理服务器访问应用端口。
+跨主机反向代理不属于当前生产 profile 的支持范围：远程代理无法访问强制回环绑定的应用端口。
+如果必须拆分主机，需要先自行提供受控的本机代理或安全隧道，并仍让 Love Space 只监听回环地址；
+不要通过修改 `SERVER_ADDRESS` 将生产应用绑定到公网或普通内网地址。
 
 ## 重要配置
 
 所有配置都在根目录 `.env` 中维护，完整模板见 [.env.example](.env.example)。常用配置包括：
 
 - `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`：数据库连接
+- `DB_SSL_CA`：可选的 MySQL CLI CA 文件路径；远程数据库仍须在 `DB_URL` 中显式启用 TLS
 - `SETUP_TOKEN`：首次初始化口令；生产环境至少 32 个 UTF-8 字节且不能使用常见占位值
 - `SETUP_ENABLED`：是否开放初始化入口；生产环境可显式设为 `false` 禁用
 - `PASSWORD_RESET_TOKEN`：可选的高熵密码恢复口令
@@ -179,6 +209,10 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 - `LOGIN_MAX_ATTEMPTS_PER_IP`、`LOGIN_MAX_FAILURES_PER_IDENTITY`：登录 IP 级和账号/IP 级限流
 - `CORS_ALLOWED_ORIGINS`：允许的前端来源
 - `VITE_API_BASE_URL`：前端 API 基础路径
+
+`DB_URL` 是唯一数据库事实源；旧版 `DB_HOST`、`DB_PORT`、`DB_NAME` 不再用于连接。迁移时请把
+实际主机、端口和库名写入 `DB_URL`，然后删除旧字段；如果旧字段暂时保留，脚本会在不一致时失败，
+不会静默选择其中一套。请勿把当前 `.env` 的密码提交或粘贴到日志；密码是否需要轮换由部署者自行判断。
 
 密码恢复口令应使用随机生成值，并通过 [scripts/rotate-password-reset-token.ps1](scripts/rotate-password-reset-token.ps1) 轮换。不要把真实 `.env`、数据库、上传文件、日志、构建产物或证书私钥提交到仓库。
 

@@ -8,22 +8,20 @@ $ErrorActionPreference = "Stop"
 $root = Get-ProjectRoot
 Import-ProjectEnv -Path (Join-Path $root ".env")
 
-$dbHost = Get-EnvValue -Name "DB_HOST" -Default "localhost"
-$dbPortText = Get-EnvValue -Name "DB_PORT" -Default "3306"
-$dbName = Get-EnvValue -Name "DB_NAME" -Default "love_space"
+$database = Get-DatabaseConnection
+$dbHost = $database.Host
+$dbPort = $database.Port
+$dbName = $database.Name
+$sslMode = $database.SslMode
 $dbUser = Get-RequiredEnvValue -Name "DB_USERNAME"
 $dbPassword = Get-RequiredEnvValue -Name "DB_PASSWORD"
+$dbSslCa = Get-EnvValue -Name "DB_SSL_CA"
 
-if ($dbPassword -eq "change-me") {
+if ($dbPassword -in @("change-me", "replace-with-a-local-database-password")) {
     throw "DB_PASSWORD is still the example value. Edit the root .env first."
 }
 if ($dbName -notmatch '^[A-Za-z0-9_]+$') {
     throw "DB_NAME may only contain ASCII letters, digits, and underscores."
-}
-
-$dbPort = 0
-if (-not [int]::TryParse($dbPortText, [ref]$dbPort) -or $dbPort -lt 1 -or $dbPort -gt 65535) {
-    throw "DB_PORT must be an integer between 1 and 65535."
 }
 
 $mysql = Find-Executable -Names @("mysql.exe", "mysql") -FallbackPatterns @(
@@ -52,8 +50,12 @@ try {
         "port=$dbPort",
         "user=$(ConvertTo-MySqlOptionValue $dbUser)",
         "password=$(ConvertTo-MySqlOptionValue $dbPassword)",
+        "ssl-mode=$sslMode",
         "default-character-set=utf8mb4"
     ) -join [Environment]::NewLine
+    if (-not [string]::IsNullOrWhiteSpace($dbSslCa)) {
+        $options += [Environment]::NewLine + "ssl-ca=$(ConvertTo-MySqlOptionValue $dbSslCa)"
+    }
     [System.IO.File]::WriteAllText($defaultsFile, $options, [System.Text.UTF8Encoding]::new($false))
 
     $sql = "CREATE DATABASE IF NOT EXISTS ``$dbName`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; ALTER DATABASE ``$dbName`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$dbName';"

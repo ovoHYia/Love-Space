@@ -1,4 +1,5 @@
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const CONNECTION_ERROR_MESSAGE = '小屋暂时连接不上，请稍后再试。若问题持续出现，请联系管理员。'
 
 export class ApiError extends Error {
   status: number
@@ -123,7 +124,7 @@ async function ensureCsrfToken() {
         throw new ApiError('安全会话已重置，请重新发起请求。', 0, 'CSRF_RESET')
       }
       if (cause instanceof ApiError) throw cause
-      throw new ApiError('暂时连接不上服务器，请确认服务已启动后重试。', 0, 'NETWORK_ERROR')
+      throw new ApiError(CONNECTION_ERROR_MESSAGE, 0, 'NETWORK_ERROR')
     }
     const parsed = await parseResponse(response)
     if (!response.ok) throw new ApiError('无法建立安全会话，请刷新页面后重试。', response.status, 'CSRF_INIT_FAILED')
@@ -179,7 +180,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
         credentials: 'include',
       })
     } catch {
-      throw new ApiError('暂时连接不上服务器，请确认服务已启动后重试。', 0, 'NETWORK_ERROR')
+      throw new ApiError(CONNECTION_ERROR_MESSAGE, 0, 'NETWORK_ERROR')
     }
     return { response, parsed: response.status === 204 ? null : await parseResponse(response) }
   }

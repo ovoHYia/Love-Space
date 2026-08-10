@@ -7,13 +7,13 @@ const icons = { success: CircleCheck, error: CircleX, info: Info }
 </script>
 
 <template>
-  <div class="toast-region" role="status" aria-live="polite" aria-atomic="false">
+  <div class="toast-region" aria-live="polite" aria-atomic="false">
     <TransitionGroup name="toast">
-      <div v-for="item in toasts" :key="item.id" class="toast" :class="`toast-${item.tone}`">
+      <div v-for="item in toasts" :key="item.id" class="toast" :class="`toast-${item.tone}`" :role="item.tone === 'error' ? 'alert' : 'status'" aria-atomic="true">
         <component :is="icons[item.tone]" :size="19" aria-hidden="true" />
         <span>{{ item.message }}</span>
         <button class="icon-button subtle" type="button" aria-label="关闭提示" @click="dismiss(item.id)">
-          <X :size="17" />
+          <X :size="17" aria-hidden="true" />
         </button>
       </div>
     </TransitionGroup>

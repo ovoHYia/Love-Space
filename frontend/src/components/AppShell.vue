@@ -1,31 +1,72 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { BarChart3, CalendarDays, CalendarHeart, Feather, Gamepad2, Heart, Home, Images, ListTodo, Mails as MailHeart, UserRound, Wifi, WifiOff } from 'lucide-vue-next'
+import { BarChart3, CalendarDays, CalendarHeart, Feather, Gamepad2, Heart, Home, Images, ListTodo, Mails as MailHeart, MoreHorizontal, UserRound, Wifi, WifiOff } from 'lucide-vue-next'
 import BaseAvatar from './BaseAvatar.vue'
+import MobileMoreMenu from './MobileMoreMenu.vue'
 import NotificationBell from './NotificationBell.vue'
 import { useToast } from '../composables/toast'
 import { authState, bootstrapAuth } from '../stores/auth'
 import { refreshUnreadCount, startNotificationPolling, stopNotificationPolling } from '../stores/notifications'
 import { realtimeState, startRealtimeSync, stopRealtimeSync } from '../stores/realtime'
 
+type MobilePlacement = 'core' | 'more'
+type MobileGroup = '记录' | '共同计划' | '我们'
+type NavigationItem = {
+  to: string
+  label: string
+  mobileLabel?: string
+  icon: Component
+  name: string
+  mobilePlacement: MobilePlacement
+  mobileGroup?: MobileGroup
+  mobileOrder?: number
+}
+
 const route = useRoute()
 const { show } = useToast()
 const authRetryDelays = [1000, 3000]
 let authRefreshPromise: Promise<void> | null = null
 let mounted = false
-const nav = [
-  { to: '/', label: '小窝', icon: Home, name: 'home' },
-  { to: '/calendar', label: '日历', icon: CalendarDays, name: 'calendar' },
-  { to: '/reports', label: '月报', icon: BarChart3, name: 'reports' },
-  { to: '/memories', label: '回忆', icon: Images, name: 'memories' },
-  { to: '/games', label: '一起玩', icon: Gamepad2, name: 'games' },
-  { to: '/diaries', label: '日记', icon: Feather, name: 'diaries' },
-  { to: '/letters', label: '信笺', icon: MailHeart, name: 'letters' },
-  { to: '/anniversaries', label: '日子', icon: CalendarHeart, name: 'anniversaries' },
-  { to: '/wishes', label: '愿望', icon: ListTodo, name: 'wishes' },
-  { to: '/profile', label: '我们', icon: UserRound, name: 'profile' },
+const nav: NavigationItem[] = [
+  { to: '/', label: '小窝', icon: Home, name: 'home', mobilePlacement: 'core' },
+  { to: '/calendar', label: '日历', icon: CalendarDays, name: 'calendar', mobilePlacement: 'core' },
+  { to: '/reports', label: '月报', icon: BarChart3, name: 'reports', mobilePlacement: 'more', mobileGroup: '共同计划', mobileOrder: 3 },
+  { to: '/memories', label: '回忆', icon: Images, name: 'memories', mobilePlacement: 'core' },
+  { to: '/games', label: '一起玩', icon: Gamepad2, name: 'games', mobilePlacement: 'core' },
+  { to: '/diaries', label: '日记', icon: Feather, name: 'diaries', mobilePlacement: 'more', mobileGroup: '记录', mobileOrder: 1 },
+  { to: '/letters', label: '信笺', icon: MailHeart, name: 'letters', mobilePlacement: 'more', mobileGroup: '记录', mobileOrder: 2 },
+  { to: '/anniversaries', label: '日子', mobileLabel: '重要日子', icon: CalendarHeart, name: 'anniversaries', mobilePlacement: 'more', mobileGroup: '共同计划', mobileOrder: 1 },
+  { to: '/wishes', label: '愿望', icon: ListTodo, name: 'wishes', mobilePlacement: 'more', mobileGroup: '共同计划', mobileOrder: 2 },
+  { to: '/profile', label: '我们', mobileLabel: '个人资料', icon: UserRound, name: 'profile', mobilePlacement: 'more', mobileGroup: '我们', mobileOrder: 1 },
 ]
+const mobileMoreGroupOrder: MobileGroup[] = ['记录', '共同计划', '我们']
+const coreNav = computed(() => nav.filter(item => item.mobilePlacement === 'core'))
+const moreGroups = computed(() => mobileMoreGroupOrder.map(label => ({
+  label,
+  items: nav
+    .filter(item => item.mobilePlacement === 'more' && item.mobileGroup === label)
+    .sort((a, b) => (a.mobileOrder || 0) - (b.mobileOrder || 0)),
+})))
+const moreOpen = ref(false)
+const moreMenuId = 'mobile-more-menu'
+const moreActive = computed(() => nav.some(item => item.mobilePlacement === 'more' && item.name === route.name))
+
+function closeMoreMenu() {
+  moreOpen.value = false
+}
+
+function toggleMoreMenu() {
+  moreOpen.value = !moreOpen.value
+}
+
+function handleMoreKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+  event.preventDefault()
+  toggleMoreMenu()
+}
+
+watch(() => route.fullPath, closeMoreMenu)
 
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
@@ -85,7 +126,7 @@ onBeforeUnmount(() => {
         <span><strong>Love Space</strong><small>我们的小时光</small></span>
       </RouterLink>
       <nav class="side-links">
-        <RouterLink v-for="item in nav" :key="item.name" :to="item.to" :class="{ active: route.name === item.name }">
+        <RouterLink v-for="item in nav" :key="item.name" :to="item.to" :class="{ active: route.name === item.name }" :aria-current="route.name === item.name ? 'page' : undefined">
           <component :is="item.icon" :size="20" aria-hidden="true" />
           <span>{{ item.label }}</span>
         </RouterLink>
@@ -115,12 +156,27 @@ onBeforeUnmount(() => {
       <main class="page-container">
         <RouterView />
       </main>
-      <nav class="bottom-nav" aria-label="主导航">
-        <RouterLink v-for="item in nav" :key="item.name" :to="item.to" :class="{ active: route.name === item.name }" :aria-label="item.label">
+      <nav class="bottom-nav" aria-label="移动主导航">
+        <RouterLink v-for="item in coreNav" :key="item.name" class="bottom-nav-item" :to="item.to" :class="{ active: route.name === item.name }" :aria-label="item.mobileLabel || item.label" :aria-current="route.name === item.name ? 'page' : undefined">
           <component :is="item.icon" :size="20" aria-hidden="true" />
-          <span>{{ item.label }}</span>
+          <span>{{ item.mobileLabel || item.label }}</span>
         </RouterLink>
+        <button
+          class="bottom-nav-item bottom-nav-more"
+          :class="{ active: moreActive }"
+          type="button"
+          aria-label="更多入口"
+          aria-haspopup="dialog"
+          :aria-expanded="moreOpen"
+          :aria-controls="moreMenuId"
+          @click="toggleMoreMenu"
+          @keydown="handleMoreKeydown"
+        >
+          <MoreHorizontal :size="20" aria-hidden="true" />
+          <span>更多</span>
+        </button>
       </nav>
+      <MobileMoreMenu :open="moreOpen" :groups="moreGroups" :menu-id="moreMenuId" @close="closeMoreMenu" />
     </div>
   </div>
 </template>

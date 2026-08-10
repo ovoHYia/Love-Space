@@ -16,6 +16,7 @@ frontend/.vite/
 
 # Local logs, backups, and temporary files
 .workbuddy/
+.impeccable/
 work/
 启动LoveSpace.ps1
 outputs/

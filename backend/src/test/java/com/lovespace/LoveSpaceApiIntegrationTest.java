@@ -1,5 +1,6 @@
 package com.lovespace;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -117,6 +118,27 @@ class LoveSpaceApiIntegrationTest {
     }
 
     @Test
+    void initializedSetupRejectsWithoutComparingAnyToken() throws Exception {
+        String setup = """
+                {"spaceName":"重复初始化","loveStartedAt":"2025-02-14T20:00:00",
+                 "firstUser":{"username":"alice","password":"alice-pass-123","nickname":"小爱"},
+                 "secondUser":{"username":"bob","password":"bob-pass-123","nickname":"小宝"}}
+                """;
+        String withoutToken = mvc.perform(post("/api/setup/initialize").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(setup))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SETUP_ALREADY_INITIALIZED"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertFalse(withoutToken.contains("alice"));
+        assertFalse(withoutToken.contains("alice-pass-123"));
+
+        mvc.perform(post("/api/setup/initialize").with(csrf()).header("X-Setup-Token", "wrong-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(setup))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SETUP_ALREADY_INITIALIZED"));
+    }
+
+    @Test
     void realtimeSyncStreamRequiresLoginAndStartsForAuthenticatedClient() throws Exception {
         mvc.perform(get("/api/sync/stream").param("clientId", "client_test_123"))
                 .andExpect(status().isUnauthorized());
@@ -131,6 +153,11 @@ class LoveSpaceApiIntegrationTest {
 
     @Test
     void passwordRecoveryResetsPasswordAndInvalidatesExistingSession() throws Exception {
+        MvcResult stream = mvc.perform(get("/api/sync/stream").session(firstSession)
+                        .param("clientId", "client_reset_123"))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted())
+                .andReturn();
         mvc.perform(passwordResetRequest("alice", passwordResetToken, "short", "203.0.113.10"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
@@ -142,7 +169,29 @@ class LoveSpaceApiIntegrationTest {
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/auth/me").session(firstSession))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("PASSWORD_CHANGED"));
+        mvc.perform(get("/api/sync/stream").session(firstSession).param("clientId", "client_reset_456"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("PASSWORD_CHANGED"));
         login("alice", "alice-reset-pass-123");
+    }
+
+    @Test
+    void passwordChangeInvalidatesOldApiSessionAndSseConnection() throws Exception {
+        MvcResult stream = mvc.perform(get("/api/sync/stream").session(firstSession)
+                        .param("clientId", "client_change_123"))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        MockHttpSession passwordSession = login("alice", "alice-pass-123");
+
+        mvc.perform(put("/api/profile/password").with(csrf()).session(passwordSession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"alice-pass-123\",\"newPassword\":\"alice-changed-pass-123\"}"))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/auth/me").session(passwordSession))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("PASSWORD_CHANGED"));
+        mvc.perform(get("/api/sync/stream").session(firstSession).param("clientId", "client_change_456"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("PASSWORD_CHANGED"));
     }
 
     @Test

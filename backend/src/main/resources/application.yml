@@ -49,3 +49,11 @@ app:
       window-minutes: ${PASSWORD_RESET_WINDOW_MINUTES:15}
       lock-minutes: ${PASSWORD_RESET_LOCK_MINUTES:15}
       evict-after-minutes: ${PASSWORD_RESET_EVICT_AFTER_MINUTES:30}
+    setup:
+      enabled: ${SETUP_ENABLED:true}
+      max-attempts-per-ip: ${SETUP_MAX_ATTEMPTS_PER_IP:10}
+      max-attempts-global: ${SETUP_MAX_ATTEMPTS_GLOBAL:100}
+      max-tracked-entries: ${SETUP_MAX_TRACKED_ENTRIES:5000}
+      window-minutes: ${SETUP_WINDOW_MINUTES:15}
+      lock-minutes: ${SETUP_LOCK_MINUTES:15}
+      evict-after-minutes: ${SETUP_EVICT_AFTER_MINUTES:30}

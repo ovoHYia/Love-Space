@@ -55,7 +55,8 @@ Copy-Item .env.example .env
 ```dotenv
 DB_USERNAME=root
 DB_PASSWORD=修改为你的数据库密码
-SETUP_TOKEN=生成一个高熵随机字符串
+SETUP_TOKEN=生成至少 32 个 UTF-8 字节的高熵随机字符串
+SETUP_ENABLED=true
 ```
 
 `.env` 只保存在本机，不要提交到 GitHub。初始化口令和密码恢复口令不要复用。
@@ -169,7 +170,8 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 所有配置都在根目录 `.env` 中维护，完整模板见 [.env.example](.env.example)。常用配置包括：
 
 - `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`：数据库连接
-- `SETUP_TOKEN`：首次初始化口令
+- `SETUP_TOKEN`：首次初始化口令；生产环境至少 32 个 UTF-8 字节且不能使用常见占位值
+- `SETUP_ENABLED`：是否开放初始化入口；生产环境可显式设为 `false` 禁用
 - `PASSWORD_RESET_TOKEN`：可选的高熵密码恢复口令
 - `UPLOAD_DIR`：上传文件目录，默认 `./data/uploads`
 - `MEDIA_MAX_BYTES`、`MEDIA_TOTAL_MAX_BYTES`：上传配额

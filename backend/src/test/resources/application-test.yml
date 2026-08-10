@@ -21,5 +21,13 @@ app:
       window-minutes: 15
       lock-minutes: 15
       evict-after-minutes: 30
-SETUP_TOKEN: test-setup-token
+    setup:
+      enabled: true
+      max-attempts-per-ip: 3
+      max-attempts-global: 20
+      max-tracked-entries: 100
+      window-minutes: 15
+      lock-minutes: 15
+      evict-after-minutes: 30
+SETUP_TOKEN: 7f4c8d2a9b1e6f305c7a4d8e2b9f1036a5c8d1e7f0b4a6c2d9e5f8a1b3c7d0e4
 PASSWORD_RESET_TOKEN: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

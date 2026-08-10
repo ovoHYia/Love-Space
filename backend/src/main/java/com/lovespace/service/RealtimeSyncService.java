@@ -1,11 +1,18 @@
 package com.lovespace.service;
 
+import com.lovespace.domain.User;
+import com.lovespace.security.CurrentUserService;
 import com.lovespace.security.SessionPrincipal;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -14,16 +21,30 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Service
 public class RealtimeSyncService {
     private static final long TIMEOUT = 30 * 60 * 1000L;
-    private final Map<Long, Map<String, SseEmitter>> clients = new ConcurrentHashMap<>();
+    private final CurrentUserService current;
+    private final Supplier<SseEmitter> emitterFactory;
+    private final Map<Long, Map<String, Connection>> clients = new ConcurrentHashMap<>();
+
+    @Autowired
+    public RealtimeSyncService(CurrentUserService current) {
+        this(current, () -> new SseEmitter(TIMEOUT));
+    }
+
+    RealtimeSyncService(CurrentUserService current, Supplier<SseEmitter> emitterFactory) {
+        this.current = current;
+        this.emitterFactory = emitterFactory;
+    }
 
     public SseEmitter connect(Authentication authentication, String requestedClientId) {
-        SessionPrincipal principal = principal(authentication);
+        User user = current.user(authentication);
+        SessionPrincipal principal = current.principal(authentication);
         String clientId = normalizeClientId(requestedClientId);
-        SseEmitter emitter = new SseEmitter(TIMEOUT);
-        SseEmitter previous = clients.computeIfAbsent(principal.coupleId(), ignored -> new ConcurrentHashMap<>())
-                .put(clientId, emitter);
-        if (previous != null) previous.complete();
-        Runnable cleanup = () -> remove(principal.coupleId(), clientId, emitter);
+        SseEmitter emitter = emitterFactory.get();
+        Connection connection = new Connection(user.getId(), user.getPasswordVersion(), emitter);
+        Connection previous = clients.computeIfAbsent(principal.coupleId(), ignored -> new ConcurrentHashMap<>())
+                .put(clientId, connection);
+        if (previous != null) previous.emitter().complete();
+        Runnable cleanup = () -> remove(principal.coupleId(), clientId, connection);
         emitter.onCompletion(cleanup);
         emitter.onTimeout(cleanup);
         emitter.onError(ignored -> cleanup.run());
@@ -37,37 +58,45 @@ public class RealtimeSyncService {
         return emitter;
     }
 
+    public void disconnectStaleUserConnections(Long userId, int currentPasswordVersion) {
+        List<SseEmitter> emitters = new ArrayList<>();
+        clients.forEach((coupleId, coupleClients) -> {
+            coupleClients.forEach((clientId, connection) -> {
+                if (Objects.equals(connection.userId(), userId)
+                        && connection.passwordVersion() != currentPasswordVersion
+                        && coupleClients.remove(clientId, connection)) {
+                    emitters.add(connection.emitter());
+                }
+            });
+            if (coupleClients.isEmpty()) clients.remove(coupleId, coupleClients);
+        });
+        emitters.forEach(SseEmitter::complete);
+    }
+
     public void publish(Long coupleId, Long actorId, String sourceClientId, String action, String resource) {
-        Map<String, SseEmitter> coupleClients = clients.get(coupleId);
+        Map<String, Connection> coupleClients = clients.get(coupleId);
         if (coupleClients == null || coupleClients.isEmpty()) return;
         SyncEvent payload = new SyncEvent(action, resource, actorId, normalizeOptionalClientId(sourceClientId), Instant.now());
-        coupleClients.forEach((clientId, emitter) -> {
+        coupleClients.forEach((clientId, connection) -> {
             if (clientId.equals(payload.sourceClientId())) return;
             try {
-                emitter.send(SseEmitter.event().name("sync").id(UUID.randomUUID().toString())
+                connection.emitter().send(SseEmitter.event().name("sync").id(UUID.randomUUID().toString())
                         .reconnectTime(2_000).data(payload));
             } catch (IOException | IllegalStateException ex) {
-                remove(coupleId, clientId, emitter);
+                remove(coupleId, clientId, connection);
             }
         });
     }
 
     @Scheduled(fixedDelay = 25_000)
     void heartbeat() {
-        clients.forEach((coupleId, coupleClients) -> coupleClients.forEach((clientId, emitter) -> {
+        clients.forEach((coupleId, coupleClients) -> coupleClients.forEach((clientId, connection) -> {
             try {
-                emitter.send(SseEmitter.event().comment("heartbeat"));
+                connection.emitter().send(SseEmitter.event().comment("heartbeat"));
             } catch (IOException | IllegalStateException ex) {
-                remove(coupleId, clientId, emitter);
+                remove(coupleId, clientId, connection);
             }
         }));
-    }
-
-    private SessionPrincipal principal(Authentication authentication) {
-        if (authentication == null || !(authentication.getPrincipal() instanceof SessionPrincipal principal)) {
-            throw new IllegalStateException("实时同步连接缺少登录信息");
-        }
-        return principal;
     }
 
     private String normalizeClientId(String value) {
@@ -80,12 +109,14 @@ public class RealtimeSyncService {
         return value;
     }
 
-    private void remove(Long coupleId, String clientId, SseEmitter expected) {
-        Map<String, SseEmitter> coupleClients = clients.get(coupleId);
+    private void remove(Long coupleId, String clientId, Connection expected) {
+        Map<String, Connection> coupleClients = clients.get(coupleId);
         if (coupleClients == null) return;
         coupleClients.remove(clientId, expected);
         if (coupleClients.isEmpty()) clients.remove(coupleId, coupleClients);
     }
+
+    private record Connection(Long userId, int passwordVersion, SseEmitter emitter) {}
 
     public record SyncEvent(String action, String resource, Long actorId,
                             String sourceClientId, Instant occurredAt) {}

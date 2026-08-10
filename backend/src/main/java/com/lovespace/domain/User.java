@@ -23,6 +23,9 @@ public class User {
     private Long avatarMediaId;
     @Column(nullable = false)
     private int passwordVersion;
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private Long rowVersion;
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     @Column(name = "updated_at", nullable = false)
@@ -46,6 +49,7 @@ public class User {
     public void setAvatarMediaId(Long avatarMediaId) { this.avatarMediaId = avatarMediaId; }
     public int getPasswordVersion() { return passwordVersion; }
     public void setPasswordVersion(int passwordVersion) { this.passwordVersion = passwordVersion; }
+    public Long getRowVersion() { return rowVersion; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 

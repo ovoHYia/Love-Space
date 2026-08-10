@@ -1,10 +1,15 @@
 package com.lovespace.api.error;
 
 import jakarta.validation.ConstraintViolationException;
+import jakarta.persistence.OptimisticLockException;
+import jakarta.persistence.PessimisticLockException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.*;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.slf4j.*;
@@ -18,6 +23,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.transaction.TransactionSystemException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -80,9 +86,37 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(409).body(ApiError.of(409, "DATA_CONFLICT", "数据已存在或正在被使用"));
     }
 
+    @ExceptionHandler({OptimisticLockException.class, PessimisticLockException.class,
+            OptimisticLockingFailureException.class, PessimisticLockingFailureException.class,
+            CannotAcquireLockException.class})
+    ResponseEntity<ApiError> concurrency(Exception ex) {
+        log.warn("Concurrent update rejected: {}", ex.getClass().getSimpleName());
+        return ResponseEntity.status(409)
+                .body(ApiError.of(409, "CONCURRENCY_CONFLICT", "请求正在被其他操作更新，请稍后重试"));
+    }
+
+    @ExceptionHandler(TransactionSystemException.class)
+    ResponseEntity<ApiError> transaction(TransactionSystemException ex) {
+        if (hasCause(ex, OptimisticLockException.class, PessimisticLockException.class,
+                OptimisticLockingFailureException.class, PessimisticLockingFailureException.class,
+                CannotAcquireLockException.class)) {
+            return concurrency(ex);
+        }
+        return unknown(ex);
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> unknown(Exception ex) {
         log.error("Unhandled API error", ex);
         return ResponseEntity.internalServerError().body(ApiError.of(500, "INTERNAL_ERROR", "服务器内部错误"));
+    }
+
+    private boolean hasCause(Throwable error, Class<?>... types) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            for (Class<?> type : types) {
+                if (type.isInstance(current)) return true;
+            }
+        }
+        return false;
     }
 }

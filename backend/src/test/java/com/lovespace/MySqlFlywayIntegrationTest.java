@@ -30,7 +30,7 @@ class MySqlFlywayIntegrationTest {
                      "select version from flyway_schema_history where success = 1 order by installed_rank desc limit 1");
              var result = statement.executeQuery()) {
             assertTrue(result.next());
-            assertEquals("14", result.getString(1));
+            assertEquals("15", result.getString(1));
         }
     }
 }

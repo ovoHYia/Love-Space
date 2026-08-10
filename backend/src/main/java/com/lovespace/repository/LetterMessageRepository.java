@@ -25,6 +25,18 @@ public interface LetterMessageRepository extends JpaRepository<LetterMessage, Lo
             Pageable pageable);
 
     @Query("""
+            select count(m) from LetterMessage m
+            where m.coupleId = :coupleId
+              and m.deletedAt is null
+              and (m.authorId = :userId
+                   or (m.recipientId = :userId and m.deliverAt <= :now))
+            """)
+    long countVisibleByCoupleAndUser(
+            @Param("coupleId") Long coupleId,
+            @Param("userId") Long userId,
+            @Param("now") LocalDateTime now);
+
+    @Query("""
             select m from LetterMessage m
             where m.coupleId = :coupleId
               and m.deletedAt is null

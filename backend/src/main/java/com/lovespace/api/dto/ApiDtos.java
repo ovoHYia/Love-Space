@@ -4,6 +4,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.time.*;
 import java.util.List;
+import com.lovespace.time.BeijingOffsetDateTimeDeserializer;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 public final class ApiDtos {
     private ApiDtos() {}
@@ -18,12 +20,13 @@ public final class ApiDtos {
 
     public record SetupRequest(
             @NotBlank @Size(max = 100) String spaceName,
-            @NotNull @PastOrPresent LocalDateTime loveStartedAt,
+            @NotNull @PastOrPresent
+            @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class) OffsetDateTime loveStartedAt,
             @NotNull @Valid InitialUser firstUser,
             @NotNull @Valid InitialUser secondUser) {}
 
     public record UserView(Long id, String username, String nickname, String avatarUrl) {}
-    public record CoupleView(Long id, String spaceName, LocalDateTime loveStartedAt) {}
+    public record CoupleView(Long id, String spaceName, OffsetDateTime loveStartedAt) {}
     public record MeResponse(UserView user, UserView partner, CoupleView couple) {}
 
     public record ProfileRequest(@NotBlank @Size(max = 50) String nickname) {}
@@ -40,7 +43,7 @@ public final class ApiDtos {
             @NotBlank @Size(max = 30) String label,
             @Size(max = 300) String note) {}
     public record MoodView(Long id, Long userId, LocalDate moodDate, String emoji, String label,
-                           String note, LocalDateTime updatedAt) {}
+                           String note, OffsetDateTime updatedAt) {}
     public record MoodTrendPoint(LocalDate date, Long userId, String nickname, String emoji,
                                  String label, String note, int score) {}
     public record MoodDistributionView(String label, String emoji, long count, int percentage) {}
@@ -59,18 +62,20 @@ public final class ApiDtos {
     public record MemoryRequest(
             @NotBlank @Size(max = 120) String title,
             @Size(max = 10000) String description,
-            @NotNull LocalDateTime eventAt,
+            @NotNull @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class) OffsetDateTime eventAt,
             @Size(max = 200) String location,
             @Size(max = 12) List<@NotBlank @Size(max = 30) String> tags) {}
     public record MediaView(Long id, String originalName, String contentType, String mediaType,
-                            long byteSize, String url, LocalDateTime createdAt) {}
+                            long byteSize, String url, OffsetDateTime createdAt) {}
     public record MemoryView(Long id, Long authorId, String authorNickname, String title,
-                             String description, LocalDateTime eventAt, String location,
+                             String description, OffsetDateTime eventAt, String location,
                              List<String> tags,
-                             List<MediaView> media, LocalDateTime createdAt, LocalDateTime updatedAt) {}
+                             List<MediaView> media, OffsetDateTime createdAt, OffsetDateTime updatedAt) {}
     public record MemoryTagView(String name, long memoryCount) {}
     public record AlbumItemView(MediaView media, Long memoryId, String memoryTitle,
-                                LocalDateTime eventAt, String location, List<String> tags) {}
+                                OffsetDateTime eventAt, String location, List<String> tags) {}
+    public record ExportPreparationResponse(String downloadUrl, String filename,
+                                            OffsetDateTime expiresAt) {}
     public record PageResponse<T>(List<T> content, int page, int size, long totalElements,
                                   int totalPages, boolean first, boolean last) {}
 
@@ -81,14 +86,15 @@ public final class ApiDtos {
             @Size(max = 30) String mood) {}
     public record DiaryView(Long id, Long authorId, String authorNickname, String title,
                             String content, LocalDate diaryDate, String mood,
-                            LocalDateTime createdAt, LocalDateTime updatedAt) {}
+                            OffsetDateTime createdAt, OffsetDateTime updatedAt) {}
 
     public record MessageRequest(@NotBlank @Size(max = 10000) String content,
-                                 LocalDateTime deliverAt) {}
+                                 @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class)
+                                 OffsetDateTime deliverAt) {}
     public record MessageView(Long id, Long authorId, String authorNickname,
                               Long recipientId, String recipientNickname, String content,
-                              LocalDateTime readAt, LocalDateTime createdAt,
-                              boolean scheduled, LocalDateTime deliverAt) {}
+                              OffsetDateTime readAt, OffsetDateTime createdAt,
+                              boolean scheduled, OffsetDateTime deliverAt) {}
 
     public record AnniversaryRequest(
             @NotBlank @Size(max = 120) String title,
@@ -99,8 +105,8 @@ public final class ApiDtos {
             @Size(max = 500) String note) {}
     public record AnniversaryView(Long id, Long createdBy, String title, LocalDate eventDate,
                                   String type, boolean recurringYearly, int reminderDays,
-                                  String note, long daysUntil, LocalDateTime createdAt,
-                                  LocalDateTime updatedAt) {}
+                                  String note, long daysUntil, OffsetDateTime createdAt,
+                                  OffsetDateTime updatedAt) {}
 
     public record WishRequest(
             @NotBlank @Size(max = 120) String title,
@@ -110,26 +116,26 @@ public final class ApiDtos {
     public record WishView(Long id, Long createdBy, String createdByNickname,
                            String title, String description, String category, LocalDate targetDate,
                            String status, Long completedBy, String completedByNickname,
-                           LocalDateTime completedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {}
+                           OffsetDateTime completedAt, OffsetDateTime createdAt, OffsetDateTime updatedAt) {}
 
     public record CalendarEventRequest(
             @NotBlank @Size(max = 120) String title,
             @Size(max = 1000) String description,
-            @NotNull LocalDateTime startAt,
-            LocalDateTime endAt,
+            @NotNull @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class) OffsetDateTime startAt,
+            @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class) OffsetDateTime endAt,
             boolean allDay,
             @NotBlank @Pattern(regexp = "DATE|TRAVEL|FAMILY|PERSONAL|OTHER") String category,
             @Size(max = 200) String location) {}
     public record CalendarEntryView(String sourceType, Long id, String title, String description,
-                                    LocalDateTime startAt, LocalDateTime endAt, boolean allDay,
+                                    OffsetDateTime startAt, OffsetDateTime endAt, boolean allDay,
                                     String category, String location, boolean editable,
                                     Long createdBy, String createdByNickname) {}
 
-    public record TrashItemView(String type, Long id, String title, LocalDateTime deletedAt) {}
+    public record TrashItemView(String type, Long id, String title, OffsetDateTime deletedAt) {}
 
     public record NotificationView(Long id, String type, String title, String body,
-                                   String referenceType, Long referenceId, LocalDateTime readAt,
-                                   LocalDateTime createdAt) {}
+                                   String referenceType, Long referenceId, OffsetDateTime readAt,
+                                   OffsetDateTime createdAt) {}
     public record NotificationSummary(long total, long unread, long read,
                                       long anniversaries, long letters, long wishes) {}
     public record NotificationListResponse(
@@ -145,7 +151,7 @@ public final class ApiDtos {
             @NotNull Boolean wishEnabled) {}
     public record NotificationPreferenceView(
             boolean anniversaryEnabled, boolean letterEnabled, boolean wishEnabled,
-            LocalDateTime updatedAt) {}
+            OffsetDateTime updatedAt) {}
 
     public record GameCreateRequest(
             @NotBlank @Pattern(regexp = "TACIT_QUIZ|DRAW_GUESS|MEMORY_GUESS|TRUTH_CARD") String gameType) {}
@@ -164,9 +170,9 @@ public final class ApiDtos {
             @NotBlank @Size(max = 80) String operationId,
             @NotEmpty @Size(max = 12) List<@NotNull @Valid GameStrokeRequest> strokes) {}
     public record GameGuessView(Long userId, String nickname, String text,
-                                boolean correct, LocalDateTime createdAt) {}
+                                boolean correct, OffsetDateTime createdAt) {}
     public record GameMemoryView(String imageUrl, String title, String description,
-                                 LocalDateTime eventAt, String location) {}
+                                 OffsetDateTime eventAt, String location) {}
     public record GameSessionView(
             Long id, Long revision, String gameType, String status, Long createdBy, String createdByNickname,
             int roundNumber, Long currentTurnUserId, String prompt, List<String> options,
@@ -174,7 +180,7 @@ public final class ApiDtos {
             int score, String secretWord, List<GameStrokeRequest> strokes,
             List<GameGuessView> guesses, boolean roundComplete, String cardCategory,
             GameMemoryView memory,
-            LocalDateTime createdAt, LocalDateTime updatedAt, LocalDateTime finishedAt) {}
+            OffsetDateTime createdAt, OffsetDateTime updatedAt, OffsetDateTime finishedAt) {}
 
     public record DashboardResponse(MeResponse account, List<MoodView> todayMoods,
                                     List<MemoryView> recentMemories, List<DiaryView> recentDiaries,

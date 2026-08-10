@@ -5,6 +5,7 @@ import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.*;
 import com.lovespace.repository.*;
 import com.lovespace.security.CurrentUserService;
+import com.lovespace.time.BeijingTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -159,7 +160,7 @@ public class TrashService {
     }
 
     private TrashItemView view(String type, RecoverableContent value, String title) {
-        return new TrashItemView(type, value.getId(), title, value.getDeletedAt());
+        return new TrashItemView(type, value.getId(), title, BeijingTime.toOffset(value.getDeletedAt()));
     }
 
     private String type(String rawType) {

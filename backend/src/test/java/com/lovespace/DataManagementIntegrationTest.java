@@ -192,20 +192,37 @@ class DataManagementIntegrationTest {
         mvc.perform(get("/api/data/export").session(alice))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message", containsString("媒体原文件缺失")));
+        assertNoTemporaryExports();
     }
 
     @Test
-    void onlyOneExportCanStreamAtATime() throws Exception {
-        createMemory("并发导出检查");
-        MvcResult first = mvc.perform(get("/api/data/export").session(alice))
+    void preparedExportSurvivesMediaDeletionIsOneTimeAndCleansSnapshot() throws Exception {
+        long memoryId = createMemory("快照删除竞态");
+        long mediaId = jdbc.queryForObject("select id from media where memory_id = ?", Long.class, memoryId);
+        String preparation = mvc.perform(post("/api/data/export/prepare").with(csrf()).session(alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.downloadUrl").isString())
+                .andExpect(jsonPath("$.expiresAt").value(containsString("+08:00")))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String downloadPath = downloadPath(preparation);
+
+        mvc.perform(delete("/api/memories/{id}/media/{mediaId}", memoryId, mediaId)
+                        .with(csrf()).session(alice))
+                .andExpect(status().isOk());
+
+        MvcResult started = mvc.perform(get("/api" + downloadPath).session(alice))
                 .andExpect(request().asyncStarted())
                 .andReturn();
+        MvcResult completed = mvc.perform(asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/zip"))
+                .andReturn();
+        Map<String, byte[]> entries = unzip(completed.getResponse().getContentAsByteArray());
+        assertTrue(entries.keySet().stream().anyMatch(name -> name.matches("media/\\d+-sea\\.png")));
+        assertNoTemporaryExports();
 
-        mvc.perform(get("/api/data/export").session(bob))
-                .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.code").value("EXPORT_BUSY"));
-
-        mvc.perform(asyncDispatch(first)).andExpect(status().isOk());
+        mvc.perform(get("/api" + downloadPath).session(alice))
+                .andExpect(status().isNotFound());
     }
 
     private void restore(String type, long id) throws Exception {
@@ -245,6 +262,21 @@ class DataManagementIntegrationTest {
         Matcher matcher = Pattern.compile("\"id\"\\s*:\\s*(\\d+)").matcher(json);
         assertTrue(matcher.find(), "响应中缺少 id");
         return Long.parseLong(matcher.group(1));
+    }
+
+    private String downloadPath(String json) {
+        Matcher matcher = Pattern.compile("\\\"downloadUrl\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(json);
+        assertTrue(matcher.find(), "响应中缺少一次性下载地址");
+        return matcher.group(1);
+    }
+
+    private void assertNoTemporaryExports() throws Exception {
+        Path root = Path.of(uploadDir);
+        if (!Files.isDirectory(root)) return;
+        try (Stream<Path> paths = Files.list(root)) {
+            assertEquals(0, paths.filter(path -> path.getFileName().toString().startsWith(".love-space-export-"))
+                    .count());
+        }
     }
 
     private Map<String, byte[]> unzip(byte[] source) throws Exception {

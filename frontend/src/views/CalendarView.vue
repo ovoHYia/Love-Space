@@ -10,14 +10,14 @@ import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
 import type { CalendarEntry, CalendarEventInput, CalendarSource } from '../types'
-import { formatDate, formatDateTime, todayInput } from '../utils'
+import { formatDate, formatDateTime, toBeijingOffsetDateTime, toLocalDateTimeInput, todayInput } from '../utils'
 import { createRequestGeneration } from '../utils/latestRequest'
 
 const router = useRouter()
 const { show } = useToast()
 const today = todayInput()
-const now = new Date()
-const month = ref(new Date(now.getFullYear(), now.getMonth(), 1))
+const [todayYear, todayMonth] = today.split('-').map(Number)
+const month = ref(new Date(todayYear, todayMonth - 1, 1))
 const selectedDate = ref(today)
 const entries = ref<CalendarEntry[]>([])
 const loading = ref(true)
@@ -78,8 +78,8 @@ const visibleEntries = computed(() => entries.value.filter(item => activeSources
 const entriesByDate = computed(() => {
   const result = new Map<string, CalendarEntry[]>()
   for (const item of visibleEntries.value) {
-    const start = parseDate(item.startAt.slice(0, 10))
-    const end = parseDate((item.endAt || item.startAt).slice(0, 10))
+    const start = parseDate(toLocalDateTimeInput(item.startAt).slice(0, 10))
+    const end = parseDate(toLocalDateTimeInput(item.endAt || item.startAt).slice(0, 10))
     for (let cursor = start; cursor <= end; cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)) {
       const key = dateKey(cursor)
       const values = result.get(key) || []
@@ -130,7 +130,7 @@ async function changeMonth(offset: number) {
 }
 
 async function goToday() {
-  month.value = new Date(now.getFullYear(), now.getMonth(), 1)
+  month.value = new Date(todayYear, todayMonth - 1, 1)
   selectedDate.value = today
   await load()
 }
@@ -171,14 +171,16 @@ function openCreate(date = selectedDate.value) {
 
 function openEdit(item: CalendarEntry) {
   if (!item.editable) return
+  const start = toLocalDateTimeInput(item.startAt)
+  const end = item.endAt ? toLocalDateTimeInput(item.endAt) : ''
   editing.value = item
   Object.assign(form, {
     title: item.title,
     description: item.description || '',
-    date: item.startAt.slice(0, 10),
-    time: item.startAt.slice(11, 16) || '18:00',
-    endDate: item.endAt?.slice(0, 10) || '',
-    endTime: item.endAt?.slice(11, 16) || '19:00',
+    date: start.slice(0, 10),
+    time: start.slice(11, 16) || '18:00',
+    endDate: end.slice(0, 10),
+    endTime: end.slice(11, 16) || '19:00',
     allDay: item.allDay,
     category: categories.some(value => value.value === item.category) ? item.category : 'OTHER',
     location: item.location || '',
@@ -194,8 +196,8 @@ function input(): CalendarEventInput {
   return {
     title: form.title.trim(),
     description: form.description.trim(),
-    startAt,
-    endAt,
+    startAt: toBeijingOffsetDateTime(startAt),
+    endAt: endAt ? toBeijingOffsetDateTime(endAt) : null,
     allDay: form.allDay,
     category: form.category,
     location: form.location.trim(),

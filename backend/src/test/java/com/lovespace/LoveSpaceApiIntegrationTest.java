@@ -12,6 +12,8 @@ import com.lovespace.repository.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
 import java.util.stream.Stream;
 import java.util.regex.*;
 import org.junit.jupiter.api.*;
@@ -36,6 +38,7 @@ class LoveSpaceApiIntegrationTest {
     @Autowired CoupleRepository couples;
     @Autowired UserRepository users;
     @Autowired MemoryRepository memories;
+    @Autowired MediaRepository media;
     @Autowired PasswordEncoder encoder;
     @Value("${SETUP_TOKEN}") String setupToken;
     @Value("${PASSWORD_RESET_TOKEN}") String passwordResetToken;
@@ -371,13 +374,74 @@ class LoveSpaceApiIntegrationTest {
         mvc.perform(multipart("/api/memories").file(data).with(csrf()).session(firstSession))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.tags", contains("Trip")));
+        User alice = users.findByUsernameIgnoreCase("alice").orElseThrow();
+        Memory another = new Memory();
+        another.setCoupleId(alice.getCouple().getId());
+        another.setAuthorId(alice.getId());
+        another.setTitle("第二个标签回忆");
+        another.setEventAt(LocalDateTime.of(2026, 7, 2, 18, 30));
+        another.setTags(List.of("trip"));
+        memories.saveAndFlush(another);
         mvc.perform(get("/api/memories/tags").session(secondSession))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].name").value("Trip"))
-                .andExpect(jsonPath("$[0].memoryCount").value(1));
+                .andExpect(jsonPath("$[0].memoryCount").value(2));
         mvc.perform(get("/api/memories").session(secondSession).param("tag", "trip"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @Test
+    void albumAndTimelineUseDatabaseFilteringPagingAndHandleHugePages() throws Exception {
+        User alice = users.findByUsernameIgnoreCase("alice").orElseThrow();
+        for (int index = 0; index < 24; index++) {
+            Memory memory = new Memory();
+            memory.setCoupleId(alice.getCouple().getId());
+            memory.setAuthorId(alice.getId());
+            memory.setTitle(index < 18 ? "目标回忆 " + index : "其他回忆 " + index);
+            memory.setDescription(index < 18 ? "关键词描述" : "无关描述");
+            memory.setEventAt(LocalDateTime.of(2026, 7, 1, 18, 30).plusDays(index));
+            memory.setTags(List.of(index < 18 ? "Trip" : "Other"));
+            memories.saveAndFlush(memory);
+
+            Media image = new Media();
+            image.setCoupleId(alice.getCouple().getId());
+            image.setOwnerId(alice.getId());
+            image.setMemoryId(memory.getId());
+            image.setStoredName(UUID.randomUUID().toString());
+            image.setOriginalName("memory-" + index + ".png");
+            image.setContentType("image/png");
+            image.setMediaType("image");
+            image.setByteSize(1);
+            media.save(image);
+        }
+
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("q", "关键词").param("tag", "trip")
+                        .param("page", "0").param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(18))
+                .andExpect(jsonPath("$.totalPages").value(4))
+                .andExpect(jsonPath("$.content", hasSize(5)))
+                .andExpect(jsonPath("$.content[0].memoryTitle").value("目标回忆 17"));
+        mvc.perform(get("/api/memories").session(secondSession)
+                        .param("q", "关键词").param("tag", "TRIP")
+                        .param("page", "1").param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(18))
+                .andExpect(jsonPath("$.content", hasSize(5)));
+        mvc.perform(get("/api/memories/album").session(secondSession)
+                        .param("q", "关键词").param("tag", "trip")
+                        .param("page", "2147483647").param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(18))
+                .andExpect(jsonPath("$.content", hasSize(0)));
+        mvc.perform(get("/api/memories").session(secondSession)
+                        .param("q", "关键词").param("tag", "trip")
+                        .param("page", "2147483647").param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(18))
+                .andExpect(jsonPath("$.content", hasSize(0)));
     }
 
     @Test

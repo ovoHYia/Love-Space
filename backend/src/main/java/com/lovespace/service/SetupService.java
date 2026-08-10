@@ -4,6 +4,7 @@ import com.lovespace.api.dto.ApiDtos.*;
 import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.*;
 import com.lovespace.repository.*;
+import com.lovespace.time.BeijingTime;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
@@ -44,7 +45,7 @@ public class SetupService {
         validateBcryptLength(request.secondUser().password());
         Couple couple = new Couple();
         couple.setSpaceName(request.spaceName().trim());
-        couple.setLoveStartedAt(request.loveStartedAt());
+        couple.setLoveStartedAt(BeijingTime.toLocal(request.loveStartedAt()));
         couples.save(couple);
         User first = createUser(couple, firstName, request.firstUser());
         User second = createUser(couple, secondName, request.secondUser());

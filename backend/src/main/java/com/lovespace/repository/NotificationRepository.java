@@ -35,6 +35,22 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("keyword") String keyword,
             Pageable pageable);
 
+    @Query("""
+            select count(n) from Notification n
+            where n.userId = :userId
+              and (:status = 'ALL'
+                   or (:status = 'UNREAD' and n.readAt is null)
+                   or (:status = 'READ' and n.readAt is not null))
+              and (:category = 'ALL' or n.referenceType = :category)
+              and (:keyword = ''
+                   or lower(n.title) like lower(concat('%', :keyword, '%'))
+                   or lower(n.body) like lower(concat('%', :keyword, '%')))
+            """)
+    long countSearch(@Param("userId") Long userId,
+                     @Param("status") String status,
+                     @Param("category") String category,
+                     @Param("keyword") String keyword);
+
     @Modifying
     @Query("update Notification n set n.readAt = :readAt where n.userId = :userId and n.readAt is null")
     int markAllReadForUser(@Param("userId") Long userId, @Param("readAt") LocalDateTime readAt);

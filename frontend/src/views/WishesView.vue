@@ -40,9 +40,9 @@ const visible = computed(() => {
   return [...values].sort((a, b) => {
     if (a.status !== b.status) return a.status === 'ACTIVE' ? -1 : 1
     if (a.status === 'ACTIVE') {
-      const aDate = a.targetDate ? new Date(`${a.targetDate}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER
-      const bDate = b.targetDate ? new Date(`${b.targetDate}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER
-      if (aDate !== bDate) return aDate - bDate
+      const aDate = a.targetDate || '9999-12-31'
+      const bDate = b.targetDate || '9999-12-31'
+      if (aDate !== bDate) return aDate.localeCompare(bDate)
     }
     return new Date(b.completedAt || b.createdAt || 0).getTime() - new Date(a.completedAt || a.createdAt || 0).getTime()
   })

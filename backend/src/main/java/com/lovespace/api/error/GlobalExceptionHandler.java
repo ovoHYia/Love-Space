@@ -1,8 +1,8 @@
 package com.lovespace.api.error;
 
+import com.lovespace.time.BeijingTime;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.persistence.OptimisticLockException;
-import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -35,7 +35,7 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> validation(MethodArgumentNotValidException ex) {
         Map<String, String> fields = new LinkedHashMap<>();
         ex.getBindingResult().getFieldErrors().forEach(e -> fields.putIfAbsent(e.getField(), e.getDefaultMessage()));
-        return ResponseEntity.badRequest().body(new ApiError(OffsetDateTime.now(), 400,
+        return ResponseEntity.badRequest().body(new ApiError(BeijingTime.nowOffset(), 400,
                 "VALIDATION_ERROR", "请求参数校验失败", fields));
     }
 
@@ -43,7 +43,7 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> constraint(ConstraintViolationException ex) {
         Map<String, String> fields = new LinkedHashMap<>();
         ex.getConstraintViolations().forEach(v -> fields.put(v.getPropertyPath().toString(), v.getMessage()));
-        return ResponseEntity.badRequest().body(new ApiError(OffsetDateTime.now(), 400,
+        return ResponseEntity.badRequest().body(new ApiError(BeijingTime.nowOffset(), 400,
                 "VALIDATION_ERROR", "请求参数校验失败", fields));
     }
 

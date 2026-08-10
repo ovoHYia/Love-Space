@@ -142,9 +142,9 @@ public class MediaStorageService {
         deletePath(safeResolve(value.getStoredName()));
     }
 
-    public Optional<Resource> loadForExport(Media value) {
+    public InputStream openForExport(Media value) throws IOException {
         Path path = safeResolve(value.getStoredName());
-        return fileSystem.isRegularFile(path) ? Optional.of(new FileSystemResource(path.toFile())) : Optional.empty();
+        return Files.newInputStream(path, StandardOpenOption.READ);
     }
 
     public void deletePhysicalAfterCommit(Media value) {

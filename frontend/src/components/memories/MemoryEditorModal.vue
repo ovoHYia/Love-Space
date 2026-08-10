@@ -6,7 +6,7 @@ import type { MemoryInput } from '../../api'
 import { errorMessage } from '../../api/client'
 import { useToast } from '../../composables/toast'
 import type { MediaItem, Memory, MemoryTag } from '../../types'
-import { toLocalDateTimeInput } from '../../utils'
+import { toBeijingOffsetDateTime, toLocalDateTimeInput } from '../../utils'
 import { memoryMediaType, memoryMediaUrl } from '../../utils/memoryMedia'
 import BaseModal from '../BaseModal.vue'
 
@@ -61,7 +61,7 @@ async function save() {
   const payload: MemoryInput = {
     title: form.title.trim(),
     description: form.description.trim(),
-    eventAt: form.eventAt,
+    eventAt: toBeijingOffsetDateTime(form.eventAt),
     location: form.location.trim(),
     tags: form.tags,
   }

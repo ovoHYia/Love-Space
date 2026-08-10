@@ -9,9 +9,9 @@ import com.lovespace.repository.NotificationPreferenceRepository;
 import com.lovespace.repository.NotificationRepository;
 import com.lovespace.repository.UserRepository;
 import com.lovespace.security.CurrentUserService;
+import com.lovespace.time.BeijingTime;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +30,6 @@ public class NotificationService {
     public static final String REFERENCE_ANNIVERSARY = "ANNIVERSARY";
     public static final String REFERENCE_MESSAGE = "MESSAGE";
     public static final String REFERENCE_WISH = "WISH";
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final NotificationRepository notifications;
     private final NotificationPreferenceRepository preferences;
@@ -53,19 +52,16 @@ public class NotificationService {
             Authentication auth, int page, int size, String status, String category, String keyword) {
         User user = current.user(auth);
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        NotificationSummary summary = summary(user);
+        long unread = summary.unread();
+        if ((long) page * size > Integer.MAX_VALUE) {
+            return pageResponse(page, size, notifications.countSearch(
+                    user.getId(), status, category, normalizedKeyword), List.of(), unread, summary);
+        }
         Page<Notification> result = notifications.search(
                 user.getId(), status, category, normalizedKeyword, PageRequest.of(page, size));
-        long total = notifications.countByUserId(user.getId());
-        long unread = notifications.countByUserIdAndReadAtIsNull(user.getId());
-        NotificationSummary summary = new NotificationSummary(
-                total, unread, total - unread,
-                notifications.countByUserIdAndReferenceType(user.getId(), REFERENCE_ANNIVERSARY),
-                notifications.countByUserIdAndReferenceType(user.getId(), REFERENCE_MESSAGE),
-                notifications.countByUserIdAndReferenceType(user.getId(), REFERENCE_WISH));
-        return new NotificationListResponse(
-                result.getContent().stream().map(views::notification).toList(),
-                result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages(),
-                result.isFirst(), result.isLast(), unread, summary);
+        return pageResponse(page, size, result.getTotalElements(),
+                result.getContent().stream().map(views::notification).toList(), unread, summary);
     }
 
     @Transactional(readOnly = true)
@@ -79,7 +75,7 @@ public class NotificationService {
         User user = current.user(auth);
         Notification value = notifications.findByIdAndUserId(id, user.getId())
                 .orElseThrow(() -> ApiException.notFound("通知不存在"));
-        if (value.getReadAt() == null) value.setReadAt(LocalDateTime.now(ZONE));
+        if (value.getReadAt() == null) value.setReadAt(BeijingTime.now());
         return views.notification(notifications.save(value));
     }
 
@@ -95,14 +91,14 @@ public class NotificationService {
     @Transactional
     public void markAllRead(Authentication auth) {
         User user = current.user(auth);
-        notifications.markAllReadForUser(user.getId(), LocalDateTime.now(ZONE));
+        notifications.markAllReadForUser(user.getId(), BeijingTime.now());
     }
 
     @Transactional
     public NotificationBatchResponse markBatch(Authentication auth, List<Long> ids, boolean read) {
         User user = current.user(auth);
         int affected = read
-                ? notifications.markReadForUser(user.getId(), ids, LocalDateTime.now(ZONE))
+                ? notifications.markReadForUser(user.getId(), ids, BeijingTime.now())
                 : notifications.markUnreadForUser(user.getId(), ids);
         return batchResponse(user.getId(), affected);
     }
@@ -263,7 +259,26 @@ public class NotificationService {
     private NotificationPreferenceView preferenceView(NotificationPreference value) {
         return new NotificationPreferenceView(
                 value.isAnniversaryEnabled(), value.isLetterEnabled(), value.isWishEnabled(),
-                value.getUpdatedAt());
+                BeijingTime.toOffset(value.getUpdatedAt()));
+    }
+
+    private NotificationSummary summary(User user) {
+        long total = notifications.countByUserId(user.getId());
+        long unread = notifications.countByUserIdAndReadAtIsNull(user.getId());
+        return new NotificationSummary(
+                total, unread, total - unread,
+                notifications.countByUserIdAndReferenceType(user.getId(), REFERENCE_ANNIVERSARY),
+                notifications.countByUserIdAndReferenceType(user.getId(), REFERENCE_MESSAGE),
+                notifications.countByUserIdAndReferenceType(user.getId(), REFERENCE_WISH));
+    }
+
+    private NotificationListResponse pageResponse(int page, int size, long total,
+                                                  List<NotificationView> items, long unread,
+                                                  NotificationSummary summary) {
+        long pageCount = total / size + (total % size == 0 ? 0 : 1);
+        int totalPages = pageCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) pageCount;
+        return new NotificationListResponse(items, page, size, total, totalPages,
+                page == 0, pageCount == 0 || (long) page >= pageCount - 1, unread, summary);
     }
 
     private boolean enabled(Long userId, String referenceType) {

@@ -6,6 +6,7 @@ import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.*;
 import com.lovespace.repository.*;
 import com.lovespace.security.CurrentUserService;
+import com.lovespace.time.BeijingTime;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -16,8 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class CalendarService {
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
-
     private final CalendarEventRepository events;
     private final AnniversaryRepository anniversaries;
     private final MemoryRepository memories;
@@ -72,7 +71,7 @@ public class CalendarService {
                 .forEach(item -> result.add(entry(
                         "WISH", item.getId(), item.getTitle(), item.getDescription(), item.getTargetDate().atStartOfDay(),
                         null, true, item.getCategory(), null, false, item.getCreatedBy(), names)));
-        messages.findAllVisibleByCoupleAndUser(coupleId, user.getId(), LocalDateTime.now(ZONE)).stream()
+        messages.findAllVisibleByCoupleAndUser(coupleId, user.getId(), BeijingTime.now()).stream()
                 .filter(LetterMessage::isScheduled)
                 .filter(item -> !item.getDeliverAt().isBefore(start) && item.getDeliverAt().isBefore(end))
                 .forEach(item -> result.add(entry(
@@ -111,7 +110,7 @@ public class CalendarService {
     public void delete(Authentication auth, Long id) {
         User user = current.user(auth);
         CalendarEvent value = find(user, id);
-        value.moveToTrash(user.getId(), LocalDateTime.now(ZONE));
+        value.moveToTrash(user.getId(), BeijingTime.now());
         events.save(value);
     }
 
@@ -126,8 +125,8 @@ public class CalendarService {
         }
         value.setTitle(input.title().trim());
         value.setDescription(AccountService.trimToNull(input.description()));
-        value.setStartAt(input.startAt());
-        value.setEndAt(input.endAt());
+        value.setStartAt(BeijingTime.toLocal(input.startAt()));
+        value.setEndAt(BeijingTime.toLocal(input.endAt()));
         value.setAllDay(input.allDay());
         value.setCategory(input.category());
         value.setLocation(AccountService.trimToNull(input.location()));
@@ -157,7 +156,8 @@ public class CalendarService {
 
     private CalendarEntryView customView(CalendarEvent value, String creator) {
         return new CalendarEntryView("CUSTOM", value.getId(), value.getTitle(), value.getDescription(),
-                value.getStartAt(), value.getEndAt(), value.isAllDay(), value.getCategory(),
+                BeijingTime.toOffset(value.getStartAt()), BeijingTime.toOffset(value.getEndAt()),
+                value.isAllDay(), value.getCategory(),
                 value.getLocation(), true, value.getCreatedBy(), creator);
     }
 
@@ -165,7 +165,8 @@ public class CalendarService {
                                     LocalDateTime startAt, LocalDateTime endAt, boolean allDay,
                                     String category, String location, boolean editable,
                                     Long createdBy, Map<Long, String> names) {
-        return new CalendarEntryView(sourceType, id, title, description, startAt, endAt, allDay,
+        return new CalendarEntryView(sourceType, id, title, description,
+                BeijingTime.toOffset(startAt), BeijingTime.toOffset(endAt), allDay,
                 category, location, editable, createdBy,
                 names.getOrDefault(createdBy, "已注销用户"));
     }

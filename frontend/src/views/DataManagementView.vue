@@ -50,11 +50,16 @@ async function load() {
   }
 }
 
-function exportData() {
+async function exportData() {
   exporting.value = true
-  api.exportData()
-  window.setTimeout(() => { exporting.value = false }, 800)
-  show('浏览器正在直接下载数据压缩包，不会把整个文件读入页面内存。', 'success')
+  try {
+    await api.exportData()
+    show('数据压缩包已准备好，浏览器正在直接下载。', 'success')
+  } catch (cause) {
+    show(errorMessage(cause), 'error')
+  } finally {
+    exporting.value = false
+  }
 }
 
 function key(item: TrashItem) {

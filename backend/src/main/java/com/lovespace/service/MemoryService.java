@@ -5,13 +5,13 @@ import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.*;
 import com.lovespace.repository.*;
 import com.lovespace.security.CurrentUserService;
+import com.lovespace.time.BeijingTime;
 import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.text.Normalizer;
 import java.util.*;
-import java.util.stream.Stream;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
@@ -38,7 +38,7 @@ public class MemoryService {
                                          LocalDate date, String tag) {
         User user = current.user(auth);
         if (page < 0 || size < 1 || size > 100) throw ApiException.badRequest("分页参数无效");
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "eventAt", "id"));
+        String selectedTag = normalizeTagForQuery(tag);
         Specification<Memory> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("coupleId"), user.getCouple().getId()));
@@ -55,33 +55,26 @@ public class MemoryService {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("eventAt"), start));
                 predicates.add(cb.lessThan(root.get("eventAt"), start.plusDays(1)));
             }
-            if (tag != null && !tag.isBlank()) {
-                predicates.add(cb.equal(cb.lower(root.join("tags")), tagKey(tag)));
+            if (selectedTag != null) {
+                predicates.add(cb.equal(cb.lower(root.join("tags")), selectedTag));
                 query.distinct(true);
             }
             return cb.and(predicates.toArray(Predicate[]::new));
         };
+        if (!offsetFitsJpa(page, size)) {
+            return emptyPage(page, size, memories.count(spec));
+        }
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "eventAt", "id"));
         Page<Memory> result = memories.findAll(spec, pageable);
         List<MemoryView> content = views.memories(result.getContent());
-        return new PageResponse<>(content, result.getNumber(), result.getSize(), result.getTotalElements(),
-                result.getTotalPages(), result.isFirst(), result.isLast());
+        return pageResponse(page, size, result.getTotalElements(), content);
     }
 
     @Transactional(readOnly = true)
     public List<MemoryTagView> tags(Authentication auth) {
         User user = current.user(auth);
-        Map<String, Long> countsByKey = new LinkedHashMap<>();
-        Map<String, String> displayByKey = new LinkedHashMap<>();
-        memories.findByCoupleIdAndDeletedAtIsNullOrderByEventAtDesc(user.getCouple().getId()).forEach(memory ->
-                memory.getTags().forEach(tag -> {
-                    String key = tagKey(tag);
-                    displayByKey.putIfAbsent(key, tag);
-                    countsByKey.merge(key, 1L, Long::sum);
-                }));
-        return countsByKey.entrySet().stream()
-                .map(entry -> new MemoryTagView(displayByKey.get(entry.getKey()), entry.getValue()))
-                .sorted(Comparator.comparingLong(MemoryTagView::memoryCount).reversed()
-                        .thenComparing(MemoryTagView::name, String.CASE_INSENSITIVE_ORDER))
+        return memories.aggregateActiveTags(user.getCouple().getId()).stream()
+                .map(item -> new MemoryTagView(item.getName(), item.getMemoryCount()))
                 .toList();
     }
 
@@ -90,29 +83,25 @@ public class MemoryService {
         User user = current.user(auth);
         if (page < 0 || size < 1 || size > 100) throw ApiException.badRequest("分页参数无效");
         String keyword = AccountService.trimToNull(search);
-        String selectedTag = AccountService.trimToNull(tag);
-        Map<Long, Memory> memoryById = memories
-                .findByCoupleIdAndDeletedAtIsNullOrderByEventAtDesc(user.getCouple().getId()).stream()
-                .filter(memory -> selectedTag == null || memory.getTags().stream()
-                        .anyMatch(value -> tagKey(value).equals(tagKey(selectedTag))))
-                .filter(memory -> keyword == null || matches(memory, keyword))
-                .collect(java.util.stream.Collectors.toMap(Memory::getId, value -> value));
-        List<Media> visualMedia = media.findByCoupleIdAndMediaTypeIn(
-                        user.getCouple().getId(), List.of("image", "video")).stream()
-                .filter(item -> item.getMemoryId() != null && memoryById.containsKey(item.getMemoryId()))
-                .sorted(Comparator
-                        .comparing((Media item) -> memoryById.get(item.getMemoryId()).getEventAt()).reversed()
-                        .thenComparing(Media::getId, Comparator.reverseOrder()))
-                .toList();
-        int from = Math.min(page * size, visualMedia.size());
-        int to = Math.min(from + size, visualMedia.size());
-        List<AlbumItemView> content = visualMedia.subList(from, to).stream().map(item -> {
+        String keywordPattern = keyword == null ? null : "%" + escapeLike(keyword.toLowerCase(Locale.ROOT)) + "%";
+        String selectedTag = normalizeTagForQuery(tag);
+        List<String> mediaTypes = List.of("image", "video");
+        Long coupleId = user.getCouple().getId();
+        if (!offsetFitsJpa(page, size)) {
+            return emptyPage(page, size, media.countAlbumMedia(coupleId, mediaTypes, keywordPattern, selectedTag));
+        }
+        Page<Media> result = media.findAlbumMedia(coupleId, mediaTypes, keywordPattern, selectedTag,
+                PageRequest.of(page, size));
+        List<Media> visualMedia = result.getContent();
+        Map<Long, Memory> memoryById = memories.findAllById(visualMedia.stream()
+                        .map(Media::getMemoryId).filter(Objects::nonNull).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(Memory::getId, value -> value));
+        List<AlbumItemView> content = visualMedia.stream().map(item -> {
             Memory memory = memoryById.get(item.getMemoryId());
             return new AlbumItemView(views.media(item), memory.getId(), memory.getTitle(),
-                    memory.getEventAt(), memory.getLocation(), List.copyOf(memory.getTags()));
+                    BeijingTime.toOffset(memory.getEventAt()), memory.getLocation(), List.copyOf(memory.getTags()));
         }).toList();
-        int pages = visualMedia.isEmpty() ? 0 : (int) Math.ceil((double) visualMedia.size() / size);
-        return new PageResponse<>(content, page, size, visualMedia.size(), pages, page == 0, page + 1 >= pages);
+        return pageResponse(page, size, result.getTotalElements(), content);
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -191,8 +180,7 @@ public class MemoryService {
             }
             throw ApiException.notFound("还没有可抽取的回忆");
         }
-        int index = java.util.concurrent.ThreadLocalRandom.current().nextInt(Math.toIntExact(total));
-        return memories.findAll(scope, PageRequest.of(index, 1, Sort.by("id"))).stream().findFirst()
+        return memories.findRandomActive(user.getCouple().getId(), excludeId)
                 .map(views::memory).orElseThrow(() -> ApiException.notFound("还没有可抽取的回忆"));
     }
 
@@ -202,14 +190,14 @@ public class MemoryService {
         Memory memory = memories.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("回忆不存在"));
         if (!memory.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能删除自己的回忆");
-        memory.moveToTrash(user.getId(), LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
+        memory.moveToTrash(user.getId(), BeijingTime.now());
         memories.save(memory);
     }
 
     private void apply(Memory value, MemoryRequest input) {
         value.setTitle(input.title().trim());
         value.setDescription(AccountService.trimToNull(input.description()));
-        value.setEventAt(input.eventAt());
+        value.setEventAt(BeijingTime.toLocal(input.eventAt()));
         value.setLocation(AccountService.trimToNull(input.location()));
         LinkedHashSet<String> normalizedTags = new LinkedHashSet<>();
         Map<String, String> displayTagsByKey = new LinkedHashMap<>();
@@ -234,10 +222,19 @@ public class MemoryService {
         if (!memory.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能编辑自己的回忆");
         return memory;
     }
-    private boolean matches(Memory memory, String search) {
-        String keyword = search.toLowerCase(Locale.ROOT);
-        return Stream.of(memory.getTitle(), memory.getDescription(), memory.getLocation())
-                .filter(Objects::nonNull).anyMatch(value -> value.toLowerCase(Locale.ROOT).contains(keyword));
+    private String normalizeTagForQuery(String value) {
+        String normalized = AccountService.trimToNull(value);
+        return normalized == null ? null : normalized.replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+    private boolean offsetFitsJpa(int page, int size) { return (long) page * size <= Integer.MAX_VALUE; }
+    private <T> PageResponse<T> emptyPage(int page, int size, long total) {
+        return pageResponse(page, size, total, List.of());
+    }
+    private <T> PageResponse<T> pageResponse(int page, int size, long total, List<T> content) {
+        long pageCount = total / size + (total % size == 0 ? 0 : 1);
+        int totalPages = pageCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) pageCount;
+        boolean last = pageCount == 0 || (long) page >= pageCount - 1;
+        return new PageResponse<>(content, page, size, total, totalPages, page == 0, last);
     }
     private String tagKey(String value) {
         return Normalizer.normalize(value, Normalizer.Form.NFKD)

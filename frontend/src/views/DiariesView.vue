@@ -11,7 +11,7 @@ import BaseModal from '../components/BaseModal.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import type { Diary, UserProfile } from '../types'
-import { formatDate, sameId, todayInput } from '../utils'
+import { dateDay, formatDate, sameId, todayInput } from '../utils'
 
 const { show } = useToast()
 const diaries = ref<Diary[]>([])
@@ -128,7 +128,7 @@ function toggle(id: Diary['id']) {
     <EmptyState v-else-if="!filtered.length" :title="search ? '没有找到这句话' : '这一页还是空白的'" :description="search ? '换个关键词试试，也许它藏在另一种表达里。' : '不必等到特别的日子，普通的一天也值得写下来。'"><button v-if="!search" class="button primary small" type="button" @click="openCreate"><Plus :size="17" />写第一篇</button></EmptyState>
     <div v-else class="diary-grid">
       <article v-for="diary in filtered" :key="diary.id" class="diary-card">
-        <div class="diary-date"><strong>{{ new Date(diary.diaryDate).getDate().toString().padStart(2, '0') }}</strong><span>{{ formatDate(diary.diaryDate, { month: 'short', year: 'numeric' }) }}</span></div>
+        <div class="diary-date"><strong>{{ String(dateDay(diary.diaryDate)).padStart(2, '0') }}</strong><span>{{ formatDate(diary.diaryDate, { month: 'short', year: 'numeric' }) }}</span></div>
         <div class="diary-paper">
           <header><span class="mood-stamp">{{ diary.mood || '日常' }}</span><div v-if="canEdit(diary)" class="card-actions"><button class="icon-button" type="button" aria-label="编辑日记" @click="openEdit(diary)"><Pencil :size="17" /></button><button class="icon-button danger" type="button" aria-label="删除日记" @click="remove(diary)"><Trash2 :size="17" /></button></div></header>
           <h2>{{ diary.title }}</h2>

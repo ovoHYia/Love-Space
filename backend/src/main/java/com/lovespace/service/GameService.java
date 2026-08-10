@@ -12,6 +12,7 @@ import com.lovespace.repository.GameSessionRepository;
 import com.lovespace.repository.MediaRepository;
 import com.lovespace.repository.MemoryRepository;
 import com.lovespace.security.CurrentUserService;
+import com.lovespace.time.BeijingTime;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -452,7 +453,7 @@ public class GameService {
         List<GameGuessView> guesses = state.guesses().stream()
                 .map(guess -> new GameGuessView(
                         guess.userId(), nicknames.getOrDefault(guess.userId(), "对方"),
-                        guess.text(), guess.correct(), guess.createdAt()))
+                        guess.text(), guess.correct(), BeijingTime.toOffset(guess.createdAt())))
                 .toList();
         return new GameSessionView(
                 game.getId(), revision(game), game.getGameType(), game.getStatus(), game.getCreatedBy(),
@@ -461,7 +462,8 @@ public class GameService {
                 state.answers().get(user.getId()), revealed ? state.answers().get(partner.getId()) : null,
                 revealed, matched, state.score(), secretWord, state.strokes(), guesses, state.roundComplete(),
                 null, null,
-                game.getCreatedAt(), game.getUpdatedAt(), game.getFinishedAt());
+                BeijingTime.toOffset(game.getCreatedAt()), BeijingTime.toOffset(game.getUpdatedAt()),
+                BeijingTime.toOffset(game.getFinishedAt()));
     }
 
     private GameSessionView viewMemory(GameSession game, User user, User partner) {
@@ -477,7 +479,7 @@ public class GameService {
                 imageUrl,
                 revealed ? state.memoryTitle() : null,
                 revealed ? state.memoryDescription() : null,
-                revealed ? state.memoryEventAt() : null,
+                 revealed ? BeijingTime.toOffset(state.memoryEventAt()) : null,
                 revealed ? state.memoryLocation() : null);
         return new GameSessionView(
                 game.getId(), revision(game), game.getGameType(), game.getStatus(), game.getCreatedBy(),
@@ -486,7 +488,8 @@ public class GameService {
                 state.answers().get(user.getId()), revealed ? state.answers().get(partner.getId()) : null,
                 revealed, matched, state.score(), revealed ? state.correctAnswer() : null,
                 List.of(), List.of(), state.roundComplete(), null, memory,
-                game.getCreatedAt(), game.getUpdatedAt(), game.getFinishedAt());
+                BeijingTime.toOffset(game.getCreatedAt()), BeijingTime.toOffset(game.getUpdatedAt()),
+                BeijingTime.toOffset(game.getFinishedAt()));
     }
 
     private GameSessionView viewTruth(GameSession game, User user, User partner) {
@@ -497,7 +500,8 @@ public class GameService {
                 game.getRoundNumber(), game.getCurrentTurnUserId(), state.prompt(), List.of(),
                 null, null, false, null, 0, null, List.of(), List.of(), false,
                 state.category(), null,
-                game.getCreatedAt(), game.getUpdatedAt(), game.getFinishedAt());
+                BeijingTime.toOffset(game.getCreatedAt()), BeijingTime.toOffset(game.getUpdatedAt()),
+                BeijingTime.toOffset(game.getFinishedAt()));
     }
 
     private GameSessionView viewUnknown(GameSession game, User user, User partner) {
@@ -507,7 +511,8 @@ public class GameService {
                 game.getRoundNumber(), game.getCurrentTurnUserId(), null, List.of(),
                 null, null, false, null, 0, null, List.of(), List.of(), false,
                 null, null,
-                game.getCreatedAt(), game.getUpdatedAt(), game.getFinishedAt());
+                BeijingTime.toOffset(game.getCreatedAt()), BeijingTime.toOffset(game.getUpdatedAt()),
+                BeijingTime.toOffset(game.getFinishedAt()));
     }
 
     private StoredGameState read(GameSession game) {

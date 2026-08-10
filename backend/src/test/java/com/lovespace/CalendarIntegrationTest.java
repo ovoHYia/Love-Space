@@ -138,7 +138,7 @@ class CalendarIntegrationTest {
                 .andExpect(jsonPath("$[*].sourceType", containsInAnyOrder(
                         "CUSTOM", "ANNIVERSARY", "MEMORY", "DIARY", "WISH", "LETTER")))
                 .andExpect(jsonPath("$[?(@.sourceType == 'ANNIVERSARY')].startAt",
-                        contains(day3 + "T00:00:00")));
+                        contains(day3 + "T00:00:00+08:00")));
         mvc.perform(get("/api/calendar").session(bob)
                         .param("from", from).param("to", to))
                 .andExpect(status().isOk())

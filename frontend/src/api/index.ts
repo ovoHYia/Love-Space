@@ -1,5 +1,5 @@
 import { jsonRequest, request, startDownload } from './client'
-import type { AlbumItem, Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, GameSession, GameStroke, GameType, Letter, MediaItem, Memory, MemoryTag, MonthlyReport, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
+import type { AlbumItem, Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, ExportPreparation, GameSession, GameStroke, GameType, Letter, MediaItem, Memory, MemoryTag, MonthlyReport, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
 
 export interface MemoryInput {
   title: string
@@ -75,7 +75,12 @@ export const api = {
   restoreTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}/restore`, { method: 'POST' }),
   purgeTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}`, { method: 'DELETE' }),
   emptyTrash: () => request<void>('/trash', { method: 'DELETE' }),
-  exportData: () => startDownload('/data/export'),
+  prepareExport: () => jsonRequest<ExportPreparation>('/data/export/prepare', 'POST', {}),
+  exportData: async () => {
+    const prepared = await jsonRequest<ExportPreparation>('/data/export/prepare', 'POST', {})
+    startDownload(prepared.downloadUrl)
+    return prepared
+  },
   notifications: (query: { page?: number; size?: number; status?: string; category?: string; keyword?: string } = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => {

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, request, resetCsrfToken, startDownload } from './client'
+import { api } from './index'
 
 function response(body: string, status = 200, contentType = 'application/json') {
   return {
@@ -39,6 +40,18 @@ describe('streaming downloads', () => {
 
     expect(click).toHaveBeenCalledOnce()
     expect(document.querySelector('a')).toBeNull()
+  })
+
+  it('does not start a download when export preparation fails', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const responses = [
+      response('{"token":"token"}'),
+      response('{"code":"EXPORT_PREPARE_FAILED","message":"打包失败"}', 409),
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(responses.shift())))
+
+    await expect(api.exportData()).rejects.toMatchObject({ code: 'EXPORT_PREPARE_FAILED' })
+    expect(click).not.toHaveBeenCalled()
   })
 })
 

@@ -4,17 +4,24 @@ import com.lovespace.domain.*;
 import com.lovespace.api.error.ApiException;
 import com.lovespace.repository.*;
 import com.lovespace.security.CurrentUserService;
+import com.lovespace.time.BeijingTime;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-import org.springframework.core.io.Resource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +29,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class DataExportService {
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    private static final long SNAPSHOT_TTL_MINUTES = 10;
 
     private final CurrentUserService current;
     private final UserRepository users;
@@ -39,6 +46,14 @@ public class DataExportService {
     private final GameSessionRepository gameSessions;
     private final MediaStorageService storage;
     private final ObjectMapper objectMapper;
+    private final Path exportDirectory;
+    private final Map<String, ExportSnapshot> prepared = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ScheduledExecutorService cleanupExecutor =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "love-space-export-cleanup");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     public DataExportService(CurrentUserService current, UserRepository users, MoodRepository moods,
                              MemoryRepository memories, MediaRepository media, DiaryRepository diaries,
@@ -47,7 +62,8 @@ public class DataExportService {
                              NotificationRepository notifications, NotificationPreferenceRepository notificationPreferences,
                              GameSessionRepository gameSessions,
                              MediaStorageService storage,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             @Value("${app.upload-dir:./data/uploads}") String uploadDir) {
         this.current = current;
         this.users = users;
         this.moods = moods;
@@ -63,48 +79,50 @@ public class DataExportService {
         this.gameSessions = gameSessions;
         this.storage = storage;
         this.objectMapper = objectMapper;
+        this.exportDirectory = Path.of(uploadDir).toAbsolutePath().normalize();
+    }
+
+    @PostConstruct
+    void startCleanup() {
+        cleanupExecutor.scheduleAtFixedRate(this::cleanupExpired, 1, 1,
+                java.util.concurrent.TimeUnit.MINUTES);
+    }
+
+    @PreDestroy
+    void stopCleanup() {
+        cleanupExecutor.shutdownNow();
+        prepared.values().forEach(this::deleteSnapshotFile);
+        prepared.clear();
     }
 
     @Transactional(readOnly = true)
-    public ExportBundle prepare(Authentication auth) {
+    public ExportSnapshot prepare(Authentication auth) {
         User user = current.user(auth);
         Long userId = user.getId();
         Long coupleId = user.getCouple().getId();
-        LocalDateTime now = LocalDateTime.now(ZONE);
+        LocalDateTime now = BeijingTime.now();
 
         List<Memory> visibleMemories = visible(memories.findByCoupleIdOrderById(coupleId), userId);
         Set<Long> visibleMemoryIds = visibleMemories.stream().map(Memory::getId).collect(Collectors.toSet());
         List<Media> visibleMedia = media.findByCoupleIdOrderById(coupleId).stream()
                 .filter(item -> item.getMemoryId() == null || visibleMemoryIds.contains(item.getMemoryId()))
                 .toList();
-        Map<Long, Resource> mediaResources = new LinkedHashMap<>();
-        List<Long> missingMediaIds = new ArrayList<>();
-        for (Media item : visibleMedia) {
-            Optional<Resource> resource = storage.loadForExport(item);
-            if (resource.isPresent()) mediaResources.put(item.getId(), resource.orElseThrow());
-            else missingMediaIds.add(item.getId());
-        }
-        if (!missingMediaIds.isEmpty()) {
-            throw ApiException.conflict("导出检查发现媒体原文件缺失，请先修复存储完整性。缺失媒体 ID："
-                    + missingMediaIds.stream().map(String::valueOf).collect(Collectors.joining(", ")));
-        }
-
         Map<String, Object> export = new LinkedHashMap<>();
         export.put("formatVersion", 3);
-        export.put("generatedAt", now);
+        export.put("generatedAt", BeijingTime.toOffset(now));
         export.put("space", orderedMap(
                 "id", coupleId,
                 "spaceName", user.getCouple().getSpaceName(),
-                "loveStartedAt", user.getCouple().getLoveStartedAt(),
-                "createdAt", user.getCouple().getCreatedAt(),
-                "updatedAt", user.getCouple().getUpdatedAt()));
+                "loveStartedAt", moment(user.getCouple().getLoveStartedAt()),
+                "createdAt", moment(user.getCouple().getCreatedAt()),
+                "updatedAt", moment(user.getCouple().getUpdatedAt())));
         export.put("members", users.findByCoupleIdOrderById(coupleId).stream().map(item -> orderedMap(
                 "id", item.getId(),
                 "username", item.getUsername(),
                 "nickname", item.getNickname(),
                 "avatarMediaId", item.getAvatarMediaId(),
-                "createdAt", item.getCreatedAt(),
-                "updatedAt", item.getUpdatedAt())).toList());
+                "createdAt", moment(item.getCreatedAt()),
+                "updatedAt", moment(item.getUpdatedAt()))).toList());
         export.put("moods", moods.findByCoupleIdOrderByMoodDateAscUserIdAsc(coupleId).stream().map(item -> orderedMap(
                 "id", item.getId(),
                 "userId", item.getUserId(),
@@ -112,19 +130,19 @@ public class DataExportService {
                 "emoji", item.getEmoji(),
                 "label", item.getLabel(),
                 "note", item.getNote(),
-                "createdAt", item.getCreatedAt(),
-                "updatedAt", item.getUpdatedAt())).toList());
+                "createdAt", moment(item.getCreatedAt()),
+                "updatedAt", moment(item.getUpdatedAt()))).toList());
         export.put("memories", visibleMemories.stream().map(item -> orderedMap(
                 "id", item.getId(),
                 "authorId", item.getAuthorId(),
                 "title", item.getTitle(),
                 "description", item.getDescription(),
-                "eventAt", item.getEventAt(),
+                "eventAt", moment(item.getEventAt()),
                 "location", item.getLocation(),
                 "tags", List.copyOf(item.getTags()),
-                "createdAt", item.getCreatedAt(),
-                "updatedAt", item.getUpdatedAt(),
-                "deletedAt", item.getDeletedAt())).toList());
+                "createdAt", moment(item.getCreatedAt()),
+                "updatedAt", moment(item.getUpdatedAt()),
+                "deletedAt", moment(item.getDeletedAt()))).toList());
         export.put("media", visibleMedia.stream().map(item -> orderedMap(
                 "id", item.getId(),
                 "ownerId", item.getOwnerId(),
@@ -134,7 +152,7 @@ public class DataExportService {
                 "mediaType", item.getMediaType(),
                 "byteSize", item.getByteSize(),
                 "archivePath", archivePath(item),
-                "createdAt", item.getCreatedAt())).toList());
+                "createdAt", moment(item.getCreatedAt()))).toList());
         export.put("diaries", visible(diaries.findByCoupleIdOrderById(coupleId), userId).stream().map(item -> orderedMap(
                 "id", item.getId(),
                 "authorId", item.getAuthorId(),
@@ -142,9 +160,9 @@ public class DataExportService {
                 "content", item.getContent(),
                 "diaryDate", item.getDiaryDate(),
                 "mood", item.getMood(),
-                "createdAt", item.getCreatedAt(),
-                "updatedAt", item.getUpdatedAt(),
-                "deletedAt", item.getDeletedAt())).toList());
+                "createdAt", moment(item.getCreatedAt()),
+                "updatedAt", moment(item.getUpdatedAt()),
+                "deletedAt", moment(item.getDeletedAt()))).toList());
 
         LinkedHashMap<Long, LetterMessage> visibleMessages = messages
                 .findAllVisibleByCoupleAndUser(coupleId, userId, now).stream()
@@ -158,10 +176,10 @@ public class DataExportService {
                 "recipientId", item.getRecipientId(),
                 "content", sealedFor(item, userId) ? null : item.getContent(),
                 "scheduled", item.isScheduled(),
-                "deliverAt", item.getDeliverAt(),
-                "readAt", item.getReadAt(),
-                "createdAt", item.getCreatedAt(),
-                "deletedAt", item.getDeletedAt())).toList());
+                "deliverAt", moment(item.getDeliverAt()),
+                "readAt", moment(item.getReadAt()),
+                "createdAt", moment(item.getCreatedAt()),
+                "deletedAt", moment(item.getDeletedAt()))).toList());
         export.put("anniversaries", visible(anniversaries.findByCoupleIdOrderById(coupleId), userId).stream()
                 .map(item -> orderedMap(
                         "id", item.getId(),
@@ -172,9 +190,9 @@ public class DataExportService {
                         "recurringYearly", item.isRecurringYearly(),
                         "reminderDays", item.getReminderDays(),
                         "note", item.getNote(),
-                        "createdAt", item.getCreatedAt(),
-                        "updatedAt", item.getUpdatedAt(),
-                        "deletedAt", item.getDeletedAt())).toList());
+                        "createdAt", moment(item.getCreatedAt()),
+                        "updatedAt", moment(item.getUpdatedAt()),
+                        "deletedAt", moment(item.getDeletedAt()))).toList());
         export.put("wishes", visible(wishes.findByCoupleIdOrderById(coupleId), userId).stream().map(item -> orderedMap(
                 "id", item.getId(),
                 "createdBy", item.getCreatedBy(),
@@ -184,24 +202,24 @@ public class DataExportService {
                 "targetDate", item.getTargetDate(),
                 "status", item.getStatus(),
                 "completedBy", item.getCompletedBy(),
-                "completedAt", item.getCompletedAt(),
-                "createdAt", item.getCreatedAt(),
-                "updatedAt", item.getUpdatedAt(),
-                "deletedAt", item.getDeletedAt())).toList());
+                "completedAt", moment(item.getCompletedAt()),
+                "createdAt", moment(item.getCreatedAt()),
+                "updatedAt", moment(item.getUpdatedAt()),
+                "deletedAt", moment(item.getDeletedAt()))).toList());
         export.put("calendarEvents", visible(calendarEvents.findByCoupleIdOrderById(coupleId), userId).stream()
                 .map(item -> orderedMap(
                         "id", item.getId(),
                         "createdBy", item.getCreatedBy(),
                         "title", item.getTitle(),
                         "description", item.getDescription(),
-                        "startAt", item.getStartAt(),
-                        "endAt", item.getEndAt(),
+                        "startAt", moment(item.getStartAt()),
+                        "endAt", moment(item.getEndAt()),
                         "allDay", item.isAllDay(),
                         "category", item.getCategory(),
                         "location", item.getLocation(),
-                        "createdAt", item.getCreatedAt(),
-                        "updatedAt", item.getUpdatedAt(),
-                        "deletedAt", item.getDeletedAt())).toList());
+                        "createdAt", moment(item.getCreatedAt()),
+                        "updatedAt", moment(item.getUpdatedAt()),
+                        "deletedAt", moment(item.getDeletedAt()))).toList());
         export.put("notifications", notifications.findByUserIdOrderByCreatedAtAsc(userId).stream().map(item -> orderedMap(
                 "id", item.getId(),
                 "type", item.getType(),
@@ -209,14 +227,14 @@ public class DataExportService {
                 "body", item.getBody(),
                 "referenceType", item.getReferenceType(),
                 "referenceId", item.getReferenceId(),
-                "readAt", item.getReadAt(),
-                "createdAt", item.getCreatedAt())).toList());
+                "readAt", moment(item.getReadAt()),
+                "createdAt", moment(item.getCreatedAt()))).toList());
         export.put("notificationPreferences", notificationPreferences.findById(userId)
                 .map(item -> orderedMap(
                         "anniversaryEnabled", item.isAnniversaryEnabled(),
                         "letterEnabled", item.isLetterEnabled(),
                         "wishEnabled", item.isWishEnabled(),
-                        "updatedAt", item.getUpdatedAt()))
+                        "updatedAt", moment(item.getUpdatedAt())))
                 .orElse(null));
         export.put("games", gameSessions.findByCoupleIdOrderById(coupleId).stream().map(item -> orderedMap(
                 "id", item.getId(),
@@ -226,29 +244,104 @@ public class DataExportService {
                 "currentTurnUserId", item.getCurrentTurnUserId(),
                 "roundNumber", item.getRoundNumber(),
                 "stateJson", GameSession.STATUS_FINISHED.equals(item.getStatus()) ? item.getStateJson() : null,
-                "createdAt", item.getCreatedAt(),
-                "updatedAt", item.getUpdatedAt(),
-                "finishedAt", item.getFinishedAt())).toList());
+                "createdAt", moment(item.getCreatedAt()),
+                "updatedAt", moment(item.getUpdatedAt()),
+                "finishedAt", moment(item.getFinishedAt()))).toList());
 
-        List<ExportMedia> mediaEntries = visibleMedia.stream()
-                .map(item -> new ExportMedia(archivePath(item), mediaResources.get(item.getId())))
-                .toList();
-        return new ExportBundle(Collections.unmodifiableMap(export), mediaEntries);
+        Path snapshot = null;
+        try {
+            Files.createDirectories(exportDirectory);
+            snapshot = Files.createTempFile(exportDirectory, ".love-space-export-", ".zip");
+            try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(snapshot, StandardOpenOption.TRUNCATE_EXISTING))) {
+                zip.putNextEntry(new ZipEntry("love-space-data.json"));
+                zip.write(objectMapper.writeValueAsBytes(export));
+                zip.closeEntry();
+                for (Media item : visibleMedia) {
+                    zip.putNextEntry(new ZipEntry(archivePath(item)));
+                    try (InputStream input = storage.openForExport(item)) {
+                        input.transferTo(zip);
+                    } catch (NoSuchFileException | java.io.FileNotFoundException ex) {
+                        throw missingMedia(item);
+                    } catch (IOException ex) {
+                        throw ApiException.conflict("导出读取媒体文件失败，请稍后重试。媒体 ID：" + item.getId());
+                    }
+                    zip.closeEntry();
+                }
+                zip.finish();
+            }
+            String filename = "love-space-export-" + now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".zip";
+            return new ExportSnapshot(snapshot, userId, coupleId, filename,
+                    Instant.now().plusSeconds(SNAPSHOT_TTL_MINUTES * 60));
+        } catch (ApiException ex) {
+            deleteSnapshotFile(snapshot);
+            throw ex;
+        } catch (IOException ex) {
+            deleteSnapshotFile(snapshot);
+            throw new ApiException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
+                    "EXPORT_PREPARE_FAILED", "生成数据导出文件失败，请稍后重试");
+        }
     }
 
-    public void writeZip(ExportBundle bundle, OutputStream output) throws IOException {
-        try (ZipOutputStream zip = new ZipOutputStream(output)) {
-            zip.putNextEntry(new ZipEntry("love-space-data.json"));
-            zip.write(objectMapper.writeValueAsBytes(bundle.export()));
-            zip.closeEntry();
-            for (ExportMedia item : bundle.media()) {
-                zip.putNextEntry(new ZipEntry(item.archivePath()));
-                try (InputStream input = item.resource().getInputStream()) {
-                    input.transferTo(zip);
-                }
-                zip.closeEntry();
+    public ExportSnapshot register(ExportSnapshot snapshot) {
+        String token = UUID.randomUUID().toString();
+        prepared.put(token, snapshot);
+        return snapshot.withToken(token);
+    }
+
+    @Transactional(readOnly = true)
+    public ExportSnapshot claim(Authentication auth, String token) {
+        User user = current.user(auth);
+        ExportSnapshot snapshot = prepared.get(token);
+        if (snapshot == null || snapshot.expiresAt().isBefore(Instant.now())) {
+            if (snapshot != null && prepared.remove(token, snapshot)) deleteSnapshotFile(snapshot);
+            throw ApiException.notFound("导出文件不存在或已过期");
+        }
+        if (!Objects.equals(snapshot.userId(), user.getId())) {
+            throw ApiException.notFound("导出文件不存在或已过期");
+        }
+        if (!prepared.remove(token, snapshot)) throw ApiException.notFound("导出文件不存在或已过期");
+        return snapshot;
+    }
+
+    public InputStream openSnapshot(ExportSnapshot snapshot) throws IOException {
+        return Files.newInputStream(snapshot.path(), StandardOpenOption.READ);
+    }
+
+    public void deleteSnapshot(ExportSnapshot snapshot) {
+        deleteSnapshotFile(snapshot);
+    }
+
+    public void scheduleCleanup(ExportSnapshot snapshot) {
+        cleanupExecutor.schedule(() -> deleteSnapshotFile(snapshot), SNAPSHOT_TTL_MINUTES,
+                java.util.concurrent.TimeUnit.MINUTES);
+    }
+
+    private ApiException missingMedia(Media item) {
+        return ApiException.conflict("导出检查发现媒体原文件缺失，请先修复存储完整性。缺失媒体 ID：" + item.getId());
+    }
+
+    private void cleanupExpired() {
+        Instant now = Instant.now();
+        prepared.entrySet().removeIf(entry -> {
+            if (!entry.getValue().expiresAt().isAfter(now)) {
+                deleteSnapshotFile(entry.getValue());
+                return true;
             }
-            zip.finish();
+            return false;
+        });
+    }
+
+    private void deleteSnapshotFile(ExportSnapshot snapshot) {
+        if (snapshot == null) return;
+        deleteSnapshotFile(snapshot.path());
+    }
+
+    private void deleteSnapshotFile(Path path) {
+        if (path == null) return;
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException ignored) {
+            // A later cleanup pass can remove a file that was still open on Windows.
         }
     }
 
@@ -269,12 +362,21 @@ public class DataExportService {
         return "media/" + item.getId() + "-" + safe;
     }
 
+    private OffsetDateTime moment(LocalDateTime value) { return BeijingTime.toOffset(value); }
+
     private Map<String, Object> orderedMap(Object... values) {
         Map<String, Object> result = new LinkedHashMap<>();
         for (int i = 0; i < values.length; i += 2) result.put((String) values[i], values[i + 1]);
         return result;
     }
 
-    public record ExportBundle(Map<String, Object> export, List<ExportMedia> media) {}
-    public record ExportMedia(String archivePath, Resource resource) {}
+    public record ExportSnapshot(Path path, Long userId, Long coupleId, String filename,
+                                 Instant expiresAt, String token) {
+        public ExportSnapshot(Path path, Long userId, Long coupleId, String filename, Instant expiresAt) {
+            this(path, userId, coupleId, filename, expiresAt, null);
+        }
+        public ExportSnapshot withToken(String value) {
+            return new ExportSnapshot(path, userId, coupleId, filename, expiresAt, value);
+        }
+    }
 }

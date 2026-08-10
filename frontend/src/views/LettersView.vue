@@ -11,7 +11,7 @@ import BaseModal from '../components/BaseModal.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import type { Letter, UserProfile } from '../types'
-import { formatDate, formatDateTime, sameId, toLocalDateTimeInput } from '../utils'
+import { formatDate, formatDateTime, sameId, toBeijingOffsetDateTime, toLocalDateTimeInput } from '../utils'
 
 const { show } = useToast()
 const letters = ref<Letter[]>([])
@@ -86,7 +86,7 @@ async function send() {
   saving.value = true
   try {
     const scheduled = deliveryMode.value === 'scheduled'
-    await api.createMessage(content.value.trim(), scheduled ? deliverAt.value : undefined)
+    await api.createMessage(content.value.trim(), scheduled ? toBeijingOffsetDateTime(deliverAt.value) : undefined)
     content.value = ''
     composerOpen.value = false
     show(scheduled ? '时光胶囊已经封存，会在约定时间送达。' : '信笺已经送到对方的信箱。', 'success')

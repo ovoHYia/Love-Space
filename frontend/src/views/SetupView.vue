@@ -6,6 +6,7 @@ import { api } from '../api'
 import { errorMessage } from '../api/client'
 import { authState } from '../stores/auth'
 import { useToast } from '../composables/toast'
+import { formatDateTime, toBeijingOffsetDateTime } from '../utils'
 
 const router = useRouter()
 const { show } = useToast()
@@ -48,7 +49,7 @@ async function submit() {
     }
     await api.initialize({
       spaceName: form.spaceName.trim(),
-      loveStartedAt: form.loveStartedAt,
+      loveStartedAt: toBeijingOffsetDateTime(form.loveStartedAt),
       firstUser: { ...form.firstUser, username: form.firstUser.username.trim(), nickname: form.firstUser.nickname.trim() },
       secondUser: { ...form.secondUser, username: form.secondUser.username.trim(), nickname: form.secondUser.nickname.trim() },
     }, form.setupToken.trim())
@@ -126,7 +127,7 @@ async function submit() {
               <span class="confirm-heart"><Heart :size="25" fill="currentColor" /></span>
               <strong>{{ form.spaceName }}</strong>
               <p>{{ form.firstUser.nickname }} & {{ form.secondUser.nickname }}</p>
-              <small>从 {{ new Date(form.loveStartedAt).toLocaleString('zh-CN', { dateStyle: 'long', timeStyle: 'short' }) }} 开始</small>
+            <small>从 {{ formatDateTime(form.loveStartedAt) }} 开始</small>
             </div>
             <label class="field"><span>初始化口令</span><input v-model="form.setupToken" required minlength="32" autocomplete="one-time-code" placeholder="填写 .env 中的 SETUP_TOKEN" /><small>它只在第一次创建空间时使用，不会保存到网站。</small></label>
             <p class="privacy-note">只有知道账号和密码的你们能够进入。初始化完成后，为保护已有回忆，页面不会再次开放。</p>

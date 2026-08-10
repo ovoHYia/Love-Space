@@ -122,6 +122,12 @@ export interface AlbumItem {
   tags: string[]
 }
 
+export interface ExportPreparation {
+  downloadUrl: string
+  filename: string
+  expiresAt: string
+}
+
 export interface SyncEvent {
   action: string
   resource: string

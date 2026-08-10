@@ -153,8 +153,15 @@ Pop-Location
 仓库中的 `.github/workflows/verify.yml` 会在提交和拉取请求上执行前端测试、构建、依赖审计、
 `mvn clean package`，检查 JAR 内的 `BOOT-INF/classes/static/index.html` 和静态资源，并使用真实
 MySQL 8.4 验证全部 Flyway 迁移。前端 CI 步骤不会加载后端数据库和令牌变量。
-需要在本机验证真实 MySQL 时，可设置仅指向本机且数据库名以 `_test` 结尾的 `MYSQL_TEST_URL`、
-`MYSQL_TEST_USERNAME` 和 `MYSQL_TEST_PASSWORD` 后运行 `MySqlFlywayIntegrationTest`。
+需要在本机验证真实 MySQL 时，可执行下面的构建命令。`-MySqlTests` 会自动使用本机
+`love_space_test` 数据库和 `root` 用户，并在当前构建进程中安全提示输入密码；密码不会写入项目文件。
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File .\scripts\build.ps1 -MySqlTests
+```
+
+如果只想运行真实 MySQL 测试，也可以手动设置仅指向本机且数据库名以 `_test` 结尾的
+`MYSQL_TEST_URL`、`MYSQL_TEST_USERNAME` 和 `MYSQL_TEST_PASSWORD` 后运行相应的 Maven 测试。
 
 ## 生产部署
 

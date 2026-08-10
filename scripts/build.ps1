@@ -1,12 +1,17 @@
 [CmdletBinding()]
 param(
     [switch]$SkipTests,
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+    [switch]$MySqlTests
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "common.ps1")
+
+if ($MySqlTests -and $SkipTests) {
+    throw "-MySqlTests cannot be combined with -SkipTests."
+}
 
 $root = Get-ProjectRoot
 $backendPom = Join-Path $root "backend\pom.xml"
@@ -68,14 +73,61 @@ finally {
 # Invoke-FrontendCommand also strips backend variables from the npm environment.
 Import-ProjectEnv -Path (Join-Path $root ".env") -Optional
 
+$mysqlTestEnvironment = @{}
+if ($MySqlTests) {
+    $mysqlTestNames = @("MYSQL_TEST_URL", "MYSQL_TEST_USERNAME", "MYSQL_TEST_PASSWORD")
+    foreach ($name in $mysqlTestNames) {
+        $mysqlTestEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+    }
+
+    $mysqlTestUrl = $mysqlTestEnvironment["MYSQL_TEST_URL"]
+    if ([string]::IsNullOrWhiteSpace($mysqlTestUrl)) {
+        $mysqlTestUrl = "jdbc:mysql://localhost:3306/love_space_test?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&sslMode=DISABLED"
+    }
+    $mysqlTestUsername = $mysqlTestEnvironment["MYSQL_TEST_USERNAME"]
+    if ([string]::IsNullOrWhiteSpace($mysqlTestUsername)) {
+        $mysqlTestUsername = "root"
+    }
+    $mysqlTestPassword = $mysqlTestEnvironment["MYSQL_TEST_PASSWORD"]
+    if ([string]::IsNullOrWhiteSpace($mysqlTestPassword)) {
+        $securePassword = Read-Host -Prompt "请输入 root 的 MySQL 测试密码（不会写入项目文件）" -AsSecureString
+        $mysqlTestPassword = $securePassword | ConvertFrom-SecureString -AsPlainText
+    }
+    if ([string]::IsNullOrWhiteSpace($mysqlTestPassword)) {
+        throw "MYSQL_TEST_PASSWORD cannot be empty."
+    }
+
+    [Environment]::SetEnvironmentVariable("MYSQL_TEST_URL", $mysqlTestUrl, "Process")
+    [Environment]::SetEnvironmentVariable("MYSQL_TEST_USERNAME", $mysqlTestUsername, "Process")
+    [Environment]::SetEnvironmentVariable("MYSQL_TEST_PASSWORD", $mysqlTestPassword, "Process")
+    Write-Host "真实 MySQL 测试已启用：$mysqlTestUrl" -ForegroundColor Cyan
+}
+
 $mavenArgs = @("-f", $backendPom, "clean", "package")
 if ($SkipTests) {
     $mavenArgs += "-DskipTests"
 }
 
-Write-Host "Building backend..." -ForegroundColor Cyan
-& $maven @mavenArgs
-Assert-LastExitCode -Action "Backend build"
+try {
+    Write-Host "Building backend..." -ForegroundColor Cyan
+    & $maven @mavenArgs
+    Assert-LastExitCode -Action "Backend build"
+}
+finally {
+    if ($MySqlTests) {
+        foreach ($name in $mysqlTestNames) {
+            $previousValue = $mysqlTestEnvironment[$name]
+            if ($null -eq $previousValue) {
+                Remove-Item -LiteralPath "Env:$name" -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                Set-Item -LiteralPath "Env:$name" -Value $previousValue
+            }
+        }
+        $mysqlTestPassword = $null
+        $securePassword = $null
+    }
+}
 
 Write-Host "Build completed." -ForegroundColor Green
 Write-Host "Frontend output: $(Join-Path $frontendDir 'dist')"

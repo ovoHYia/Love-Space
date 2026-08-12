@@ -48,10 +48,12 @@ class DataManagementIntegrationTest {
     @Autowired UserRepository users;
     @Autowired PasswordEncoder encoder;
     @TempDir static Path uploadDir;
+    @TempDir static Path exportDir;
 
     @DynamicPropertySource
     static void registerUploadDirectory(DynamicPropertyRegistry registry) {
         registry.add("app.upload-dir", () -> uploadDir.toString());
+        registry.add("app.data-export.dir", () -> exportDir.toString());
     }
 
     private MockHttpSession alice;
@@ -77,11 +79,8 @@ class DataManagementIntegrationTest {
 
     @AfterEach
     void removeUploadedFiles() throws Exception {
-        Path root = uploadDir;
-        if (!Files.isDirectory(root)) return;
-        try (Stream<Path> paths = Files.list(root)) {
-            for (Path path : paths.toList()) Files.deleteIfExists(path);
-        }
+        clearDirectory(uploadDir);
+        clearDirectory(exportDir);
     }
 
     @Test
@@ -232,6 +231,22 @@ class DataManagementIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void preparingAgainReplacesTheSameUsersPendingSnapshot() throws Exception {
+        String first = mvc.perform(post("/api/data/export/prepare").with(csrf()).session(alice))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String firstPath = downloadPath(first);
+        String second = mvc.perform(post("/api/data/export/prepare").with(csrf()).session(alice))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String secondPath = downloadPath(second);
+
+        mvc.perform(get("/api" + firstPath).session(alice)).andExpect(status().isNotFound());
+        MvcResult started = mvc.perform(get("/api" + secondPath).session(alice))
+                .andExpect(request().asyncStarted()).andReturn();
+        mvc.perform(asyncDispatch(started)).andExpect(status().isOk());
+        assertNoTemporaryExports();
+    }
+
     private void restore(String type, long id) throws Exception {
         mvc.perform(post("/api/trash/{type}/{id}/restore", type, id).with(csrf()).session(alice))
                 .andExpect(status().isNoContent());
@@ -278,11 +293,17 @@ class DataManagementIntegrationTest {
     }
 
     private void assertNoTemporaryExports() throws Exception {
-        Path root = uploadDir;
-        if (!Files.isDirectory(root)) return;
-        try (Stream<Path> paths = Files.list(root)) {
+        if (!Files.isDirectory(exportDir)) return;
+        try (Stream<Path> paths = Files.list(exportDir)) {
             assertEquals(0, paths.filter(path -> path.getFileName().toString().startsWith(".love-space-export-"))
                     .count());
+        }
+    }
+
+    private void clearDirectory(Path root) throws Exception {
+        if (!Files.isDirectory(root)) return;
+        try (Stream<Path> paths = Files.list(root)) {
+            for (Path path : paths.toList()) Files.deleteIfExists(path);
         }
     }
 

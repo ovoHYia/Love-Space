@@ -12,6 +12,12 @@ spring:
 app:
   scheduling-enabled: false
   upload-dir: ${java.io.tmpdir}/love-space-test-uploads-${random.uuid}
+  media-quarantine-dir: ${java.io.tmpdir}/love-space-test-quarantine-${random.uuid}
+  data-export:
+    dir: ${java.io.tmpdir}/love-space-test-exports-${random.uuid}
+    min-free-bytes: 0
+    ttl-minutes: 10
+    max-pending: 2
   cors-allowed-origins: http://localhost:5173
   media-max-bytes: 1048576
   security:

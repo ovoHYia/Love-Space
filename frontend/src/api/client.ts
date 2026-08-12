@@ -20,22 +20,16 @@ let csrfPromise: Promise<string> | null = null
 let csrfRefreshPromise: Promise<string> | null = null
 let csrfController: AbortController | null = null
 let csrfGeneration = 0
-const CLIENT_ID_KEY = 'love-space-client-id'
-let clientId = ''
+function createClientId() {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `client_${Date.now()}_${Math.random().toString(36).slice(2)}`
+}
+
+// 只保存在当前 JS 模块生命周期内；sessionStorage 会被复制标签页继承，不能用作连接身份。
+const clientId = createClientId()
 
 export function getClientId() {
-  if (clientId) return clientId
-  try {
-    clientId = sessionStorage.getItem(CLIENT_ID_KEY) || ''
-    if (!clientId) {
-      clientId = typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `client_${Date.now()}_${Math.random().toString(36).slice(2)}`
-      sessionStorage.setItem(CLIENT_ID_KEY, clientId)
-    }
-  } catch {
-    clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2)}`
-  }
   return clientId
 }
 
@@ -79,7 +73,8 @@ function responseCode(status: number, payload: unknown) {
 function throwResponseError(path: string, response: Response, parsed: ParsedResponse): never {
   const data = objectPayload(parsed.payload)
   const code = responseCode(response.status, parsed.payload)
-  if (response.status === 401 && path !== '/auth/login' && typeof window !== 'undefined') {
+  const sessionInvalidation = ['UNAUTHORIZED', 'SESSION_INVALID', 'PASSWORD_CHANGED'].includes(code)
+  if (path !== '/auth/login' && sessionInvalidation && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('love-space-unauthenticated', {
       detail: { code },
     }))

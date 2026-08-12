@@ -13,6 +13,7 @@ import LoadingState from '../components/LoadingState.vue'
 import { useResourceSync } from '../composables/resourceSync'
 import { useToast } from '../composables/toast'
 import { realtimeState } from '../stores/realtime'
+import { authState } from '../stores/auth'
 import {
   abandonPendingGameStrokes,
   flushAllPendingGameStrokes,
@@ -67,21 +68,18 @@ async function load() {
     if (selected.value) {
       selected.value = sessions.value.find((item) => String(item.id) === String(selected.value?.id)) || null
     }
+    return true
   } catch (cause) {
     if (!request.isLatest()) return
     loadError.value = errorMessage(cause)
+    return false
   } finally {
     if (request.isLatest()) loading.value = false
   }
 }
 
 async function refreshFromSync() {
-  try {
-    if (selected.value) updateSession(await api.game(selected.value.id))
-    else await load()
-  } catch {
-    // A reconnect or another event will refresh the game again.
-  }
+  return load()
 }
 
 async function retryLoad() {
@@ -95,6 +93,7 @@ async function start(gameType: GameType) {
   busy.value = gameType
   try {
     const game = await api.createGame(gameType)
+    gameRequests.cancel()
     updateSession(game)
     selected.value = game
   } catch (cause) {
@@ -108,7 +107,9 @@ async function finish() {
   if (!selected.value || busy.value) return
   busy.value = 'finish'
   try {
-    updateSession(await api.finishGame(selected.value.id))
+    const updated = await api.finishGame(selected.value.id)
+    gameRequests.cancel()
+    updateSession(updated)
     finishConfirmation.value = false
     show('这局游戏已经收好，随时可以再来一局。', 'success')
   } catch (cause) {
@@ -126,7 +127,17 @@ function updateSession(game: GameSession) {
   if (String(selected.value?.id) === String(game.id)) selected.value = game
 }
 
+function handleGameUpdated(game: GameSession) {
+  gameRequests.cancel()
+  updateSession(game)
+}
+
 async function ensurePendingStrokesHandled() {
+  if (authState.forcedLogoutReason) {
+    // 会话已经失效时不能再用未发送笔画阻塞离开；队列只保存在当前运行期，安全清理即可。
+    abandonPendingGameStrokes()
+    return true
+  }
   const result = await flushAllPendingGameStrokes()
   if (result.completed) return true
   const abandon = window.confirm(
@@ -192,7 +203,7 @@ function progressLabel(game: GameSession) {
           :is="gameComponent(selected.gameType)"
           v-if="gameComponent(selected.gameType)"
           :session="selected"
-          @updated="updateSession"
+          @updated="handleGameUpdated"
         />
         <div v-else class="error-panel" role="alert">
           <Gamepad2 :size="30" aria-hidden="true" />

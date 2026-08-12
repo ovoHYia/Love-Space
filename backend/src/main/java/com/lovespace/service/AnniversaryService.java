@@ -19,8 +19,11 @@ public class AnniversaryService {
     private final AnniversaryRepository anniversaries;
     private final CurrentUserService current;
     private final ViewMapper views;
-    public AnniversaryService(AnniversaryRepository anniversaries, CurrentUserService current, ViewMapper views) {
+    private final OptimisticUpdateGuard versions;
+    public AnniversaryService(AnniversaryRepository anniversaries, CurrentUserService current,
+                              ViewMapper views, OptimisticUpdateGuard versions) {
         this.anniversaries = anniversaries; this.current = current; this.views = views;
+        this.versions = versions;
     }
     @Transactional(readOnly = true)
     public List<AnniversaryView> list(Authentication auth) {
@@ -36,12 +39,14 @@ public class AnniversaryService {
     public AnniversaryView create(Authentication auth, AnniversaryRequest input) {
         User user = current.user(auth); Anniversary value = new Anniversary();
         value.setCoupleId(user.getCouple().getId()); value.setCreatedBy(user.getId()); apply(value, input);
-        return views.anniversary(anniversaries.save(value));
+        return views.anniversary(anniversaries.saveAndFlush(value));
     }
     @Transactional
-    public AnniversaryView update(Authentication auth, Long id, AnniversaryRequest input) {
-        User user = current.user(auth); Anniversary value = find(user, id); apply(value, input);
-        return views.anniversary(anniversaries.save(value));
+    public AnniversaryView update(Authentication auth, Long id, AnniversaryUpdateRequest input) {
+        User user = current.user(auth); Anniversary value = find(user, id);
+        versions.requireFresh(input.version(), value.getVersion());
+        apply(value, input);
+        return views.anniversary(anniversaries.saveAndFlush(value));
     }
     @Transactional
     public void delete(Authentication auth, Long id) {
@@ -55,8 +60,17 @@ public class AnniversaryService {
                 .orElseThrow(() -> ApiException.notFound("纪念日不存在"));
     }
     private void apply(Anniversary value, AnniversaryRequest input) {
-        value.setTitle(input.title().trim()); value.setEventDate(input.eventDate()); value.setType(input.type().trim());
-        value.setRecurringYearly(input.recurringYearly()); value.setReminderDays(input.reminderDays());
-        value.setNote(AccountService.trimToNull(input.note()));
+        apply(value, input.title(), input.eventDate(), input.type(), input.recurringYearly(),
+                input.reminderDays(), input.note());
+    }
+    private void apply(Anniversary value, AnniversaryUpdateRequest input) {
+        apply(value, input.title(), input.eventDate(), input.type(), input.recurringYearly(),
+                input.reminderDays(), input.note());
+    }
+    private void apply(Anniversary value, String title, java.time.LocalDate eventDate, String type,
+                       boolean recurringYearly, int reminderDays, String note) {
+        value.setTitle(title.trim()); value.setEventDate(eventDate); value.setType(type.trim());
+        value.setRecurringYearly(recurringYearly); value.setReminderDays(reminderDays);
+        value.setNote(AccountService.trimToNull(note));
     }
 }

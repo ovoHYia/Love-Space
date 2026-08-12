@@ -3,12 +3,14 @@ export interface UserProfile {
   username?: string
   nickname: string
   avatarUrl?: string | null
+  version?: number | string
 }
 
 export interface CoupleSummary {
   id: number | string
   spaceName: string
   loveStartedAt: string
+  version?: number | string
 }
 
 export interface AuthPayload {
@@ -25,6 +27,7 @@ export interface Mood {
   label: string
   note?: string
   updatedAt?: string
+  version?: number | string
 }
 
 export interface MoodTrendPoint {
@@ -91,6 +94,7 @@ export interface MediaItem {
   originalName: string
   url: string
   byteSize: number
+  sha256?: string | null
   createdAt: string
 }
 
@@ -107,6 +111,7 @@ export interface Memory {
   authorNickname: string
   media: MediaItem[]
   updatedAt?: string
+  version?: number | string
 }
 
 export interface MemoryTag {
@@ -127,6 +132,20 @@ export interface ExportPreparation {
   downloadUrl: string
   filename: string
   expiresAt: string
+}
+
+export interface MediaIntegrity {
+  scannedRecords: number
+  healthyRecords: number
+  hashBackfilled: number
+  missingFiles: number
+  sizeMismatches: number
+  hashMismatches: number
+  orphanFiles: number
+  quarantinedFiles: number
+  quarantineFailures: number
+  checkedAt: string
+  details: string[]
 }
 
 export interface SyncEvent {
@@ -205,6 +224,7 @@ export interface Diary {
   authorNickname: string
   createdAt?: string
   updatedAt?: string
+  version?: number | string
 }
 
 export interface Letter {
@@ -218,6 +238,7 @@ export interface Letter {
   authorNickname: string
   recipientId: number | string
   recipientNickname: string
+  version?: number | string
 }
 
 export interface Anniversary {
@@ -229,6 +250,7 @@ export interface Anniversary {
   reminderDays: number
   note?: string
   daysUntil?: number
+  version?: number | string
 }
 
 export interface WishInput {
@@ -248,6 +270,11 @@ export interface Wish extends WishInput {
   completedAt?: string | null
   createdAt?: string
   updatedAt?: string
+  version?: number | string
+}
+
+export interface WishUpdateInput extends WishInput {
+  version: number | string
 }
 
 export type CalendarSource = 'CUSTOM' | 'ANNIVERSARY' | 'WISH' | 'MEMORY' | 'DIARY' | 'LETTER'
@@ -260,6 +287,10 @@ export interface CalendarEventInput {
   allDay: boolean
   category: 'DATE' | 'TRAVEL' | 'FAMILY' | 'PERSONAL' | 'OTHER'
   location?: string
+}
+
+export interface CalendarEventUpdateInput extends CalendarEventInput {
+  version: number | string
 }
 
 export interface CalendarEntry {
@@ -275,6 +306,7 @@ export interface CalendarEntry {
   editable: boolean
   createdBy?: number | string
   createdByNickname?: string
+  version?: number | string
 }
 
 export interface TrashItem {
@@ -319,6 +351,7 @@ export interface NotificationPreferences {
   letterEnabled: boolean
   wishEnabled: boolean
   updatedAt?: string
+  version?: number | string
 }
 
 export interface DashboardPayload {

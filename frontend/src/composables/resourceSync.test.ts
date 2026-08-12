@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { createCoalescedRunner, matchesResource } from './resourceSync'
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from 'vitest'
+import { createCoalescedRunner, matchesResource, registerResyncHandler } from './resourceSync'
 
 describe('resource sync', () => {
   it('matches only declared resources', () => {
@@ -29,5 +30,43 @@ describe('resource sync', () => {
     const subscribed = ['trash', 'memories', 'diaries', 'messages', 'anniversaries', 'wishes', 'calendar']
 
     expect(subscribed.every(resource => matchesResource(subscribed, { resource }))).toBe(true)
+  })
+
+  it('refreshes registered resources after every ready resync and reports completion', async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    const unregister = registerResyncHandler(refresh)
+    const complete = new Promise<CustomEvent>((resolve) => {
+      const listener = (event: Event) => {
+        window.removeEventListener('love-space:resync-complete', listener)
+        resolve(event as CustomEvent)
+      }
+      window.addEventListener('love-space:resync-complete', listener)
+    })
+
+    window.dispatchEvent(new CustomEvent('love-space:resync', { detail: { generation: 7 } }))
+    const event = await complete
+    unregister()
+
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(event.detail).toEqual({ generation: 7, ok: true })
+  })
+
+  it('reports a failed resync so the connection remains retryable', async () => {
+    const refresh = vi.fn().mockResolvedValue(false)
+    const unregister = registerResyncHandler(refresh)
+    const complete = new Promise<CustomEvent>((resolve) => {
+      const listener = (event: Event) => {
+        window.removeEventListener('love-space:resync-complete', listener)
+        resolve(event as CustomEvent)
+      }
+      window.addEventListener('love-space:resync-complete', listener)
+    })
+
+    window.dispatchEvent(new CustomEvent('love-space:resync', { detail: { generation: 8 } }))
+    const event = await complete
+    unregister()
+
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(event.detail).toEqual({ generation: 8, ok: false })
   })
 })

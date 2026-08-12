@@ -27,7 +27,7 @@ public class WishController {
 
     @PutMapping("/{id}")
     public WishView update(Authentication auth, @PathVariable @Positive Long id,
-                           @Valid @RequestBody WishRequest input) {
+                           @Valid @RequestBody WishUpdateRequest input) {
         return wishes.update(auth, id, input);
     }
 

@@ -18,8 +18,11 @@ public class DiaryService {
     private final DiaryRepository diaries;
     private final CurrentUserService current;
     private final ViewMapper views;
-    public DiaryService(DiaryRepository diaries, CurrentUserService current, ViewMapper views) {
+    private final OptimisticUpdateGuard versions;
+    public DiaryService(DiaryRepository diaries, CurrentUserService current, ViewMapper views,
+                        OptimisticUpdateGuard versions) {
         this.diaries = diaries; this.current = current; this.views = views;
+        this.versions = versions;
     }
     @Transactional(readOnly = true)
     public List<DiaryView> list(Authentication auth, Long authorId) {
@@ -37,10 +40,12 @@ public class DiaryService {
         return views.diary(diaries.save(value));
     }
     @Transactional
-    public DiaryView update(Authentication auth, Long id, DiaryRequest request) {
+    public DiaryView update(Authentication auth, Long id, DiaryUpdateRequest request) {
         User user = current.user(auth);
-        Diary value = owned(user, id); apply(value, request);
-        return views.diary(diaries.save(value));
+        Diary value = owned(user, id);
+        versions.requireFresh(request.version(), value.getVersion());
+        apply(value, request);
+        return views.diary(diaries.saveAndFlush(value));
     }
     @Transactional
     public void delete(Authentication auth, Long id) {
@@ -56,7 +61,13 @@ public class DiaryService {
         return value;
     }
     private void apply(Diary value, DiaryRequest input) {
-        value.setTitle(input.title().trim()); value.setContent(input.content().trim());
-        value.setDiaryDate(input.diaryDate()); value.setMood(AccountService.trimToNull(input.mood()));
+        apply(value, input.title(), input.content(), input.diaryDate(), input.mood());
+    }
+    private void apply(Diary value, DiaryUpdateRequest input) {
+        apply(value, input.title(), input.content(), input.diaryDate(), input.mood());
+    }
+    private void apply(Diary value, String title, String content, java.time.LocalDate diaryDate, String mood) {
+        value.setTitle(title.trim()); value.setContent(content.trim());
+        value.setDiaryDate(diaryDate); value.setMood(AccountService.trimToNull(mood));
     }
 }

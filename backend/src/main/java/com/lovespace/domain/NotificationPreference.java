@@ -18,6 +18,9 @@ public class NotificationPreference {
     private boolean letterEnabled = true;
     @Column(name = "wish_enabled", nullable = false)
     private boolean wishEnabled = true;
+    @Version
+    @Column(nullable = false)
+    private Long version;
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -39,5 +42,6 @@ public class NotificationPreference {
     public void setLetterEnabled(boolean letterEnabled) { this.letterEnabled = letterEnabled; }
     public boolean isWishEnabled() { return wishEnabled; }
     public void setWishEnabled(boolean wishEnabled) { this.wishEnabled = wishEnabled; }
+    public Long getVersion() { return version; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

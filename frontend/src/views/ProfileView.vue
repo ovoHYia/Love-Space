@@ -10,6 +10,10 @@ import BaseAvatar from '../components/BaseAvatar.vue'
 import LoadingState from '../components/LoadingState.vue'
 import BaseModal from '../components/BaseModal.vue'
 import { formatDate } from '../utils'
+import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
+import { clearMemoryDraftsForUser } from '../utils/memoryDraft'
+import { useResourceSync } from '../composables/resourceSync'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 const router = useRouter()
 const { show } = useToast()
@@ -28,31 +32,74 @@ const passwordForm = ref({ currentPassword: '', newPassword: '', confirmPassword
 const profileFieldErrors = ref<Record<string, string>>({})
 const spaceFieldErrors = ref<Record<string, string>>({})
 const passwordFieldErrors = ref<Record<string, string>>({})
+const profileConflict = ref(false)
+const spaceConflict = ref(false)
+// 编辑器打开时保留服务器版本；收到实时资料更新时不能用新版本覆盖这个版本。
+const profileVersion = ref<number | string | undefined>(authState.user?.version)
+const spaceVersion = ref<number | string | undefined>(authState.coupleVersion)
+const profileRequests = createRequestGeneration()
 
 const initials = computed(() => `${authState.user?.nickname?.slice(0, 1) || '我'} & ${authState.partner?.nickname?.slice(0, 1) || 'TA'}`)
 
-onMounted(async () => {
+onMounted(() => { void load() })
+useResourceSync(['profile', 'space'], () => load())
+
+async function load(forceEditorValues = false) {
+  const request = profileRequests.begin()
   loading.value = true
+  error.value = ''
   try {
-    applyAuth(await api.me())
-    nickname.value = authState.user?.nickname || ''
-    spaceName.value = authState.spaceName
+    const latest = await api.me()
+    if (!request.isLatest()) return
+    const profileDirty = nickname.value.trim() !== (authState.user?.nickname || '')
+    const spaceDirty = spaceName.value.trim() !== authState.spaceName
+    applyAuth(latest)
+    if (forceEditorValues || !profileDirty) {
+      nickname.value = authState.user?.nickname || ''
+      profileVersion.value = authState.user?.version
+    } else profileConflict.value = true
+    if (forceEditorValues || !spaceDirty) {
+      spaceName.value = authState.spaceName
+      spaceVersion.value = authState.coupleVersion
+    } else spaceConflict.value = true
+    if (forceEditorValues) {
+      profileConflict.value = false
+      spaceConflict.value = false
+    }
+    return true
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
-})
+}
+
+async function loadLatestProfile() {
+  await load(true)
+  if (!error.value) show('已加载最新资料，请确认后再保存。', 'info')
+}
 
 async function saveProfile() {
   saving.value = true
   profileFieldErrors.value = {}
   try {
-    const updated = await api.updateProfile(nickname.value.trim())
-    if (updated?.id) authState.user = { ...authState.user!, ...updated }
+    const updated = await api.updateProfile(nickname.value.trim(), profileVersion.value)
+    profileRequests.cancel()
+    loading.value = false
+    if (updated?.id) {
+      authState.user = { ...authState.user!, ...updated }
+      profileVersion.value = updated.version
+    }
     else if (authState.user) authState.user.nickname = nickname.value.trim()
     show('昵称已经更新。', 'success')
   } catch (cause) {
+    if (isStaleUpdate(cause)) {
+      profileConflict.value = true
+      show(STALE_UPDATE_MESSAGE, 'error')
+      return
+    }
     profileFieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
   } finally {
@@ -64,11 +111,20 @@ async function saveSpaceName() {
   spaceSaving.value = true
   spaceFieldErrors.value = {}
   try {
-    const updated = await api.updateSpaceName(spaceName.value.trim())
+    const updated = await api.updateSpaceName(spaceName.value.trim(), spaceVersion.value)
+    profileRequests.cancel()
+    loading.value = false
     authState.spaceName = updated.spaceName
+    authState.coupleVersion = updated.version
+    spaceVersion.value = updated.version
     spaceName.value = authState.spaceName
     show('空间名称已经更新。', 'success')
   } catch (cause) {
+    if (isStaleUpdate(cause)) {
+      spaceConflict.value = true
+      show(STALE_UPDATE_MESSAGE, 'error')
+      return
+    }
     spaceFieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
   } finally {
@@ -86,7 +142,8 @@ async function uploadAvatar(event: Event) {
   uploading.value = true
   try {
     await api.updateAvatar(file)
-    applyAuth(await api.me())
+    profileRequests.cancel()
+    await load()
     show('新头像很好看，已经换上啦。', 'success')
   } catch (cause) {
     show(errorMessage(cause), 'error')
@@ -97,20 +154,31 @@ async function uploadAvatar(event: Event) {
 }
 
 async function logout() {
+  const userId = authState.user?.id
   loggingOut.value = true
   try {
     await api.logout()
+    clearMemoryDraftsForUser(userId)
     clearAuth()
-    await router.replace('/login')
+    await navigateToLogin()
   } catch (cause) {
     if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403)) {
+      clearMemoryDraftsForUser(userId)
       clearAuth()
-      await router.replace('/login')
+      await navigateToLogin()
       return
     }
     show('暂时无法确认已退出服务器，请恢复网络后重试。', 'error')
   } finally {
     loggingOut.value = false
+  }
+}
+
+async function navigateToLogin(query: Record<string, string> = {}) {
+  const failure = await router.replace({ name: 'login', query }).catch(() => true)
+  if (failure || router.currentRoute.value.name !== 'login') {
+    const queryString = new URLSearchParams(query).toString()
+    window.location.hash = `/login${queryString ? `?${queryString}` : ''}`
   }
 }
 
@@ -127,7 +195,7 @@ async function changePassword() {
     passwordOpen.value = false
     show('密码已修改，请重新登录。', 'success')
     clearAuth()
-    await router.replace({ name: 'login', query: { expired: '1' } })
+    await navigateToLogin({ expired: '1' })
   } catch (cause) {
     passwordFieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
@@ -158,6 +226,7 @@ async function changePassword() {
             <div><strong>更换头像</strong><p>选择一张清晰的方形图片效果最好。</p></div>
           </div>
           <form class="stack-form compact-form" @submit.prevent="saveProfile">
+            <div v-if="profileConflict" class="conflict-panel" role="alert"><p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p><button class="button secondary small" type="button" @click="loadLatestProfile">加载最新内容</button></div>
             <label class="field"><span>昵称</span><input id="profile-nickname" v-model="nickname" required maxlength="20" autocomplete="nickname" :aria-invalid="Boolean(profileFieldErrors.nickname)" :aria-describedby="profileFieldErrors.nickname ? 'profile-nickname-error' : undefined" /><small v-if="profileFieldErrors.nickname" id="profile-nickname-error" class="field-error">{{ profileFieldErrors.nickname }}</small></label>
             <label class="field"><span>登录账号</span><input :value="authState.user?.username || '已设置'" disabled /><small>为了安全，登录账号不能在这里修改。</small></label>
             <button class="button primary" type="submit" :disabled="saving || nickname.trim() === authState.user?.nickname"><span v-if="saving" class="button-spinner"></span><Save v-else :size="17" />{{ saving ? '正在保存…' : '保存资料' }}</button>
@@ -168,6 +237,7 @@ async function changePassword() {
         <section class="card settings-card">
           <div class="section-heading"><div><p class="eyebrow">OUR SPACE</p><h2>空间信息</h2></div><Heart :size="21" /></div>
           <form class="space-name-editor" @submit.prevent="saveSpaceName">
+            <div v-if="spaceConflict" class="conflict-panel" role="alert"><p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p><button class="button secondary small" type="button" @click="loadLatestProfile">加载最新内容</button></div>
             <label class="field"><span>空间名称</span><input id="space-name" v-model="spaceName" required maxlength="100" autocomplete="off" :aria-invalid="Boolean(spaceFieldErrors.spaceName)" :aria-describedby="spaceFieldErrors.spaceName ? 'space-name-error' : undefined" /><small v-if="spaceFieldErrors.spaceName" id="space-name-error" class="field-error">{{ spaceFieldErrors.spaceName }}</small></label>
             <button class="button primary" type="submit" :disabled="spaceSaving || !spaceName.trim() || spaceName.trim() === authState.spaceName"><span v-if="spaceSaving" class="button-spinner"></span><Save v-else :size="17" />{{ spaceSaving ? '正在保存…' : '保存空间名称' }}</button>
           </form>

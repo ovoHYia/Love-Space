@@ -2,6 +2,7 @@ package com.lovespace.api;
 
 import com.lovespace.api.dto.ApiDtos.CalendarEntryView;
 import com.lovespace.api.dto.ApiDtos.CalendarEventRequest;
+import com.lovespace.api.dto.ApiDtos.CalendarEventUpdateRequest;
 import com.lovespace.service.CalendarService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -37,7 +38,7 @@ public class CalendarController {
 
     @PutMapping("/events/{id}")
     public CalendarEntryView update(Authentication auth, @PathVariable @Positive Long id,
-                                    @Valid @RequestBody CalendarEventRequest input) {
+                                    @Valid @RequestBody CalendarEventUpdateRequest input) {
         return calendar.update(auth, id, input);
     }
 

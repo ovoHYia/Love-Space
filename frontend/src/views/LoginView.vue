@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Eye, EyeOff, Heart, LogIn } from 'lucide-vue-next'
 import { api } from '../api'
 import { ApiError, errorMessage } from '../api/client'
-import { applyAuth } from '../stores/auth'
+import { applyAuth, authState, bootstrapAuth } from '../stores/auth'
 import { useToast } from '../composables/toast'
 
 const route = useRoute()
@@ -14,6 +14,7 @@ const username = ref('')
 const password = ref('')
 const reveal = ref(false)
 const loading = ref(false)
+const retrying = ref(false)
 const error = ref('')
 const errorEl = ref<HTMLElement | null>(null)
 const sessionExpired = computed(() => route.query.expired === '1')
@@ -44,6 +45,26 @@ async function login() {
     loading.value = false
   }
 }
+
+async function retryConnection() {
+  if (retrying.value) return
+  retrying.value = true
+  error.value = ''
+  try {
+    await bootstrapAuth(true)
+    if (!authState.initialized) {
+      await router.replace({ name: 'setup' })
+    } else if (authState.authenticated) {
+      await router.replace({ name: 'home' })
+    } else {
+      show('连接已恢复，请登录。', 'info')
+    }
+  } catch (cause) {
+    error.value = cause instanceof ApiError ? connectionErrorMessage : errorMessage(cause)
+  } finally {
+    retrying.value = false
+  }
+}
 </script>
 
 <template>
@@ -65,6 +86,7 @@ async function login() {
         <p class="muted">输入你的专属账号，继续收藏两个人的故事。</p>
         <p v-if="sessionExpired" class="form-error" role="alert" aria-live="assertive">登录状态已过期，请重新登录后继续刚才的操作。</p>
         <p v-if="serverOffline" id="login-offline" class="form-error" role="status" aria-live="polite">小屋暂时连接不上，请稍后再试。若问题持续出现，请联系管理员。</p>
+        <button v-if="serverOffline" class="button ghost full" type="button" :disabled="retrying" @click="retryConnection">{{ retrying ? '正在重新连接…' : '重新连接' }}</button>
         <label class="field"><span>账号</span><input id="login-username" v-model="username" required autocomplete="username" autofocus placeholder="请输入登录账号" :disabled="loading" :aria-invalid="Boolean(error)" :aria-describedby="loginDescriptionIds" /></label>
         <label class="field"><span>密码</span><span class="input-action"><input id="login-password" v-model="password" required :type="reveal ? 'text' : 'password'" autocomplete="current-password" placeholder="请输入密码" :disabled="loading" :aria-invalid="Boolean(error)" :aria-describedby="loginDescriptionIds" /><button type="button" :disabled="loading" :aria-label="reveal ? '隐藏密码' : '显示密码'" @click="reveal = !reveal"><EyeOff v-if="reveal" :size="18" aria-hidden="true" /><Eye v-else :size="18" aria-hidden="true" /></button></span></label>
         <p v-if="error" id="login-error" ref="errorEl" class="form-error" role="alert" aria-live="assertive" tabindex="-1">{{ error }}</p>

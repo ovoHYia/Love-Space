@@ -16,18 +16,20 @@ public class ViewMapper {
 
     public UserView user(User value) {
         return new UserView(value.getId(), value.getUsername(), value.getNickname(),
-                value.getAvatarMediaId() == null ? null : "/api/media/" + value.getAvatarMediaId());
+                value.getAvatarMediaId() == null ? null : "/api/media/" + value.getAvatarMediaId(),
+                value.getRowVersion());
     }
     public CoupleView couple(Couple value) {
-        return new CoupleView(value.getId(), value.getSpaceName(), BeijingTime.toOffset(value.getLoveStartedAt()));
+        return new CoupleView(value.getId(), value.getSpaceName(), BeijingTime.toOffset(value.getLoveStartedAt()),
+                value.getVersion());
     }
     public MoodView mood(Mood value) {
         return new MoodView(value.getId(), value.getUserId(), value.getMoodDate(), value.getEmoji(),
-                value.getLabel(), value.getNote(), BeijingTime.toOffset(value.getUpdatedAt()));
+                value.getLabel(), value.getNote(), BeijingTime.toOffset(value.getUpdatedAt()), value.getVersion());
     }
     public MediaView media(Media value) {
         return new MediaView(value.getId(), value.getOriginalName(), value.getContentType(), value.getMediaType(),
-                value.getByteSize(), "/api/media/" + value.getId(), BeijingTime.toOffset(value.getCreatedAt()));
+                value.getByteSize(), value.getSha256(), "/api/media/" + value.getId(), BeijingTime.toOffset(value.getCreatedAt()));
     }
     public MemoryView memory(Memory value) {
         return memories(List.of(value)).get(0);
@@ -49,7 +51,8 @@ public class ViewMapper {
                 names.getOrDefault(value.getAuthorId(), "已注销用户"), value.getTitle(), value.getDescription(),
                 BeijingTime.toOffset(value.getEventAt()), value.isEventTimeKnown(), value.getLocation(),
                 List.copyOf(value.getTags()), attachments.getOrDefault(value.getId(), List.of()),
-                BeijingTime.toOffset(value.getCreatedAt()), BeijingTime.toOffset(value.getUpdatedAt()))).toList();
+                BeijingTime.toOffset(value.getCreatedAt()), BeijingTime.toOffset(value.getUpdatedAt()),
+                value.getVersion())).toList();
     }
     public List<DiaryView> diaries(List<Diary> values) {
         if (values.isEmpty()) return List.of();
@@ -57,7 +60,7 @@ public class ViewMapper {
         return values.stream().map(value -> new DiaryView(value.getId(), value.getAuthorId(),
                 names.getOrDefault(value.getAuthorId(), "已注销用户"), value.getTitle(), value.getContent(),
                 value.getDiaryDate(), value.getMood(), BeijingTime.toOffset(value.getCreatedAt()),
-                BeijingTime.toOffset(value.getUpdatedAt()))).toList();
+                BeijingTime.toOffset(value.getUpdatedAt()), value.getVersion())).toList();
     }
     public List<MessageView> messages(List<LetterMessage> values, Long viewerId) {
         if (values.isEmpty()) return List.of();
@@ -69,7 +72,7 @@ public class ViewMapper {
         return new MessageView(value.getId(), value.getAuthorId(), names.get(value.getAuthorId()),
                 value.getRecipientId(), names.get(value.getRecipientId()), sealedForViewer ? null : value.getContent(),
                 BeijingTime.toOffset(value.getReadAt()), BeijingTime.toOffset(value.getCreatedAt()),
-                value.isScheduled(), BeijingTime.toOffset(value.getDeliverAt()));
+                value.isScheduled(), BeijingTime.toOffset(value.getDeliverAt()), value.getVersion());
         }).toList();
     }
     private Map<Long, String> userNames(Long coupleId, Set<Long> ids) {
@@ -80,7 +83,7 @@ public class ViewMapper {
         return new AnniversaryView(value.getId(), value.getCreatedBy(), value.getTitle(), value.getEventDate(),
                 value.getType(), value.isRecurringYearly(), value.getReminderDays(), value.getNote(),
                 value.daysUntil(BeijingTime.today()), BeijingTime.toOffset(value.getCreatedAt()),
-                BeijingTime.toOffset(value.getUpdatedAt()));
+                BeijingTime.toOffset(value.getUpdatedAt()), value.getVersion());
     }
     public WishView wish(Wish value) {
         return wishes(List.of(value)).get(0);
@@ -98,7 +101,7 @@ public class ViewMapper {
                 value.getStatus(), value.getCompletedBy(),
                 value.getCompletedBy() == null ? null : names.getOrDefault(value.getCompletedBy(), "已注销用户"),
                 BeijingTime.toOffset(value.getCompletedAt()), BeijingTime.toOffset(value.getCreatedAt()),
-                BeijingTime.toOffset(value.getUpdatedAt()))).toList();
+                BeijingTime.toOffset(value.getUpdatedAt()), value.getVersion())).toList();
     }
     public NotificationView notification(Notification value) {
         return new NotificationView(value.getId(), value.getType(), value.getTitle(), value.getBody(),

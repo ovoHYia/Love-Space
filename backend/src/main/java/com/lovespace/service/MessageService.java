@@ -29,7 +29,7 @@ public class MessageService {
             return pageResponse(page, size,
                     messages.countVisibleByCoupleAndUser(user.getCouple().getId(), user.getId(), now), List.of());
         }
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "deliverAt"));
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "deliverAt", "id"));
         Page<LetterMessage> result = messages.findVisibleByCoupleAndUser(
                 user.getCouple().getId(), user.getId(), now, pageable);
         List<MessageView> content = views.messages(result.getContent(), user.getId());
@@ -48,7 +48,7 @@ public class MessageService {
         value.setCoupleId(user.getCouple().getId()); value.setAuthorId(user.getId());
         value.setRecipientId(partner.getId()); value.setContent(request.content().trim());
         value.setScheduled(scheduled); value.setDeliverAt(deliverAt);
-        return views.message(messages.save(value), user.getId());
+        return views.message(messages.saveAndFlush(value), user.getId());
     }
     @Transactional
     public MessageView markRead(Authentication auth, Long id) {
@@ -59,7 +59,7 @@ public class MessageService {
         LocalDateTime now = BeijingTime.now();
         if (value.getDeliverAt().isAfter(now)) throw ApiException.notFound("留言不存在");
         if (value.getReadAt() == null) value.setReadAt(now);
-        return views.message(messages.save(value));
+        return views.message(messages.saveAndFlush(value));
     }
     @Transactional
     public void delete(Authentication auth, Long id) {
@@ -68,7 +68,7 @@ public class MessageService {
                 .orElseThrow(() -> ApiException.notFound("留言不存在"));
         if (!value.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能删除自己的留言");
         value.moveToTrash(user.getId(), BeijingTime.now());
-        messages.save(value);
+        messages.saveAndFlush(value);
     }
 
     private boolean offsetFitsJpa(int page, int size) { return (long) page * size <= Integer.MAX_VALUE; }

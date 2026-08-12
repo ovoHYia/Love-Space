@@ -131,6 +131,7 @@ class CalendarIntegrationTest {
                 .andExpect(jsonPath("$.editable").value(true))
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         long eventId = idOf(created);
+        long eventVersion = longField(created, "version");
 
         mvc.perform(get("/api/calendar").session(alice)
                         .param("from", from).param("to", to))
@@ -151,8 +152,8 @@ class CalendarIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title":"周末看新展","startAt":"%sT15:00:00",
-                                 "allDay":false,"category":"DATE","location":"新美术馆"}
-                                """.formatted(day8)))
+                                 "allDay":false,"category":"DATE","location":"新美术馆","version":%d}
+                                """.formatted(day8, eventVersion)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("周末看新展"));
         mvc.perform(delete("/api/calendar/events/{id}", eventId).with(csrf()).session(bob))
                 .andExpect(status().isNoContent());
@@ -219,6 +220,12 @@ class CalendarIntegrationTest {
     private long idOf(String json) {
         Matcher matcher = Pattern.compile("\"id\"\\s*:\\s*(\\d+)").matcher(json);
         assertTrue(matcher.find(), "响应中缺少 id");
+        return Long.parseLong(matcher.group(1));
+    }
+
+    private long longField(String json, String field) {
+        Matcher matcher = Pattern.compile("\"" + field + "\"\\s*:\\s*(\\d+)").matcher(json);
+        assertTrue(matcher.find(), "响应中缺少 " + field);
         return Long.parseLong(matcher.group(1));
     }
 }

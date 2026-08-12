@@ -17,12 +17,12 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<ApiError> direct = handler.concurrency(
                 new ObjectOptimisticLockingFailureException(Object.class, 42L));
         assertEquals(409, direct.getStatusCode().value());
-        assertEquals("STALE_DATA", direct.getBody().code());
+        assertEquals("STALE_UPDATE", direct.getBody().code());
 
         ResponseEntity<ApiError> wrapped = handler.transaction(
                 new TransactionSystemException("commit failed", new OptimisticLockException()));
         assertEquals(409, wrapped.getStatusCode().value());
-        assertEquals("STALE_DATA", wrapped.getBody().code());
+        assertEquals("STALE_UPDATE", wrapped.getBody().code());
     }
 
     @Test

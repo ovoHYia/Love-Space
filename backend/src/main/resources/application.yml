@@ -29,12 +29,17 @@ server:
       timeout: 30d
 app:
   upload-dir: ${UPLOAD_DIR:./data/uploads}
+  media-quarantine-dir: ${MEDIA_QUARANTINE_DIR:./data/media-quarantine}
   cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   media-max-bytes: ${MEDIA_MAX_BYTES:209715200}
   media-total-max-bytes: ${MEDIA_TOTAL_MAX_BYTES:2147483648}
   media-min-free-bytes: ${MEDIA_MIN_FREE_BYTES:67108864}
   data-export:
     max-concurrent: ${DATA_EXPORT_MAX_CONCURRENT:1}
+    dir: ${DATA_EXPORT_DIR:./data/exports}
+    min-free-bytes: ${DATA_EXPORT_MIN_FREE_BYTES:67108864}
+    ttl-minutes: ${DATA_EXPORT_TTL_MINUTES:10}
+    max-pending: ${DATA_EXPORT_MAX_PENDING:2}
   security:
     login:
       max-attempts-per-ip: ${LOGIN_MAX_ATTEMPTS_PER_IP:30}

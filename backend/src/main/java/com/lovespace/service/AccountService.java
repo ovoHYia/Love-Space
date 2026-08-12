@@ -28,10 +28,12 @@ public class AccountService {
     private final ViewMapper views;
     private final PasswordEncoder encoder;
     private final RealtimeSyncService realtime;
+    private final OptimisticUpdateGuard versions;
     public AccountService(CurrentUserService current, UserRepository users, CoupleRepository couples, MoodRepository moods, ViewMapper views,
-                          PasswordEncoder encoder, RealtimeSyncService realtime) {
+                          PasswordEncoder encoder, RealtimeSyncService realtime,
+                          OptimisticUpdateGuard versions) {
         this.current = current; this.users = users; this.couples = couples; this.moods = moods; this.views = views;
-        this.encoder = encoder; this.realtime = realtime;
+        this.encoder = encoder; this.realtime = realtime; this.versions = versions;
     }
     @Transactional(readOnly = true)
     public MeResponse me(Authentication auth) {
@@ -42,22 +44,24 @@ public class AccountService {
     @Transactional
     public UserView updateProfile(Authentication auth, ProfileRequest request) {
         User user = current.user(auth);
+        versions.requireFresh(request.version(), user.getRowVersion());
         user.setNickname(request.nickname().trim());
-        return views.user(users.save(user));
+        return views.user(users.saveAndFlush(user));
     }
     @Transactional
     public CoupleView updateSpaceName(Authentication auth, SpaceNameRequest request) {
         User user = current.user(auth);
         Couple couple = couples.findById(user.getCouple().getId())
                 .orElseThrow(() -> ApiException.conflict("情侣空间不存在"));
+        versions.requireFresh(request.version(), couple.getVersion());
         couple.setSpaceName(request.spaceName().trim());
-        return views.couple(couples.save(couple));
+        return views.couple(couples.saveAndFlush(couple));
     }
     @Transactional
     public void changePassword(Authentication auth, PasswordChangeRequest request) {
         User user = current.userForUpdate(auth);
         if (!encoder.matches(request.currentPassword(), user.getPasswordHash())) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CURRENT_PASSWORD", "当前密码不正确");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURRENT_PASSWORD", "当前密码不正确");
         }
         if (request.newPassword().getBytes(StandardCharsets.UTF_8).length > 72) {
             throw ApiException.badRequest("新密码的 UTF-8 长度不能超过 72 字节");
@@ -93,11 +97,15 @@ public class AccountService {
         Mood mood = moods.findByUserIdAndMoodDate(user.getId(), today).orElseGet(Mood::new);
         if (mood.getId() == null) {
             mood.setCoupleId(user.getCouple().getId()); mood.setUserId(user.getId()); mood.setMoodDate(today);
+        } else {
+            // 首次记录可以没有版本；一旦已有今天的记录，省略版本也必须视为过期，
+            // 不能让旧客户端把另一端刚保存的心情静默覆盖掉。
+            versions.requireFresh(request.version(), mood.getVersion());
         }
         mood.setEmoji(request.emoji().trim());
         mood.setLabel(request.label().trim());
         mood.setNote(trimToNull(request.note()));
-        return views.mood(moods.save(mood));
+        return views.mood(moods.saveAndFlush(mood));
     }
     static String trimToNull(String text) {
         if (text == null) return null;

@@ -25,7 +25,6 @@ public class SetupController {
         this.setup = setup; this.attempts = attempts; this.setupEnabled = setupEnabled;
     }
     @GetMapping("/setup/status") public SetupStatus status() {
-        requireSetupEnabled();
         return new SetupStatus(setup.initialized());
     }
     @PostMapping("/setup/initialize")

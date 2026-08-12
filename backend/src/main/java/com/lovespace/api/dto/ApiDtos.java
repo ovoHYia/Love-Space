@@ -25,12 +25,14 @@ public final class ApiDtos {
             @NotNull @Valid InitialUser firstUser,
             @NotNull @Valid InitialUser secondUser) {}
 
-    public record UserView(Long id, String username, String nickname, String avatarUrl) {}
-    public record CoupleView(Long id, String spaceName, OffsetDateTime loveStartedAt) {}
+    public record UserView(Long id, String username, String nickname, String avatarUrl, Long version) {}
+    public record CoupleView(Long id, String spaceName, OffsetDateTime loveStartedAt, Long version) {}
     public record MeResponse(UserView user, UserView partner, CoupleView couple) {}
 
-    public record ProfileRequest(@NotBlank @Size(max = 50) String nickname) {}
-    public record SpaceNameRequest(@NotBlank @Size(max = 100) String spaceName) {}
+    public record ProfileRequest(@NotBlank @Size(max = 50) String nickname,
+                                 @NotNull @Min(0) Long version) {}
+    public record SpaceNameRequest(@NotBlank @Size(max = 100) String spaceName,
+                                   @NotNull @Min(0) Long version) {}
     public record PasswordChangeRequest(
             @NotBlank @Size(min = 8, max = 72) String currentPassword,
             @NotBlank @Size(min = 8, max = 72) String newPassword) {}
@@ -41,9 +43,10 @@ public final class ApiDtos {
     public record MoodRequest(
             @NotBlank @Size(max = 16) String emoji,
             @NotBlank @Size(max = 30) String label,
-            @Size(max = 300) String note) {}
+            @Size(max = 300) String note,
+            @Min(0) Long version) {}
     public record MoodView(Long id, Long userId, LocalDate moodDate, String emoji, String label,
-                           String note, OffsetDateTime updatedAt) {}
+                           String note, OffsetDateTime updatedAt, Long version) {}
     public record MoodTrendPoint(LocalDate date, Long userId, String nickname, String emoji,
                                  String label, String note, int score) {}
     public record MoodDistributionView(String label, String emoji, long count, int percentage) {}
@@ -66,17 +69,30 @@ public final class ApiDtos {
             Boolean eventTimeKnown,
             @Size(max = 200) String location,
             @Size(max = 12) List<@NotBlank @Size(max = 30) String> tags) {}
+    public record MemoryUpdateRequest(
+            @NotBlank @Size(max = 120) String title,
+            @Size(max = 10000) String description,
+            @NotNull @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class) OffsetDateTime eventAt,
+            Boolean eventTimeKnown,
+            @Size(max = 200) String location,
+            @Size(max = 12) List<@NotBlank @Size(max = 30) String> tags,
+            @NotNull @Min(0) Long version) {}
     public record MediaView(Long id, String originalName, String contentType, String mediaType,
-                            long byteSize, String url, OffsetDateTime createdAt) {}
+                            long byteSize, String sha256, String url, OffsetDateTime createdAt) {}
     public record MemoryView(Long id, Long authorId, String authorNickname, String title,
                              String description, OffsetDateTime eventAt, boolean eventTimeKnown, String location,
                              List<String> tags,
-                             List<MediaView> media, OffsetDateTime createdAt, OffsetDateTime updatedAt) {}
+                             List<MediaView> media, OffsetDateTime createdAt, OffsetDateTime updatedAt,
+                             Long version) {}
     public record MemoryTagView(String name, long memoryCount) {}
     public record AlbumItemView(MediaView media, Long memoryId, String memoryTitle,
                                 OffsetDateTime eventAt, String location, List<String> tags) {}
     public record ExportPreparationResponse(String downloadUrl, String filename,
                                             OffsetDateTime expiresAt) {}
+    public record MediaIntegrityView(int scannedRecords, int healthyRecords, int hashBackfilled,
+                                     int missingFiles, int sizeMismatches, int hashMismatches,
+                                     int orphanFiles, int quarantinedFiles, int quarantineFailures,
+                                     OffsetDateTime checkedAt, List<String> details) {}
     public record PageResponse<T>(List<T> content, int page, int size, long totalElements,
                                   int totalPages, boolean first, boolean last) {}
 
@@ -85,9 +101,15 @@ public final class ApiDtos {
             @NotBlank @Size(max = 50000) String content,
             @NotNull LocalDate diaryDate,
             @Size(max = 30) String mood) {}
+    public record DiaryUpdateRequest(
+            @NotBlank @Size(max = 120) String title,
+            @NotBlank @Size(max = 50000) String content,
+            @NotNull LocalDate diaryDate,
+            @Size(max = 30) String mood,
+            @NotNull @Min(0) Long version) {}
     public record DiaryView(Long id, Long authorId, String authorNickname, String title,
                             String content, LocalDate diaryDate, String mood,
-                            OffsetDateTime createdAt, OffsetDateTime updatedAt) {}
+                            OffsetDateTime createdAt, OffsetDateTime updatedAt, Long version) {}
 
     public record MessageRequest(@NotBlank @Size(max = 10000) String content,
                                  @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class)
@@ -95,7 +117,7 @@ public final class ApiDtos {
     public record MessageView(Long id, Long authorId, String authorNickname,
                               Long recipientId, String recipientNickname, String content,
                               OffsetDateTime readAt, OffsetDateTime createdAt,
-                              boolean scheduled, OffsetDateTime deliverAt) {}
+                              boolean scheduled, OffsetDateTime deliverAt, Long version) {}
 
     public record AnniversaryRequest(
             @NotBlank @Size(max = 120) String title,
@@ -104,20 +126,35 @@ public final class ApiDtos {
             boolean recurringYearly,
             @Min(0) @Max(365) int reminderDays,
             @Size(max = 500) String note) {}
+    public record AnniversaryUpdateRequest(
+            @NotBlank @Size(max = 120) String title,
+            @NotNull LocalDate eventDate,
+            @NotBlank @Size(max = 30) String type,
+            boolean recurringYearly,
+            @Min(0) @Max(365) int reminderDays,
+            @Size(max = 500) String note,
+            @NotNull @Min(0) Long version) {}
     public record AnniversaryView(Long id, Long createdBy, String title, LocalDate eventDate,
                                   String type, boolean recurringYearly, int reminderDays,
                                   String note, long daysUntil, OffsetDateTime createdAt,
-                                  OffsetDateTime updatedAt) {}
+                                  OffsetDateTime updatedAt, Long version) {}
 
     public record WishRequest(
             @NotBlank @Size(max = 120) String title,
             @Size(max = 1000) String description,
             @NotBlank @Pattern(regexp = "TRAVEL|DATE|FOOD|MOVIE|OTHER") String category,
             LocalDate targetDate) {}
+    public record WishUpdateRequest(
+            @NotBlank @Size(max = 120) String title,
+            @Size(max = 1000) String description,
+            @NotBlank @Pattern(regexp = "TRAVEL|DATE|FOOD|MOVIE|OTHER") String category,
+            LocalDate targetDate,
+            @NotNull @Min(0) Long version) {}
     public record WishView(Long id, Long createdBy, String createdByNickname,
                            String title, String description, String category, LocalDate targetDate,
                            String status, Long completedBy, String completedByNickname,
-                           OffsetDateTime completedAt, OffsetDateTime createdAt, OffsetDateTime updatedAt) {}
+                           OffsetDateTime completedAt, OffsetDateTime createdAt, OffsetDateTime updatedAt,
+                           Long version) {}
 
     public record CalendarEventRequest(
             @NotBlank @Size(max = 120) String title,
@@ -127,10 +164,19 @@ public final class ApiDtos {
             boolean allDay,
             @NotBlank @Pattern(regexp = "DATE|TRAVEL|FAMILY|PERSONAL|OTHER") String category,
             @Size(max = 200) String location) {}
+    public record CalendarEventUpdateRequest(
+            @NotBlank @Size(max = 120) String title,
+            @Size(max = 1000) String description,
+            @NotNull @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class) OffsetDateTime startAt,
+            @JsonDeserialize(using = BeijingOffsetDateTimeDeserializer.class) OffsetDateTime endAt,
+            boolean allDay,
+            @NotBlank @Pattern(regexp = "DATE|TRAVEL|FAMILY|PERSONAL|OTHER") String category,
+            @Size(max = 200) String location,
+            @NotNull @Min(0) Long version) {}
     public record CalendarEntryView(String sourceType, Long id, String title, String description,
                                     OffsetDateTime startAt, OffsetDateTime endAt, boolean allDay,
                                     String category, String location, boolean editable,
-                                    Long createdBy, String createdByNickname) {}
+                                    Long createdBy, String createdByNickname, Long version) {}
 
     public record TrashItemView(String type, Long id, String title, OffsetDateTime deletedAt) {}
 
@@ -149,10 +195,11 @@ public final class ApiDtos {
     public record NotificationPreferenceRequest(
             @NotNull Boolean anniversaryEnabled,
             @NotNull Boolean letterEnabled,
-            @NotNull Boolean wishEnabled) {}
+            @NotNull Boolean wishEnabled,
+            @Min(0) Long version) {}
     public record NotificationPreferenceView(
             boolean anniversaryEnabled, boolean letterEnabled, boolean wishEnabled,
-            OffsetDateTime updatedAt) {}
+            OffsetDateTime updatedAt, Long version) {}
 
     public record GameCreateRequest(
             @NotBlank @Pattern(regexp = "TACIT_QUIZ|DRAW_GUESS|MEMORY_GUESS|TRUTH_CARD") String gameType) {}

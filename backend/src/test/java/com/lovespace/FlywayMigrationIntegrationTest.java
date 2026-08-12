@@ -14,8 +14,8 @@ class FlywayMigrationIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test
-    void h2AppliesMemoryEventTimeMigration() {
-        assertEquals("17", jdbc.queryForObject(
+    void h2AppliesLatestMigrations() {
+        assertEquals("19", jdbc.queryForObject(
                 "select version from flyway_schema_history where success = 1 order by installed_rank desc limit 1",
                 String.class));
         assertEquals(1, jdbc.queryForObject(

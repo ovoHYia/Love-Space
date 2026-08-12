@@ -14,6 +14,7 @@ import { useResourceSync } from '../composables/resourceSync'
 import { refreshUnreadCount } from '../stores/notifications'
 import type { AppNotification, NotificationList, NotificationPreferences } from '../types'
 import { formatDateTime, sameId } from '../utils'
+import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
 import { createRequestGeneration } from '../utils/latestRequest'
 
 type StatusFilter = 'ALL' | 'UNREAD' | 'READ'
@@ -38,6 +39,8 @@ const preferences = reactive<NotificationPreferences>({
 })
 const preferencesLoading = ref(true)
 const preferencesSaving = ref(false)
+const preferencesConflict = ref(false)
+const preferencesBaseline = ref<NotificationPreferences>({ ...preferences })
 const notificationRequests = createRequestGeneration()
 const preferencesRequests = createRequestGeneration()
 
@@ -68,7 +71,8 @@ onMounted(async () => {
   await Promise.all([load(), loadPreferences()])
 })
 useResourceSync(['notifications'], async () => {
-  await Promise.all([load(), refreshUnreadCount()])
+  const [result, preferencesResult] = await Promise.all([load(), loadPreferences(), refreshUnreadCount()])
+  return result !== false && preferencesResult !== false
 })
 watch([status, category], async () => {
   page.value = 0
@@ -92,22 +96,40 @@ async function load() {
     if (!request.isLatest()) return
     data.value = nextData
     selected.value = selected.value.filter(id => data.value?.items.some(item => sameId(item.id, id)))
+    return true
   } catch (cause) {
     if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
     if (request.isLatest()) loading.value = false
   }
 }
 
-async function loadPreferences() {
+function preferencesDirty() {
+  return preferences.anniversaryEnabled !== preferencesBaseline.value.anniversaryEnabled
+    || preferences.letterEnabled !== preferencesBaseline.value.letterEnabled
+    || preferences.wishEnabled !== preferencesBaseline.value.wishEnabled
+}
+
+async function loadPreferences(forceEditorValues = false) {
   const request = preferencesRequests.begin()
   preferencesLoading.value = true
   try {
     const nextPreferences = await api.notificationPreferences()
-    if (request.isLatest()) Object.assign(preferences, nextPreferences)
+    if (request.isLatest()) {
+      if (forceEditorValues || !preferencesDirty()) {
+        Object.assign(preferences, nextPreferences)
+        preferencesBaseline.value = { ...nextPreferences }
+        preferencesConflict.value = false
+      } else preferencesConflict.value = true
+      return true
+    }
   } catch (cause) {
-    if (request.isLatest()) show(errorMessage(cause), 'error')
+    if (request.isLatest()) {
+      show(errorMessage(cause), 'error')
+      return false
+    }
   } finally {
     if (request.isLatest()) preferencesLoading.value = false
   }
@@ -116,13 +138,26 @@ async function loadPreferences() {
 async function savePreferences() {
   preferencesSaving.value = true
   try {
-    Object.assign(preferences, await api.updateNotificationPreferences({ ...preferences }))
+    const updated = await api.updateNotificationPreferences({ ...preferences })
+    preferencesRequests.cancel()
+    preferencesLoading.value = false
+    Object.assign(preferences, updated)
+    preferencesBaseline.value = { ...updated }
+    preferencesConflict.value = false
     show('提醒偏好已经保存。', 'success')
   } catch (cause) {
-    show(errorMessage(cause), 'error')
+    if (isStaleUpdate(cause)) {
+      preferencesConflict.value = true
+      show(STALE_UPDATE_MESSAGE, 'error')
+    } else show(errorMessage(cause), 'error')
   } finally {
     preferencesSaving.value = false
   }
+}
+
+async function loadLatestPreferences() {
+  const result = await loadPreferences(true)
+  if (result !== false) show('已加载最新提醒偏好，请确认后再保存。', 'info')
 }
 
 async function search() {
@@ -154,8 +189,10 @@ async function openItem(item: AppNotification) {
   acting.value = true
   try {
     if (!item.readAt) await api.readNotification(item.id)
+    notificationRequests.cancel()
+    await load()
     await refreshUnreadCount()
-    navigate(item)
+    await navigate(item)
   } catch (cause) {
     show(errorMessage(cause), 'error')
   } finally {
@@ -163,13 +200,19 @@ async function openItem(item: AppNotification) {
   }
 }
 
-function navigate(item: AppNotification) {
+async function navigate(item: AppNotification) {
   const name = {
     ANNIVERSARY: 'anniversaries',
     MESSAGE: 'letters',
     WISH: 'wishes',
   }[item.referenceType || '']
-  if (name) router.push({ name })
+  if (!name) return
+  await router.push({ name })
+  if (name === 'letters') {
+    window.dispatchEvent(new CustomEvent('love-space:sync', {
+      detail: { action: 'NOTIFICATION_CLICK', resource: 'messages', actorId: 0, occurredAt: new Date().toISOString() },
+    }))
+  }
 }
 
 async function toggleRead(item: AppNotification) {
@@ -252,6 +295,7 @@ async function clearRead() {
 }
 
 async function afterAction(message: string) {
+  notificationRequests.cancel()
   selected.value = []
   await Promise.all([load(), refreshUnreadCount()])
   show(message, 'success')
@@ -344,6 +388,7 @@ function typeMeta(item: AppNotification) {
         <p class="preferences-intro">关闭某类提醒后，只影响之后新产生的通知，不会删除已有记录。</p>
         <LoadingState v-if="preferencesLoading" label="正在读取偏好…" />
         <form v-else @submit.prevent="savePreferences">
+          <div v-if="preferencesConflict" class="conflict-panel" role="alert"><p>{{ STALE_UPDATE_MESSAGE }}</p><button class="button secondary small" type="button" @click="loadLatestPreferences">加载最新内容</button></div>
           <label class="preference-option">
             <span class="preference-icon anniversary"><CalendarHeart :size="18" /></span>
             <span><strong>纪念日提醒</strong><small>在设定的提前天数内提醒</small></span>

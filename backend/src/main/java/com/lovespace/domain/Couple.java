@@ -14,6 +14,9 @@ public class Couple {
     private String spaceName;
     @Column(name = "love_started_at", nullable = false)
     private LocalDateTime loveStartedAt;
+    @Version
+    @Column(nullable = false)
+    private Long version;
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     @Column(name = "updated_at", nullable = false)
@@ -29,6 +32,7 @@ public class Couple {
     public void setSpaceName(String spaceName) { this.spaceName = spaceName; }
     public LocalDateTime getLoveStartedAt() { return loveStartedAt; }
     public void setLoveStartedAt(LocalDateTime loveStartedAt) { this.loveStartedAt = loveStartedAt; }
+    public Long getVersion() { return version; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 

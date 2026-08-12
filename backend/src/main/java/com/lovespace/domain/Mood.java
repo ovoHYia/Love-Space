@@ -23,6 +23,9 @@ public class Mood {
     private String label;
     @Column(length = 300)
     private String note;
+    @Version
+    @Column(nullable = false)
+    private Long version;
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     @Column(name = "updated_at", nullable = false)
@@ -45,6 +48,7 @@ public class Mood {
     public void setLabel(String label) { this.label = label; }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
+    public Long getVersion() { return version; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 

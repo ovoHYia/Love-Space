@@ -11,8 +11,10 @@ import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
-import type { Wish, WishInput } from '../types'
+import type { Wish, WishInput, WishUpdateInput } from '../types'
 import { formatDate, formatDateTime } from '../utils'
+import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 const { show } = useToast()
 const wishes = ref<Wish[]>([])
@@ -23,6 +25,8 @@ const modalOpen = ref(false)
 const editing = ref<Wish | null>(null)
 const saving = ref(false)
 const workingId = ref<Wish['id'] | null>(null)
+const conflict = ref(false)
+const wishRequests = createRequestGeneration()
 
 const categories = [
   { value: 'TRAVEL', label: '一起旅行', icon: MapPinned },
@@ -48,18 +52,24 @@ const visible = computed(() => {
   })
 })
 
-onMounted(load)
+onMounted(() => { void load() })
 useResourceSync(['wishes'], load)
 
 async function load() {
+  const request = wishRequests.begin()
   loading.value = true
   error.value = ''
   try {
-    wishes.value = await api.wishes()
+    const nextWishes = await api.wishes()
+    if (!request.isLatest()) return
+    wishes.value = nextWishes
+    return true
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 
@@ -73,12 +83,14 @@ function resetForm() {
 
 function openCreate() {
   editing.value = null
+  conflict.value = false
   resetForm()
   modalOpen.value = true
 }
 
 function openEdit(item: Wish) {
   editing.value = item
+  conflict.value = false
   Object.assign(form, {
     title: item.title,
     description: item.description || '',
@@ -98,18 +110,49 @@ async function save() {
   }
   try {
     if (editing.value) {
-      await api.updateWish(editing.value.id, input)
+      const update: WishUpdateInput = { ...input, version: editing.value.version! }
+      await api.updateWish(editing.value.id, update)
       show('愿望已经更新。', 'success')
     } else {
       await api.createWish(input)
       show('新的共同愿望已经放进清单。', 'success')
     }
     modalOpen.value = false
+    wishRequests.cancel()
     await load()
   } catch (cause) {
+    if (isStaleUpdate(cause)) {
+      conflict.value = true
+      show(STALE_UPDATE_MESSAGE, 'error')
+      return
+    }
     show(errorMessage(cause), 'error')
   } finally {
     saving.value = false
+  }
+}
+
+async function loadLatest() {
+  if (!editing.value) return
+  try {
+    await load()
+    if (error.value) return
+    const latest = wishes.value.find(item => String(item.id) === String(editing.value?.id))
+    if (!latest) {
+      show('这条愿望已经不存在，请关闭编辑框后重新加载。', 'info')
+      return
+    }
+    editing.value = latest
+    Object.assign(form, {
+      title: latest.title,
+      description: latest.description || '',
+      category: latest.category,
+      targetDate: latest.targetDate || '',
+    })
+    conflict.value = false
+    show('已加载最新内容，请确认后再保存。', 'info')
+  } catch (cause) {
+    show(errorMessage(cause), 'error')
   }
 }
 
@@ -118,6 +161,7 @@ async function complete(item: Wish) {
   try {
     await api.completeWish(item.id)
     show('又一起完成了一个愿望 ♡', 'success')
+    wishRequests.cancel()
     await load()
   } catch (cause) {
     show(errorMessage(cause), 'error')
@@ -131,6 +175,7 @@ async function reopen(item: Wish) {
   try {
     await api.reopenWish(item.id)
     show('愿望已经重新放回待完成清单。', 'success')
+    wishRequests.cancel()
     await load()
   } catch (cause) {
     show(errorMessage(cause), 'error')
@@ -145,6 +190,7 @@ async function remove(item: Wish) {
   try {
     await api.deleteWish(item.id)
     show('这个愿望已移入回收站。', 'success')
+    wishRequests.cancel()
     await load()
   } catch (cause) {
     show(errorMessage(cause), 'error')
@@ -197,6 +243,10 @@ async function remove(item: Wish) {
   </div>
 
   <BaseModal v-if="modalOpen" :title="editing ? '编辑共同愿望' : '许下一个共同愿望'" description="两个人都可以补充、完成或重新开启。" @close="modalOpen = false">
+    <div v-if="conflict" class="conflict-panel" role="alert">
+      <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
+      <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
+    </div>
     <form class="stack-form" @submit.prevent="save">
       <label class="field"><span>愿望名称</span><input v-model="form.title" required maxlength="120" autofocus placeholder="例如：一起去看一次极光" /></label>
       <label class="field"><span>愿望分类</span><select v-model="form.category"><option v-for="item in categories" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>

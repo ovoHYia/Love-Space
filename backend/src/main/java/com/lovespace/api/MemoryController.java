@@ -18,6 +18,10 @@ import org.springframework.web.multipart.MultipartFile;
 public class MemoryController {
     private final MemoryService memories;
     public MemoryController(MemoryService memories) { this.memories = memories; }
+    @GetMapping("/{id}")
+    public MemoryView get(Authentication auth, @PathVariable @Positive Long id) {
+        return memories.get(auth, id);
+    }
     @GetMapping
     public PageResponse<MemoryView> list(Authentication auth,
             @RequestParam(defaultValue = "0") int page,
@@ -47,10 +51,16 @@ public class MemoryController {
                              @RequestPart(value = "files", required = false) List<MultipartFile> files) {
         return memories.create(auth, data, files);
     }
-    @PutMapping("/{id}")
+    @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public MemoryView update(Authentication auth, @PathVariable @Positive Long id,
-                             @Valid @RequestBody MemoryRequest data) {
+                             @Valid @RequestBody MemoryUpdateRequest data) {
         return memories.update(auth, id, data);
+    }
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public MemoryView updateWithMedia(Authentication auth, @PathVariable @Positive Long id,
+                                      @Valid @RequestPart("data") MemoryUpdateRequest data,
+                                      @RequestPart(value = "files", required = false) List<MultipartFile> files) {
+        return memories.update(auth, id, data, files);
     }
     @PostMapping(value = "/{id}/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public MemoryView addMedia(Authentication auth, @PathVariable @Positive Long id,

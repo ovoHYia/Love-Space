@@ -244,6 +244,9 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 - `SETUP_ENABLED`：是否开放初始化入口；生产环境可显式设为 `false` 禁用
 - `PASSWORD_RESET_TOKEN`：可选的高熵密码恢复口令
 - `UPLOAD_DIR`：上传文件目录，默认 `./data/uploads`
+- `DATA_EXPORT_DIR`：导出 ZIP 临时目录，默认 `./data/exports`，不要与上传媒体混用
+- `DATA_EXPORT_MIN_FREE_BYTES`、`DATA_EXPORT_TTL_MINUTES`、`DATA_EXPORT_MAX_PENDING`：导出磁盘余量、临时文件 TTL 和待下载快照上限
+- `MEDIA_QUARANTINE_DIR`：媒体完整性扫描隔离目录，默认 `./data/media-quarantine`；孤儿文件只会移动到这里
 - `SERVER_ADDRESS`、`SERVER_PORT`：后端监听地址和端口；生产环境强制使用回环地址
 - `FRONTEND_HOST`、`FRONTEND_PORT`、`VITE_BACKEND_URL`：前端开发服务器和 Vite 代理配置
 - `MAX_FILE_SIZE`、`MAX_REQUEST_SIZE`：单文件和单请求大小上限

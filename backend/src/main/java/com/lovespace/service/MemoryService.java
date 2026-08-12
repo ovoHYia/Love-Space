@@ -16,7 +16,6 @@ import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -27,10 +26,12 @@ public class MemoryService {
     private final CurrentUserService current;
     private final MediaStorageService storage;
     private final ViewMapper views;
+    private final OptimisticUpdateGuard versions;
     public MemoryService(MemoryRepository memories, MediaRepository media, CurrentUserService current,
-                         MediaStorageService storage, ViewMapper views) {
+                         MediaStorageService storage, ViewMapper views,
+                         OptimisticUpdateGuard versions) {
         this.memories = memories; this.media = media; this.current = current;
-        this.storage = storage; this.views = views;
+        this.storage = storage; this.views = views; this.versions = versions;
     }
 
     @Transactional(readOnly = true)
@@ -71,6 +72,14 @@ public class MemoryService {
     }
 
     @Transactional(readOnly = true)
+    public MemoryView get(Authentication auth, Long id) {
+        User user = current.user(auth);
+        Memory memory = memories.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
+                .orElseThrow(() -> ApiException.notFound("回忆不存在"));
+        return views.memory(memory);
+    }
+
+    @Transactional(readOnly = true)
     public List<MemoryTagView> tags(Authentication auth) {
         User user = current.user(auth);
         return memories.aggregateActiveTags(user.getCouple().getId()).stream()
@@ -103,21 +112,17 @@ public class MemoryService {
         return pageResponse(page, size, total, content);
     }
 
-    @Transactional(isolation = Isolation.SERIALIZABLE)
+    @Transactional
     public MemoryView create(Authentication auth, MemoryRequest request, List<MultipartFile> files) {
         User user = current.user(auth);
-        if (files != null && files.stream().filter(Objects::nonNull).filter(file -> !file.isEmpty()).count() > 20) {
-            throw ApiException.badRequest("一次最多上传 20 个媒体文件");
-        }
+        List<MultipartFile> incoming = storage.validateMemoryMediaBatch(user, null, files);
         Memory memory = new Memory();
         memory.setCoupleId(user.getCouple().getId()); memory.setAuthorId(user.getId());
         apply(memory, request);
         memories.saveAndFlush(memory);
         List<Media> stored = new ArrayList<>();
         try {
-            if (files != null) {
-                for (MultipartFile file : files) if (file != null && !file.isEmpty()) stored.add(storage.store(user, memory.getId(), file));
-            }
+            for (MultipartFile file : incoming) stored.add(storage.store(user, memory.getId(), file));
             return views.memory(memory);
         } catch (RuntimeException ex) {
             stored.forEach(storage::deletePhysical);
@@ -126,25 +131,39 @@ public class MemoryService {
     }
 
     @Transactional
-    public MemoryView update(Authentication auth, Long id, MemoryRequest request) {
+    public MemoryView update(Authentication auth, Long id, MemoryUpdateRequest request) {
+        return update(auth, id, request, List.of());
+    }
+
+    @Transactional
+    public MemoryView update(Authentication auth, Long id, MemoryUpdateRequest request,
+                             List<MultipartFile> files) {
         User user = current.user(auth);
         Memory memory = memories.findByIdAndCoupleIdAndDeletedAtIsNull(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("回忆不存在"));
         if (!memory.getAuthorId().equals(user.getId())) throw ApiException.forbidden("只能编辑自己的回忆");
+        versions.requireFresh(request.version(), memory.getVersion());
+        List<MultipartFile> incoming = storage.validateMemoryMediaBatch(user, memory.getId(), files);
         apply(memory, request);
-        return views.memory(memories.save(memory));
+        List<Media> stored = new ArrayList<>();
+        try {
+            for (MultipartFile file : incoming) stored.add(storage.store(user, memory.getId(), file));
+            Memory saved = memories.saveAndFlush(memory);
+            return views.memory(saved);
+        } catch (RuntimeException ex) {
+            stored.forEach(storage::deletePhysical);
+            throw ex;
+        }
     }
 
-    @Transactional(isolation = Isolation.SERIALIZABLE)
+    @Transactional
     public MemoryView addMedia(Authentication auth, Long id, List<MultipartFile> files) {
         User user = current.user(auth);
         Memory memory = ownedMemory(user, id);
         List<MultipartFile> incoming = files == null ? List.of() : files.stream()
                 .filter(Objects::nonNull).filter(file -> !file.isEmpty()).toList();
         if (incoming.isEmpty()) throw ApiException.badRequest("请选择要上传的媒体文件");
-        if (media.findByMemoryId(memory.getId()).size() + incoming.size() > 20) {
-            throw ApiException.badRequest("每段回忆最多保存 20 个媒体文件");
-        }
+        incoming = storage.validateMemoryMediaBatch(user, memory.getId(), incoming);
         List<Media> stored = new ArrayList<>();
         try {
             incoming.forEach(file -> stored.add(storage.store(user, memory.getId(), file)));
@@ -194,17 +213,29 @@ public class MemoryService {
     }
 
     private void apply(Memory value, MemoryRequest input) {
-        value.setTitle(input.title().trim());
-        value.setDescription(AccountService.trimToNull(input.description()));
-        LocalDateTime eventAt = BeijingTime.toLocal(input.eventAt());
-        boolean eventTimeKnown = input.eventTimeKnown() == null || input.eventTimeKnown();
+        apply(value, input.title(), input.description(), input.eventAt(), input.eventTimeKnown(),
+                input.location(), input.tags());
+    }
+
+    private void apply(Memory value, MemoryUpdateRequest input) {
+        apply(value, input.title(), input.description(), input.eventAt(), input.eventTimeKnown(),
+                input.location(), input.tags());
+    }
+
+    private void apply(Memory value, String title, String description,
+                       java.time.OffsetDateTime eventAtInput, Boolean eventTimeKnownInput,
+                       String location, List<String> tags) {
+        value.setTitle(title.trim());
+        value.setDescription(AccountService.trimToNull(description));
+        LocalDateTime eventAt = BeijingTime.toLocal(eventAtInput);
+        boolean eventTimeKnown = eventTimeKnownInput == null || eventTimeKnownInput;
         value.setEventTimeKnown(eventTimeKnown);
         value.setEventAt(eventTimeKnown ? eventAt : eventAt.toLocalDate().atStartOfDay());
-        value.setLocation(AccountService.trimToNull(input.location()));
+        value.setLocation(AccountService.trimToNull(location));
         LinkedHashSet<String> normalizedTags = new LinkedHashSet<>();
         Map<String, String> displayTagsByKey = new LinkedHashMap<>();
-        if (input.tags() != null) {
-            for (String tag : input.tags()) {
+        if (tags != null) {
+            for (String tag : tags) {
                 String normalized = tag == null ? null : tag.trim().replaceAll("\\s+", " ");
                 if (normalized != null && !normalized.isBlank()) {
                     // MySQL utf8mb4_unicode_ci is case/accent insensitive. Keep the

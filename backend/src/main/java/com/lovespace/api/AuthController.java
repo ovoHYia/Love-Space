@@ -92,9 +92,18 @@ public class AuthController {
             loginAttempts.succeeded(normalizedUsername, remoteAddress);
             log.info("Login succeeded for user {} from {}", normalizedUsername, remoteAddress);
             return accounts.me(result);
-        } catch (AuthenticationException ex) {
+        } catch (InternalAuthenticationServiceException ex) {
+            log.error("Authentication infrastructure failed for {} from {}", normalizedUsername, remoteAddress, ex);
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "AUTHENTICATION_UNAVAILABLE",
+                    "登录服务暂时不可用，请稍后重试");
+        } catch (BadCredentialsException ex) {
             loginAttempts.failed(normalizedUsername, remoteAddress);
             log.info("Login failed for user {} from {}: {}", normalizedUsername, remoteAddress, ex.getMessage());
+            throw invalidCredentials();
+        } catch (AuthenticationException ex) {
+            // 账号已禁用、认证配置错误等不是密码错误，不应消耗密码失败额度。
+            log.warn("Authentication rejected for {} without counting a password failure: {}",
+                    normalizedUsername, ex.getClass().getSimpleName());
             throw invalidCredentials();
         }
     }

@@ -92,9 +92,11 @@ async function load() {
     const nextReport = await api.monthlyReport(targetMonth)
     if (!request.isLatest()) return
     report.value = nextReport
+    return true
   } catch (cause) {
     if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
     if (request.isLatest()) loading.value = false
   }

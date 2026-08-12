@@ -49,6 +49,7 @@ class LoveSpaceApiIntegrationTest {
     @Autowired UserRepository users;
     @Autowired MemoryRepository memories;
     @Autowired MediaRepository media;
+    @Autowired LetterMessageRepository letterMessages;
     @Autowired PasswordEncoder encoder;
     @Autowired FilterChainProxy filterChainProxy;
     @Autowired CookieCsrfTokenRepository csrfTokenRepository;
@@ -113,7 +114,7 @@ class LoveSpaceApiIntegrationTest {
                 .andExpect(jsonPath("$.user.nickname").value("小爱"))
                 .andExpect(jsonPath("$.partner.nickname").value("小宝"));
         mvc.perform(put("/api/space").with(csrf()).session(firstSession).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"spaceName\":\"我们的新小屋\"}"))
+                        .content("{\"spaceName\":\"我们的新小屋\",\"version\":0}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.spaceName").value("我们的新小屋"));
         mvc.perform(get("/api/auth/me").session(secondSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.couple.spaceName").value("我们的新小屋"));
@@ -271,6 +272,18 @@ class LoveSpaceApiIntegrationTest {
     }
 
     @Test
+    void wrongCurrentPasswordIsAValidationErrorAndKeepsSessionAlive() throws Exception {
+        mvc.perform(put("/api/profile/password").with(csrf()).session(firstSession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"wrong-pass-123\",\"newPassword\":\"alice-new-pass-123\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_CURRENT_PASSWORD"));
+
+        mvc.perform(get("/api/auth/me").session(firstSession))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.user.username").value("alice"));
+    }
+
+    @Test
     void passwordRecoveryDoesNotRevealWhetherAccountExists() throws Exception {
         mvc.perform(passwordResetRequest(
                         "alice", "wrong-token", "another-pass-123", "203.0.113.20"))
@@ -335,6 +348,34 @@ class LoveSpaceApiIntegrationTest {
                 .andExpect(jsonPath("$.content").value("晚安，想你"));
         mvc.perform(delete("/api/messages/{id}", messageId).with(csrf()).session(secondSession))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void lettersCanReachTheFiftyFirstMessageThroughTheNextPage() throws Exception {
+        User alice = users.findByUsernameIgnoreCase("alice").orElseThrow();
+        User bob = users.findByUsernameIgnoreCase("bob").orElseThrow();
+        List<LetterMessage> values = new java.util.ArrayList<>();
+        for (int index = 0; index < 51; index++) {
+            LetterMessage value = new LetterMessage();
+            value.setCoupleId(alice.getCouple().getId());
+            value.setAuthorId(alice.getId());
+            value.setRecipientId(bob.getId());
+            value.setContent("信笺 " + index);
+            value.setScheduled(true);
+            value.setDeliverAt(LocalDateTime.of(2030, 1, 1, 12, 0).plusDays(index));
+            values.add(value);
+        }
+        letterMessages.saveAllAndFlush(values);
+
+        mvc.perform(get("/api/messages").session(firstSession).param("page", "0").param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(51))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.content", hasSize(50)));
+        mvc.perform(get("/api/messages").session(firstSession).param("page", "1").param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].content").value("信笺 0"));
     }
 
     @Test

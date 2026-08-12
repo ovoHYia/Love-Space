@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { BarChart3, CalendarDays, CalendarHeart, Feather, Gamepad2, Heart, Home, Images, ListTodo, Mails as MailHeart, MoreHorizontal, UserRound, Wifi, WifiOff } from 'lucide-vue-next'
 import BaseAvatar from './BaseAvatar.vue'
 import MobileMoreMenu from './MobileMoreMenu.vue'
@@ -9,6 +9,7 @@ import { useToast } from '../composables/toast'
 import { authState, bootstrapAuth } from '../stores/auth'
 import { refreshUnreadCount, startNotificationPolling, stopNotificationPolling } from '../stores/notifications'
 import { realtimeState, startRealtimeSync, stopRealtimeSync } from '../stores/realtime'
+import { registerResyncHandler } from '../composables/resourceSync'
 
 type MobilePlacement = 'core' | 'more'
 type MobileGroup = '记录' | '共同计划' | '我们'
@@ -24,10 +25,12 @@ type NavigationItem = {
 }
 
 const route = useRoute()
+const router = useRouter()
 const { show } = useToast()
 const authRetryDelays = [1000, 3000]
-let authRefreshPromise: Promise<void> | null = null
+let authRefreshPromise: Promise<boolean> | null = null
 let mounted = false
+let unregisterResyncHandler: (() => boolean) | null = null
 const nav: NavigationItem[] = [
   { to: '/', label: '小窝', icon: Home, name: 'home', mobilePlacement: 'core' },
   { to: '/calendar', label: '日历', icon: CalendarDays, name: 'calendar', mobilePlacement: 'core' },
@@ -72,25 +75,31 @@ function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
-async function refreshAuthAfterSync() {
+async function refreshAuthAfterSync(): Promise<boolean> {
   if (authRefreshPromise) return authRefreshPromise
 
   const refreshTask = (async () => {
     for (let attempt = 0; attempt <= authRetryDelays.length; attempt++) {
       try {
         await bootstrapAuth(true)
-        return
+        if (!authState.authenticated && authState.forcedLogoutReason) {
+          const failure = await router.replace({ name: 'login', query: { expired: '1' } }).catch(() => true)
+          if (failure || router.currentRoute.value.name !== 'login') window.location.hash = '/login?expired=1'
+          return false
+        }
+        return true
       } catch {
         if (attempt === authRetryDelays.length || !mounted) break
         await delay(authRetryDelays[attempt])
       }
     }
     if (mounted) show('账号信息同步失败，请稍后刷新页面重试。', 'error')
+    return false
   })()
 
   authRefreshPromise = refreshTask
   try {
-    await refreshTask
+    return await refreshTask
   } finally {
     if (authRefreshPromise === refreshTask) authRefreshPromise = null
   }
@@ -106,12 +115,15 @@ function handleSync(event: Event) {
 
 onMounted(() => {
   mounted = true
+  unregisterResyncHandler = registerResyncHandler(() => refreshAuthAfterSync())
   startNotificationPolling()
   startRealtimeSync()
   window.addEventListener('love-space:sync', handleSync)
 })
 onBeforeUnmount(() => {
   mounted = false
+  unregisterResyncHandler?.()
+  unregisterResyncHandler = null
   stopNotificationPolling()
   stopRealtimeSync()
   window.removeEventListener('love-space:sync', handleSync)

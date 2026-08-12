@@ -22,6 +22,8 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +31,8 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class DataExportService {
-    private static final long SNAPSHOT_TTL_MINUTES = 10;
+    private static final Logger log = LoggerFactory.getLogger(DataExportService.class);
+    private static final long ZIP_OVERHEAD_BYTES = 1024L * 1024L;
 
     private final CurrentUserService current;
     private final UserRepository users;
@@ -47,7 +50,11 @@ public class DataExportService {
     private final MediaStorageService storage;
     private final ObjectMapper objectMapper;
     private final Path exportDirectory;
+    private final long snapshotTtlMinutes;
+    private final long minFreeBytes;
+    private final int maxPendingSnapshots;
     private final Map<String, ExportSnapshot> prepared = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<Long, String> preparedByUser = new HashMap<>();
     private final java.util.concurrent.ScheduledExecutorService cleanupExecutor =
             java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread thread = new Thread(r, "love-space-export-cleanup");
@@ -63,7 +70,10 @@ public class DataExportService {
                              GameSessionRepository gameSessions,
                              MediaStorageService storage,
                              ObjectMapper objectMapper,
-                             @Value("${app.upload-dir:./data/uploads}") String uploadDir) {
+                             @Value("${app.data-export.dir:./data/exports}") String exportDirectory,
+                             @Value("${app.data-export.ttl-minutes:10}") long snapshotTtlMinutes,
+                             @Value("${app.data-export.min-free-bytes:67108864}") long minFreeBytes,
+                             @Value("${app.data-export.max-pending:2}") int maxPendingSnapshots) {
         this.current = current;
         this.users = users;
         this.moods = moods;
@@ -79,11 +89,23 @@ public class DataExportService {
         this.gameSessions = gameSessions;
         this.storage = storage;
         this.objectMapper = objectMapper;
-        this.exportDirectory = Path.of(uploadDir).toAbsolutePath().normalize();
+        this.exportDirectory = Path.of(exportDirectory).toAbsolutePath().normalize();
+        if (snapshotTtlMinutes <= 0) throw new IllegalArgumentException("app.data-export.ttl-minutes must be positive");
+        if (minFreeBytes < 0) throw new IllegalArgumentException("app.data-export.min-free-bytes must not be negative");
+        if (maxPendingSnapshots <= 0) throw new IllegalArgumentException("app.data-export.max-pending must be positive");
+        this.snapshotTtlMinutes = snapshotTtlMinutes;
+        this.minFreeBytes = minFreeBytes;
+        this.maxPendingSnapshots = maxPendingSnapshots;
     }
 
     @PostConstruct
     void startCleanup() {
+        try {
+            Files.createDirectories(exportDirectory);
+        } catch (IOException ex) {
+            throw new IllegalStateException("无法创建导出临时目录：" + exportDirectory, ex);
+        }
+        cleanupExpired();
         cleanupExecutor.scheduleAtFixedRate(this::cleanupExpired, 1, 1,
                 java.util.concurrent.TimeUnit.MINUTES);
     }
@@ -91,8 +113,9 @@ public class DataExportService {
     @PreDestroy
     void stopCleanup() {
         cleanupExecutor.shutdownNow();
-        prepared.values().forEach(this::deleteSnapshotFile);
+        new HashSet<>(prepared.values()).forEach(this::deleteSnapshotFile);
         prepared.clear();
+        synchronized (this) { preparedByUser.clear(); }
     }
 
     @Transactional(readOnly = true)
@@ -152,6 +175,7 @@ public class DataExportService {
                 "contentType", item.getContentType(),
                 "mediaType", item.getMediaType(),
                 "byteSize", item.getByteSize(),
+                "sha256", item.getSha256(),
                 "archivePath", archivePath(item),
                 "createdAt", moment(item.getCreatedAt()))).toList());
         export.put("diaries", visible(diaries.findByCoupleIdOrderById(coupleId), userId).stream().map(item -> orderedMap(
@@ -252,10 +276,16 @@ public class DataExportService {
         Path snapshot = null;
         try {
             Files.createDirectories(exportDirectory);
+            byte[] jsonBytes = objectMapper.writeValueAsBytes(export);
+            long mediaBytes = 0;
+            for (Media item : visibleMedia) {
+                mediaBytes = Math.addExact(mediaBytes, storage.verifiedFileSize(item));
+            }
+            ensureDiskCapacity(Math.addExact(Math.addExact(jsonBytes.length, mediaBytes), ZIP_OVERHEAD_BYTES));
             snapshot = Files.createTempFile(exportDirectory, ".love-space-export-", ".zip");
             try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(snapshot, StandardOpenOption.TRUNCATE_EXISTING))) {
                 zip.putNextEntry(new ZipEntry("love-space-data.json"));
-                zip.write(objectMapper.writeValueAsBytes(export));
+                zip.write(jsonBytes);
                 zip.closeEntry();
                 for (Media item : visibleMedia) {
                     zip.putNextEntry(new ZipEntry(archivePath(item)));
@@ -272,7 +302,7 @@ public class DataExportService {
             }
             String filename = "love-space-export-" + now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".zip";
             return new ExportSnapshot(snapshot, userId, coupleId, filename,
-                    Instant.now().plusSeconds(SNAPSHOT_TTL_MINUTES * 60));
+                    Instant.now().plusSeconds(snapshotTtlMinutes * 60));
         } catch (ApiException ex) {
             deleteSnapshotFile(snapshot);
             throw ex;
@@ -283,24 +313,55 @@ public class DataExportService {
         }
     }
 
-    public ExportSnapshot register(ExportSnapshot snapshot) {
+    private void ensureDiskCapacity(long estimatedBytes) throws IOException {
+        long usableBytes = Files.getFileStore(exportDirectory).getUsableSpace();
+        if (estimatedBytes > usableBytes || minFreeBytes > usableBytes - estimatedBytes) {
+            throw new ApiException(org.springframework.http.HttpStatus.INSUFFICIENT_STORAGE,
+                    "INSUFFICIENT_STORAGE", "服务器存储空间不足，无法创建导出文件");
+        }
+    }
+
+    public synchronized ExportSnapshot register(ExportSnapshot snapshot) {
+        String previousToken = preparedByUser.get(snapshot.userId());
+        if (previousToken == null && prepared.size() >= maxPendingSnapshots) {
+            deleteSnapshotFile(snapshot);
+            throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
+                    "EXPORT_PENDING_LIMIT", "待下载导出文件过多，请先完成或等待旧文件清理");
+        }
+        if (previousToken != null) {
+            ExportSnapshot previous = prepared.remove(previousToken);
+            preparedByUser.remove(snapshot.userId());
+            deleteSnapshotFile(previous);
+        }
         String token = UUID.randomUUID().toString();
         prepared.put(token, snapshot);
+        preparedByUser.put(snapshot.userId(), token);
         return snapshot.withToken(token);
     }
 
     @Transactional(readOnly = true)
     public ExportSnapshot claim(Authentication auth, String token) {
         User user = current.user(auth);
-        ExportSnapshot snapshot = prepared.get(token);
+        ExportSnapshot snapshot;
+        synchronized (this) {
+            snapshot = prepared.get(token);
+        }
         if (snapshot == null || snapshot.expiresAt().isBefore(Instant.now())) {
-            if (snapshot != null && prepared.remove(token, snapshot)) deleteSnapshotFile(snapshot);
+            if (snapshot != null) {
+                synchronized (this) {
+                    if (prepared.remove(token, snapshot)) preparedByUser.remove(snapshot.userId(), token);
+                }
+                deleteSnapshotFile(snapshot);
+            }
             throw ApiException.notFound("导出文件不存在或已过期");
         }
         if (!Objects.equals(snapshot.userId(), user.getId())) {
             throw ApiException.notFound("导出文件不存在或已过期");
         }
-        if (!prepared.remove(token, snapshot)) throw ApiException.notFound("导出文件不存在或已过期");
+        synchronized (this) {
+            if (!prepared.remove(token, snapshot)) throw ApiException.notFound("导出文件不存在或已过期");
+            preparedByUser.remove(snapshot.userId(), token);
+        }
         return snapshot;
     }
 
@@ -313,7 +374,7 @@ public class DataExportService {
     }
 
     public void scheduleCleanup(ExportSnapshot snapshot) {
-        cleanupExecutor.schedule(() -> deleteSnapshotFile(snapshot), SNAPSHOT_TTL_MINUTES,
+        cleanupExecutor.schedule(this::cleanupExpired, snapshotTtlMinutes,
                 java.util.concurrent.TimeUnit.MINUTES);
     }
 
@@ -321,28 +382,47 @@ public class DataExportService {
         return ApiException.conflict("导出检查发现媒体原文件缺失，请先修复存储完整性。缺失媒体 ID：" + item.getId());
     }
 
-    private void cleanupExpired() {
+    synchronized void cleanupExpired() {
         Instant now = Instant.now();
-        prepared.entrySet().removeIf(entry -> {
+        for (var entry : new ArrayList<>(prepared.entrySet())) {
             if (!entry.getValue().expiresAt().isAfter(now)) {
-                deleteSnapshotFile(entry.getValue());
-                return true;
+                if (prepared.remove(entry.getKey(), entry.getValue())) {
+                    preparedByUser.remove(entry.getValue().userId(), entry.getKey());
+                    deleteSnapshotFile(entry.getValue());
+                }
             }
-            return false;
-        });
+        }
+        if (!Files.isDirectory(exportDirectory)) return;
+        Instant cutoff = now.minusSeconds(snapshotTtlMinutes * 60);
+        try (var paths = Files.list(exportDirectory)) {
+            for (Path path : paths.filter(Files::isRegularFile)
+                    .filter(value -> value.getFileName().toString().startsWith(".love-space-export-")
+                            && value.getFileName().toString().endsWith(".zip"))
+                    .toList()) {
+                try {
+                    if (Files.getLastModifiedTime(path).toInstant().isBefore(cutoff)) deleteSnapshotFile(path);
+                } catch (IOException ex) {
+                    log.warn("Could not inspect export snapshot {}. It will be retried.", path, ex);
+                }
+            }
+        } catch (IOException ex) {
+            log.warn("Could not scan export directory {}. It will be retried.", exportDirectory, ex);
+        }
     }
 
-    private void deleteSnapshotFile(ExportSnapshot snapshot) {
+    void deleteSnapshotFile(ExportSnapshot snapshot) {
         if (snapshot == null) return;
         deleteSnapshotFile(snapshot.path());
     }
 
-    private void deleteSnapshotFile(Path path) {
-        if (path == null) return;
+    boolean deleteSnapshotFile(Path path) {
+        if (path == null) return true;
         try {
             Files.deleteIfExists(path);
-        } catch (IOException ignored) {
-            // A later cleanup pass can remove a file that was still open on Windows.
+            return true;
+        } catch (IOException ex) {
+            log.warn("Could not delete export snapshot {}. It will be retried.", path, ex);
+            return false;
         }
     }
 

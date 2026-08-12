@@ -1,14 +1,19 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it } from 'vitest'
 import {
+  clearMemoryDraftsForUser,
   MEMORY_DRAFT_MAX_AGE_MS,
   MEMORY_DRAFT_VERSION,
   areMemorySnapshotsEqual,
   createMemoryDraft,
   createMemoryEditorSnapshot,
   isMemoryDraftExpired,
+  memoryDraftKey,
   parseMemoryDraft,
   serializeMemoryDraft,
 } from './memoryDraft'
+
+afterEach(() => window.sessionStorage.clear())
 
 const form = {
   title: '  海边  ',
@@ -63,5 +68,24 @@ describe('回忆草稿过期判断', () => {
     const now = 10_000_000
     expect(isMemoryDraftExpired(now - MEMORY_DRAFT_MAX_AGE_MS, now)).toBe(false)
     expect(isMemoryDraftExpired(now - MEMORY_DRAFT_MAX_AGE_MS - 1, now)).toBe(true)
+  })
+})
+
+describe('回忆草稿用户隔离', () => {
+  it('键包含用户和回忆 ID，显式退出只清理当前用户草稿', () => {
+    const aliceNew = memoryDraftKey(101)
+    const aliceMemory = memoryDraftKey(101, 7)
+    const bobNew = memoryDraftKey(202)
+    window.sessionStorage.setItem(aliceNew, 'alice-new')
+    window.sessionStorage.setItem(aliceMemory, 'alice-memory')
+    window.sessionStorage.setItem(bobNew, 'bob-new')
+
+    expect(aliceNew).not.toBe(bobNew)
+    expect(aliceMemory).toContain(':101:edit:7')
+    clearMemoryDraftsForUser(101)
+
+    expect(window.sessionStorage.getItem(aliceNew)).toBeNull()
+    expect(window.sessionStorage.getItem(aliceMemory)).toBeNull()
+    expect(window.sessionStorage.getItem(bobNew)).toBe('bob-new')
   })
 })

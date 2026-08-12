@@ -7,7 +7,12 @@ import com.lovespace.repository.*;
 import com.lovespace.security.CurrentUserService;
 import jakarta.annotation.PostConstruct;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.security.DigestInputStream;
+import java.security.DigestOutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,14 +92,16 @@ public class MediaStorageService {
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.CONFLICT, "STORAGE_OWNER_MISSING", "情侣空间不存在"));
         long usedBytes = media.totalBytesByCoupleId(coupleId);
-        if (file.getSize() > maxTotalBytes - usedBytes) {
+        if (usedBytes > maxTotalBytes || file.getSize() > maxTotalBytes - usedBytes) {
             throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "STORAGE_QUOTA_EXCEEDED",
                     "情侣空间的媒体存储额度已满");
         }
         requireDiskCapacity(file.getSize());
         String storedName = UUID.randomUUID().toString();
         Path target = safeResolve(storedName);
-        try (InputStream input = file.getInputStream()) {
+        try (InputStream raw = file.getInputStream()) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream input = new DigestInputStream(raw, digest)) {
             fileSystem.copy(input, target);
             Media value = new Media();
             value.setCoupleId(coupleId);
@@ -104,11 +111,13 @@ public class MediaStorageService {
             value.setOriginalName(safeOriginalName(file.getOriginalFilename()));
             value.setContentType(detectedContentType);
             value.setMediaType(ALLOWED_TYPES.get(value.getContentType()));
-            value.setByteSize(file.getSize());
+            value.setByteSize(Files.size(target));
+            value.setSha256(HexFormat.of().formatHex(digest.digest()));
             Media saved = media.save(value);
             deleteOnRollback(target);
             return saved;
-        } catch (IOException | RuntimeException ex) {
+            }
+        } catch (IOException | RuntimeException | NoSuchAlgorithmException ex) {
             try { fileSystem.deleteIfExists(target); } catch (IOException ignored) { }
             if (ex instanceof ApiException api) throw api;
             if (ex instanceof IOException && hasInsufficientDiskSpace(file.getSize())) {
@@ -116,6 +125,42 @@ public class MediaStorageService {
             }
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "FILE_STORAGE_ERROR", "保存上传文件失败");
         }
+    }
+
+    /**
+     * 在任何媒体写入前完成批量校验，避免文字已经改变后才发现数量、配额或磁盘不足。
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public List<MultipartFile> validateMemoryMediaBatch(User owner, Long memoryId,
+                                                         List<MultipartFile> files) {
+        List<MultipartFile> incoming = files == null ? List.of() : files.stream()
+                .filter(Objects::nonNull).filter(file -> !file.isEmpty()).toList();
+        int existingCount = memoryId == null ? 0 : media.findByMemoryId(memoryId).size();
+        if (existingCount + incoming.size() > 20) {
+            throw ApiException.badRequest("每段回忆最多保存 20 个媒体文件");
+        }
+        long incomingBytes = 0;
+        for (MultipartFile file : incoming) {
+            validate(file);
+            try {
+                incomingBytes = Math.addExact(incomingBytes, file.getSize());
+            } catch (ArithmeticException ex) {
+                throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "STORAGE_QUOTA_EXCEEDED",
+                        "情侣空间的媒体存储额度已满");
+            }
+        }
+        if (incoming.isEmpty()) return incoming;
+        Long coupleId = owner.getCouple().getId();
+        couples.findByIdForUpdate(coupleId)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.CONFLICT, "STORAGE_OWNER_MISSING", "情侣空间不存在"));
+        long usedBytes = media.totalBytesByCoupleId(coupleId);
+        if (usedBytes > maxTotalBytes || incomingBytes > maxTotalBytes - usedBytes) {
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "STORAGE_QUOTA_EXCEEDED",
+                    "情侣空间的媒体存储额度已满");
+        }
+        requireDiskCapacity(incomingBytes);
+        return incoming;
     }
 
     @Transactional
@@ -134,7 +179,12 @@ public class MediaStorageService {
         Media value = media.findAccessibleByIdAndCoupleId(id, user.getCouple().getId())
                 .orElseThrow(() -> ApiException.notFound("媒体不存在"));
         Path path = safeResolve(value.getStoredName());
-        if (!fileSystem.isRegularFile(path)) throw ApiException.notFound("媒体文件不存在");
+        try {
+            verifyReadable(value, path);
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.CONFLICT, "MEDIA_FILE_UNREADABLE",
+                    "媒体文件无法读取，请先检查存储完整性。媒体 ID：" + value.getId());
+        }
         return new MediaDownload(value, new FileSystemResource(path.toFile()));
     }
 
@@ -144,7 +194,50 @@ public class MediaStorageService {
 
     public InputStream openForExport(Media value) throws IOException {
         Path path = safeResolve(value.getStoredName());
+        verifyReadable(value, path);
         return Files.newInputStream(path, StandardOpenOption.READ);
+    }
+
+    public long verifiedFileSize(Media value) throws IOException {
+        Path path = safeResolve(value.getStoredName());
+        verifyReadable(value, path);
+        return Files.size(path);
+    }
+
+    Path physicalPath(String storedName) { return safeResolve(storedName); }
+
+    Path storageRoot() { return root; }
+
+    static String sha256(Path path) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream input = Files.newInputStream(path, StandardOpenOption.READ)) {
+                input.transferTo(new DigestOutputStream(OutputStream.nullOutputStream(), digest));
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IOException("SHA-256 unavailable", ex);
+        }
+    }
+
+    private void verifyReadable(Media value, Path path) throws IOException {
+        if (!fileSystem.isRegularFile(path)) {
+            throw new ApiException(HttpStatus.CONFLICT, "MEDIA_FILE_MISSING",
+                    "媒体原文件缺失，无法继续读取。媒体 ID：" + value.getId());
+        }
+        long actualSize = Files.size(path);
+        if (actualSize != value.getByteSize()) {
+            throw new ApiException(HttpStatus.CONFLICT, "MEDIA_SIZE_MISMATCH",
+                    "媒体文件大小与记录不一致，无法继续读取。媒体 ID：" + value.getId());
+        }
+        if (value.getSha256() != null && !value.getSha256().isBlank()) {
+            String actualHash = sha256(path);
+            if (!MessageDigest.isEqual(value.getSha256().getBytes(StandardCharsets.US_ASCII),
+                    actualHash.getBytes(StandardCharsets.US_ASCII))) {
+                throw new ApiException(HttpStatus.CONFLICT, "MEDIA_HASH_MISMATCH",
+                        "媒体文件完整性校验失败，无法继续读取。媒体 ID：" + value.getId());
+            }
+        }
     }
 
     public void deletePhysicalAfterCommit(Media value) {

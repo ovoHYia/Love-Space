@@ -1,6 +1,7 @@
 package com.lovespace;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -91,12 +92,15 @@ class WishIntegrationTest {
         mvc.perform(patch("/api/wishes/{id}/reopen", wishId).with(csrf()).session(alice))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.completedAt").doesNotExist());
+        String latestWish = mvc.perform(get("/api/wishes").session(bob))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        long wishVersion = longField(latestWish, "version");
         mvc.perform(put("/api/wishes/{id}", wishId).with(csrf()).session(bob)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title":"一起去冰岛看极光","description":"认真攒旅行基金",
-                                 "category":"TRAVEL","targetDate":"2029-01-01"}
-                                """))
+                                 "category":"TRAVEL","targetDate":"2029-01-01","version":%d}
+                                """.formatted(wishVersion)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("一起去冰岛看极光"));
         mvc.perform(delete("/api/wishes/{id}", wishId).with(csrf()).session(alice))
                 .andExpect(status().isNoContent());
@@ -132,6 +136,44 @@ class WishIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void staleClientCannotOverwriteTheFirstClientChange() throws Exception {
+        String created = mvc.perform(post("/api/wishes").with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"一起看海\",\"category\":\"TRAVEL\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        long wishId = idOf(created);
+
+        String aliceSnapshot = mvc.perform(get("/api/wishes").session(alice))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String bobSnapshot = mvc.perform(get("/api/wishes").session(bob))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        long aliceVersion = longField(aliceSnapshot, "version");
+        long bobVersion = longField(bobSnapshot, "version");
+        assertEquals(aliceVersion, bobVersion);
+
+        mvc.perform(put("/api/wishes/{id}", wishId).with(csrf()).session(alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"一起看海和日落\",\"category\":\"TRAVEL\",\"version\":%d}"
+                                .formatted(aliceVersion)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("一起看海和日落"));
+
+        mvc.perform(put("/api/wishes/{id}", wishId).with(csrf()).session(bob)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"被拒绝的旧内容\",\"category\":\"TRAVEL\",\"version\":%d}"
+                                .formatted(bobVersion)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STALE_UPDATE"))
+                .andExpect(jsonPath("$.message")
+                        .value("对方或另一台设备已修改此内容，请加载最新版本后重新确认。"));
+
+        mvc.perform(get("/api/wishes").session(bob))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].title").value("一起看海和日落"));
+    }
+
     private User newUser(Couple couple, String username, String nickname, String password) {
         User user = new User();
         user.setCouple(couple);
@@ -152,6 +194,12 @@ class WishIntegrationTest {
     private long idOf(String json) {
         Matcher matcher = Pattern.compile("\\\"id\\\":(\\d+)").matcher(json);
         if (!matcher.find()) throw new AssertionError("response has no id: " + json);
+        return Long.parseLong(matcher.group(1));
+    }
+
+    private long longField(String json, String field) {
+        Matcher matcher = Pattern.compile("\\\"" + field + "\\\"\\s*:\\s*(\\d+)").matcher(json);
+        if (!matcher.find()) throw new AssertionError("response has no " + field + ": " + json);
         return Long.parseLong(matcher.group(1));
     }
 }

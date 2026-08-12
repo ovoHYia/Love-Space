@@ -38,13 +38,16 @@ public class NotificationService {
     private final UserRepository users;
     private final CurrentUserService current;
     private final ViewMapper views;
+    private final OptimisticUpdateGuard versions;
+    private final RealtimeSyncService realtime;
     public NotificationService(NotificationRepository notifications, NotificationPreferenceRepository preferences,
                                AnniversaryRepository anniversaries,
                                LetterMessageRepository letterMessages, UserRepository users,
-                               CurrentUserService current, ViewMapper views) {
+                               CurrentUserService current, ViewMapper views,
+                               OptimisticUpdateGuard versions, RealtimeSyncService realtime) {
         this.notifications = notifications; this.preferences = preferences; this.anniversaries = anniversaries;
         this.letterMessages = letterMessages; this.users = users;
-        this.current = current; this.views = views;
+        this.current = current; this.views = views; this.versions = versions; this.realtime = realtime;
     }
 
     @Transactional(readOnly = true)
@@ -128,18 +131,25 @@ public class NotificationService {
         User user = current.user(auth);
         return preferences.findById(user.getId())
                 .map(this::preferenceView)
-                .orElseGet(() -> new NotificationPreferenceView(true, true, true, null));
+                .orElseGet(() -> new NotificationPreferenceView(true, true, true, null, null));
     }
 
     @Transactional
     public NotificationPreferenceView updatePreferences(
             Authentication auth, NotificationPreferenceRequest request) {
         User user = current.user(auth);
-        NotificationPreference value = findOrCreatePreferences(user);
+        NotificationPreference value = preferences.findById(user.getId()).orElse(null);
+        if (value == null) {
+            value = new NotificationPreference();
+            value.setUserId(user.getId());
+            value.setCoupleId(user.getCouple().getId());
+        } else {
+            versions.requireFresh(request.version(), value.getVersion());
+        }
         value.setAnniversaryEnabled(request.anniversaryEnabled());
         value.setLetterEnabled(request.letterEnabled());
         value.setWishEnabled(request.wishEnabled());
-        return preferenceView(preferences.save(value));
+        return preferenceView(preferences.saveAndFlush(value));
     }
 
     /**
@@ -181,6 +191,8 @@ public class NotificationService {
             }
             message.setNotifiedAt(now);
             letterMessages.save(message);
+            realtime.publishAfterCommit(message.getCoupleId(), null, null, "DELIVERED",
+                    List.of("messages", "notifications"));
         }
         return created;
     }
@@ -247,19 +259,10 @@ public class NotificationService {
                 affected, notifications.countByUserIdAndReadAtIsNull(userId));
     }
 
-    private NotificationPreference findOrCreatePreferences(User user) {
-        return preferences.findById(user.getId()).orElseGet(() -> {
-            NotificationPreference value = new NotificationPreference();
-            value.setUserId(user.getId());
-            value.setCoupleId(user.getCouple().getId());
-            return preferences.save(value);
-        });
-    }
-
     private NotificationPreferenceView preferenceView(NotificationPreference value) {
         return new NotificationPreferenceView(
                 value.isAnniversaryEnabled(), value.isLetterEnabled(), value.isWishEnabled(),
-                BeijingTime.toOffset(value.getUpdatedAt()));
+                BeijingTime.toOffset(value.getUpdatedAt()), value.getVersion());
     }
 
     private NotificationSummary summary(User user) {

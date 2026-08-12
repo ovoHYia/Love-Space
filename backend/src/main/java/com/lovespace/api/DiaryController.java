@@ -24,7 +24,7 @@ public class DiaryController {
     }
     @PutMapping("/{id}")
     public DiaryView update(Authentication auth, @PathVariable @Positive Long id,
-                            @Valid @RequestBody DiaryRequest input) { return diaries.update(auth, id, input); }
+                            @Valid @RequestBody DiaryUpdateRequest input) { return diaries.update(auth, id, input); }
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(Authentication auth, @PathVariable @Positive Long id) { diaries.delete(auth, id); }
 }

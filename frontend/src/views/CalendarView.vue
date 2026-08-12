@@ -12,6 +12,7 @@ import { useResourceSync } from '../composables/resourceSync'
 import type { CalendarEntry, CalendarEventInput, CalendarSource } from '../types'
 import { formatDate, formatDateTime, toBeijingOffsetDateTime, toLocalDateTimeInput, todayInput } from '../utils'
 import { createRequestGeneration } from '../utils/latestRequest'
+import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
 
 const router = useRouter()
 const { show } = useToast()
@@ -24,6 +25,7 @@ const loading = ref(true)
 const error = ref('')
 const modalOpen = ref(false)
 const editing = ref<CalendarEntry | null>(null)
+const conflict = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const fieldErrors = ref<Record<string, string>>({})
@@ -116,9 +118,11 @@ async function load() {
     const nextEntries = await api.calendar(grid[0].key, grid[41].key)
     if (!request.isLatest()) return
     entries.value = nextEntries
+    return true
   } catch (cause) {
     if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
     if (request.isLatest()) loading.value = false
   }
@@ -152,6 +156,7 @@ function selectDay(day: { key: string; current: boolean; value: Date }) {
 
 function resetForm(date = selectedDate.value) {
   editing.value = null
+  conflict.value = false
   fieldErrors.value = {}
   Object.assign(form, {
     title: '',
@@ -174,6 +179,7 @@ function openCreate(date = selectedDate.value) {
 function openEdit(item: CalendarEntry) {
   if (!item.editable) return
   fieldErrors.value = {}
+  conflict.value = false
   const start = toLocalDateTimeInput(item.startAt)
   const end = item.endAt ? toLocalDateTimeInput(item.endAt) : ''
   editing.value = item
@@ -213,19 +219,44 @@ async function save() {
   fieldErrors.value = {}
   try {
     if (editing.value) {
-      await api.updateCalendarEvent(editing.value.id, input())
+      await api.updateCalendarEvent(editing.value.id, { ...input(), version: editing.value.version! })
       show('共享日程已经更新。', 'success')
     } else {
       await api.createCalendarEvent(input())
       show('新的共享日程已放进日历。', 'success')
     }
     modalOpen.value = false
+    calendarRequests.cancel()
     await load()
   } catch (cause) {
+    if (isStaleUpdate(cause)) {
+      conflict.value = true
+      show(STALE_UPDATE_MESSAGE, 'error')
+      return
+    }
     fieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
   } finally {
     saving.value = false
+  }
+}
+
+async function loadLatest() {
+  if (!editing.value) return
+  try {
+    await load()
+    if (error.value) return
+    const latest = entries.value
+      .find(item => item.sourceType === 'CUSTOM' && String(item.id) === String(editing.value?.id))
+    if (!latest) {
+      show('这个日程已经不存在，请关闭编辑框后重新加载。', 'info')
+      return
+    }
+    openEdit(latest)
+    conflict.value = false
+    show('已加载最新内容，请确认后再保存。', 'info')
+  } catch (cause) {
+    show(errorMessage(cause), 'error')
   }
 }
 
@@ -234,6 +265,7 @@ async function remove(item: CalendarEntry) {
   deleting.value = true
   try {
     await api.deleteCalendarEvent(item.id)
+    calendarRequests.cancel()
     modalOpen.value = false
     show('共享日程已移入回收站。', 'success')
     await load()
@@ -326,6 +358,10 @@ function openSource(item: CalendarEntry) {
   </div>
 
   <BaseModal v-if="modalOpen" :title="editing ? '编辑共享日程' : '添加共享日程'" description="日程会同时出现在你们两个人的日历中。" @close="modalOpen = false">
+    <div v-if="conflict" class="conflict-panel" role="alert">
+      <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
+      <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
+    </div>
     <form class="stack-form" @submit.prevent="save">
       <label class="field"><span>日程名称</span><input id="calendar-title" v-model="form.title" required maxlength="120" placeholder="例如：一起去看展" :aria-invalid="Boolean(fieldErrors.title)" :aria-describedby="fieldErrors.title ? 'calendar-title-error' : undefined" /><small v-if="fieldErrors.title" id="calendar-title-error" class="field-error">{{ fieldErrors.title }}</small></label>
       <div class="form-two">

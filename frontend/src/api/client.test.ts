@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, request, resetCsrfToken, startDownload } from './client'
+import { ApiError, getClientId, request, resetCsrfToken, startDownload } from './client'
 import { api } from './index'
 
 function response(body: string, status = 200, contentType = 'application/json') {
@@ -55,6 +55,16 @@ describe('streaming downloads', () => {
   })
 })
 
+describe('per-tab client identity', () => {
+  it('does not persist the runtime client id in session storage', () => {
+    const first = getClientId()
+    const second = getClientId()
+
+    expect(first).toBe(second)
+    expect(sessionStorage.getItem('love-space-client-id')).toBeNull()
+  })
+})
+
 describe('API response and CSRF handling', () => {
   afterEach(() => {
     resetCsrfToken()
@@ -74,7 +84,7 @@ describe('API response and CSRF handling', () => {
     expect(broken.text).toHaveBeenCalledOnce()
   })
 
-  it('dispatches the unauthenticated event even when a 401 JSON body is damaged', async () => {
+  it('does not treat an unclassified 401 as session expiration', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response('{broken', 401))
     const listener = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
@@ -83,8 +93,20 @@ describe('API response and CSRF handling', () => {
     const error = await request('/auth/me').catch(cause => cause)
 
     expect(error).toMatchObject({ status: 401, code: 'HTTP_401' })
+    expect(listener).not.toHaveBeenCalled()
+    window.removeEventListener('love-space-unauthenticated', listener)
+  })
+
+  it('dispatches session expiration only for an explicit authentication code', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response('{"code":"PASSWORD_CHANGED","message":"expired"}', 401))
+    const listener = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    window.addEventListener('love-space-unauthenticated', listener)
+
+    await request('/auth/me').catch(() => undefined)
+
     expect(listener).toHaveBeenCalledOnce()
-    expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({ code: 'HTTP_401' })
+    expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({ code: 'PASSWORD_CHANGED' })
     window.removeEventListener('love-space-unauthenticated', listener)
   })
 

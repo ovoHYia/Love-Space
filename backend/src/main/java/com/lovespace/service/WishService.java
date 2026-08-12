@@ -21,10 +21,13 @@ public class WishService {
     private final CurrentUserService current;
     private final NotificationService notifications;
     private final ViewMapper views;
+    private final OptimisticUpdateGuard versions;
 
     public WishService(WishRepository wishes, CurrentUserService current,
-                       NotificationService notifications, ViewMapper views) {
+                       NotificationService notifications, ViewMapper views,
+                       OptimisticUpdateGuard versions) {
         this.wishes = wishes; this.current = current; this.notifications = notifications; this.views = views;
+        this.versions = versions;
     }
 
     @Transactional(readOnly = true)
@@ -46,17 +49,18 @@ public class WishService {
         value.setCreatedBy(user.getId());
         value.setStatus(Wish.STATUS_ACTIVE);
         apply(value, input);
-        Wish saved = wishes.save(value);
+        Wish saved = wishes.saveAndFlush(value);
         notifications.notifyWishCreated(saved, current.partner(user).getId(), user.getNickname());
         return views.wish(saved);
     }
 
     @Transactional
-    public WishView update(Authentication auth, Long id, WishRequest input) {
+    public WishView update(Authentication auth, Long id, WishUpdateRequest input) {
         User user = current.user(auth);
         Wish value = find(user, id);
+        versions.requireFresh(input.version(), value.getVersion());
         apply(value, input);
-        return views.wish(wishes.save(value));
+        return views.wish(wishes.saveAndFlush(value));
     }
 
     @Transactional
@@ -67,7 +71,7 @@ public class WishService {
             value.setStatus(Wish.STATUS_COMPLETED);
             value.setCompletedBy(user.getId());
             value.setCompletedAt(LocalDateTime.now(ZONE));
-            value = wishes.save(value);
+            value = wishes.saveAndFlush(value);
             notifications.notifyWishCompleted(value, current.partner(user).getId(), user.getNickname());
         }
         return views.wish(value);
@@ -80,7 +84,7 @@ public class WishService {
         value.setStatus(Wish.STATUS_ACTIVE);
         value.setCompletedBy(null);
         value.setCompletedAt(null);
-        return views.wish(wishes.save(value));
+        return views.wish(wishes.saveAndFlush(value));
     }
 
     @Transactional
@@ -97,9 +101,17 @@ public class WishService {
     }
 
     private void apply(Wish value, WishRequest input) {
-        value.setTitle(input.title().trim());
-        value.setDescription(AccountService.trimToNull(input.description()));
-        value.setCategory(input.category());
-        value.setTargetDate(input.targetDate());
+        apply(value, input.title(), input.description(), input.category(), input.targetDate());
+    }
+
+    private void apply(Wish value, WishUpdateRequest input) {
+        apply(value, input.title(), input.description(), input.category(), input.targetDate());
+    }
+
+    private void apply(Wish value, String title, String description, String category, LocalDate targetDate) {
+        value.setTitle(title.trim());
+        value.setDescription(AccountService.trimToNull(description));
+        value.setCategory(category);
+        value.setTargetDate(targetDate);
     }
 }

@@ -13,6 +13,8 @@ import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
 import type { Anniversary, DashboardPayload, Letter, MediaItem, Memory, Mood } from '../types'
 import { daysUntilAnniversary, formatDate, formatDateTime, sameId } from '../utils'
+import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 const { show } = useToast()
 const loading = ref(true)
@@ -21,19 +23,22 @@ const data = ref<DashboardPayload | null>(null)
 const now = ref(Date.now())
 const moodOpen = ref(false)
 const moodSaving = ref(false)
+const moodConflict = ref(false)
+const moodVersion = ref<number | string | undefined>(undefined)
 const heartBurst = ref(0)
 const selectedRandom = ref<Memory | null>(null)
 const randomLoading = ref(false)
 const moodForm = reactive({ emoji: '😊', label: '开心', note: '' })
+const dashboardRequests = createRequestGeneration()
 const moodChoices = [
   { emoji: '😊', label: '开心' }, { emoji: '🥰', label: '甜甜的' }, { emoji: '😌', label: '平静' },
   { emoji: '🥺', label: '想念' }, { emoji: '😴', label: '有点累' }, { emoji: '🌧️', label: '需要抱抱' },
 ]
 
-const user = computed(() => data.value?.account.user || authState.user)
-const partner = computed(() => data.value?.account.partner || authState.partner)
-const spaceName = computed(() => data.value?.account.couple.spaceName || authState.spaceName)
-const startedAt = computed(() => data.value?.account.couple.loveStartedAt || authState.loveStartedAt)
+const user = computed(() => authState.user)
+const partner = computed(() => authState.partner)
+const spaceName = computed(() => authState.spaceName)
+const startedAt = computed(() => authState.loveStartedAt)
 const moods = computed(() => data.value?.todayMoods || [])
 const memories = computed(() => (data.value?.recentMemories || []).slice(0, 3))
 const letters = computed<Letter[]>(() => data.value?.recentMessages || [])
@@ -49,19 +54,25 @@ const duration = computed(() => {
 })
 
 let timer: number | undefined
-onMounted(() => { load(); timer = window.setInterval(() => { now.value = Date.now() }, 1000) })
-useResourceSync(['moods', 'memories', 'diaries', 'messages', 'anniversaries', 'wishes'], load)
+onMounted(() => { void load(); timer = window.setInterval(() => { now.value = Date.now() }, 1000) })
+useResourceSync(['moods', 'memories', 'diaries', 'messages', 'anniversaries', 'wishes', 'profile', 'space'], load)
 onUnmounted(() => window.clearInterval(timer))
 
 async function load() {
+  const request = dashboardRequests.begin()
   loading.value = true
   loadError.value = ''
   try {
-    data.value = await api.dashboard()
+    const nextData = await api.dashboard()
+    if (!request.isLatest()) return
+    data.value = nextData
+    return true
   } catch (cause) {
+    if (!request.isLatest()) return
     loadError.value = errorMessage(cause)
+    return false
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 
@@ -86,12 +97,18 @@ function countdownParts(item: Anniversary) {
 async function saveMood() {
   moodSaving.value = true
   try {
-    await api.updateMood({ ...moodForm })
+    const updated = await api.updateMood({ ...moodForm, version: moodVersion.value })
+    moodVersion.value = updated.version
     show('今天的心情已经悄悄放在首页啦。', 'success')
     moodOpen.value = false
+    moodConflict.value = false
+    dashboardRequests.cancel()
     await load()
   } catch (cause) {
-    show(errorMessage(cause), 'error')
+    if (isStaleUpdate(cause)) {
+      moodConflict.value = true
+      show(STALE_UPDATE_MESSAGE, 'error')
+    } else show(errorMessage(cause), 'error')
   } finally {
     moodSaving.value = false
   }
@@ -99,10 +116,24 @@ async function saveMood() {
 
 function openMood() {
   const currentMood = moodFor(user.value?.id)
+  moodVersion.value = currentMood?.version
+  moodConflict.value = false
   Object.assign(moodForm, currentMood
     ? { emoji: currentMood.emoji, label: currentMood.label, note: currentMood.note || '' }
     : { emoji: '😊', label: '开心', note: '' })
   moodOpen.value = true
+}
+
+async function loadLatestMood() {
+  const result = await load()
+  if (result === false) return
+  const currentMood = moodFor(user.value?.id)
+  moodVersion.value = currentMood?.version
+  Object.assign(moodForm, currentMood
+    ? { emoji: currentMood.emoji, label: currentMood.label, note: currentMood.note || '' }
+    : { emoji: '😊', label: '开心', note: '' })
+  moodConflict.value = false
+  show('已加载最新心情，请确认后再保存。', 'info')
 }
 
 async function pickRandom() {
@@ -219,6 +250,7 @@ function visualUrl(media?: MediaItem) {
 
   <BaseModal v-if="moodOpen" title="今天是什么心情？" description="每天一条，随时可以更新。" @close="moodOpen = false">
     <form class="stack-form" @submit.prevent="saveMood">
+      <div v-if="moodConflict" class="conflict-panel" role="alert"><p>{{ STALE_UPDATE_MESSAGE }}</p><button class="button secondary small" type="button" @click="loadLatestMood">加载最新内容</button></div>
       <div class="mood-choice-grid" role="radiogroup" aria-label="选择心情">
         <button v-for="choice in moodChoices" :key="choice.label" type="button" role="radio" :aria-checked="moodForm.label === choice.label" :class="{ selected: moodForm.label === choice.label }" @click="moodForm.emoji = choice.emoji; moodForm.label = choice.label"><span>{{ choice.emoji }}</span>{{ choice.label }}</button>
       </div>

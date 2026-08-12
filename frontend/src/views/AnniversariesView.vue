@@ -10,6 +10,8 @@ import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import type { Anniversary } from '../types'
 import { daysUntilAnniversary, formatDate, todayInput } from '../utils'
+import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 const { show } = useToast()
 const anniversaries = ref<Anniversary[]>([])
@@ -18,6 +20,8 @@ const saving = ref(false)
 const error = ref('')
 const modalOpen = ref(false)
 const editing = ref<Anniversary | null>(null)
+const conflict = ref(false)
+const anniversaryRequests = createRequestGeneration()
 const form = reactive({ title: '', eventDate: todayInput(), type: 'CUSTOM', recurringYearly: true, reminderDays: 7, note: '' })
 const types = [
   { value: 'LOVE_ANNIVERSARY', label: '恋爱纪念日', icon: HeartHandshake },
@@ -32,18 +36,24 @@ const sorted = computed(() => [...anniversaries.value].sort((a, b) => {
   return left < 0 ? Math.abs(left) - Math.abs(right) : left - right
 }))
 
-onMounted(load)
+onMounted(() => { void load() })
 useResourceSync(['anniversaries'], load)
 
 async function load() {
+  const request = anniversaryRequests.begin()
   loading.value = true
   error.value = ''
   try {
-    anniversaries.value = await api.anniversaries()
+    const nextAnniversaries = await api.anniversaries()
+    if (!request.isLatest()) return
+    anniversaries.value = nextAnniversaries
+    return true
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 
@@ -55,12 +65,14 @@ function typeMeta(value: string) { return types.find((item) => item.value === va
 
 function openCreate() {
   editing.value = null
+  conflict.value = false
   Object.assign(form, { title: '', eventDate: todayInput(), type: 'CUSTOM', recurringYearly: true, reminderDays: 7, note: '' })
   modalOpen.value = true
 }
 
 function openEdit(item: Anniversary) {
   editing.value = item
+  conflict.value = false
   Object.assign(form, { title: item.title, eventDate: item.eventDate.slice(0, 10), type: item.type, recurringYearly: item.recurringYearly, reminderDays: item.reminderDays, note: item.note || '' })
   modalOpen.value = true
 }
@@ -70,18 +82,50 @@ async function save() {
   try {
     const payload = { ...form, title: form.title.trim(), note: form.note.trim(), reminderDays: Number(form.reminderDays) }
     if (editing.value) {
-      await api.updateAnniversary(editing.value.id, payload)
+      await api.updateAnniversary(editing.value.id, { ...payload, version: editing.value.version! })
       show('这个重要日子已经更新。', 'success')
     } else {
       await api.createAnniversary(payload)
       show('重要日子已经记在心上。', 'success')
     }
     modalOpen.value = false
+    anniversaryRequests.cancel()
     await load()
   } catch (cause) {
+    if (isStaleUpdate(cause)) {
+      conflict.value = true
+      show(STALE_UPDATE_MESSAGE, 'error')
+      return
+    }
     show(errorMessage(cause), 'error')
   } finally {
     saving.value = false
+  }
+}
+
+async function loadLatest() {
+  if (!editing.value) return
+  try {
+    await load()
+    if (error.value) return
+    const latest = anniversaries.value.find(item => String(item.id) === String(editing.value?.id))
+    if (!latest) {
+      show('这个纪念日已经不存在，请关闭编辑框后重新加载。', 'info')
+      return
+    }
+    editing.value = latest
+    Object.assign(form, {
+      title: latest.title,
+      eventDate: latest.eventDate.slice(0, 10),
+      type: latest.type,
+      recurringYearly: latest.recurringYearly,
+      reminderDays: latest.reminderDays,
+      note: latest.note || '',
+    })
+    conflict.value = false
+    show('已加载最新内容，请确认后再保存。', 'info')
+  } catch (cause) {
+    show(errorMessage(cause), 'error')
   }
 }
 
@@ -89,6 +133,8 @@ async function remove(item: Anniversary) {
   if (!window.confirm(`确定将“${item.title}”移入回收站吗？`)) return
   try {
     await api.deleteAnniversary(item.id)
+    anniversaryRequests.cancel()
+    loading.value = false
     anniversaries.value = anniversaries.value.filter((entry) => entry.id !== item.id)
     show('这个纪念日已移入回收站。', 'success')
   } catch (cause) {
@@ -129,6 +175,10 @@ async function remove(item: Anniversary) {
   </div>
 
   <BaseModal v-if="modalOpen" :title="editing ? '编辑重要日子' : '记住一个重要日子'" description="设置后会在首页显示最近的倒计时。" @close="modalOpen = false">
+    <div v-if="conflict" class="conflict-panel" role="alert">
+      <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
+      <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
+    </div>
     <form class="stack-form" @submit.prevent="save">
       <label class="field"><span>日子名称</span><input v-model="form.title" required maxlength="80" placeholder="例如：我们在一起的纪念日" /></label>
       <div class="form-two"><label class="field"><span>日期</span><input v-model="form.eventDate" required type="date" /></label><label class="field"><span>类型</span><select v-model="form.type"><option v-for="type in types" :key="type.value" :value="type.value">{{ type.label }}</option></select></label></div>

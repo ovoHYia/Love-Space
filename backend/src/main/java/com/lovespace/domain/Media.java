@@ -26,6 +26,8 @@ public class Media {
     private String mediaType;
     @Column(name = "byte_size", nullable = false)
     private long byteSize;
+    @Column(name = "sha256", length = 64)
+    private String sha256;
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -49,6 +51,8 @@ public class Media {
     public void setMediaType(String mediaType) { this.mediaType = mediaType; }
     public long getByteSize() { return byteSize; }
     public void setByteSize(long byteSize) { this.byteSize = byteSize; }
+    public String getSha256() { return sha256; }
+    public void setSha256(String sha256) { this.sha256 = sha256; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 
     @Override public boolean equals(Object o) {

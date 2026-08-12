@@ -1,5 +1,5 @@
 import { jsonRequest, request, startDownload } from './client'
-import type { AlbumItem, Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CoupleSummary, DashboardPayload, Diary, ExportPreparation, GameSession, GameStroke, GameType, Letter, MediaItem, Memory, MemoryTag, MonthlyReport, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput } from '../types'
+import type { AlbumItem, Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CalendarEventUpdateInput, CoupleSummary, DashboardPayload, Diary, ExportPreparation, GameSession, GameStroke, GameType, Letter, MediaIntegrity, MediaItem, Memory, MemoryTag, MonthlyReport, Mood, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput, WishUpdateInput } from '../types'
 
 export interface MemoryInput {
   title: string
@@ -8,6 +8,10 @@ export interface MemoryInput {
   eventTimeKnown: boolean
   location: string
   tags: string[]
+}
+
+export interface MemoryUpdateInput extends MemoryInput {
+  version: number | string
 }
 
 export const api = {
@@ -20,18 +24,19 @@ export const api = {
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   me: () => request<AuthPayload>('/auth/me'),
   dashboard: () => request<DashboardPayload>('/dashboard'),
-  updateProfile: (nickname: string) => jsonRequest<UserProfile>('/profile', 'PUT', { nickname }),
-  updateSpaceName: (spaceName: string) => jsonRequest<CoupleSummary>('/space', 'PUT', { spaceName }),
+  updateProfile: (nickname: string, version: UserProfile['version']) => jsonRequest<UserProfile>('/profile', 'PUT', { nickname, version }),
+  updateSpaceName: (spaceName: string, version: CoupleSummary['version']) => jsonRequest<CoupleSummary>('/space', 'PUT', { spaceName, version }),
   changePassword: (currentPassword: string, newPassword: string) => jsonRequest<void>('/profile/password', 'PUT', { currentPassword, newPassword }),
   updateAvatar: (avatar: File) => {
     const body = new FormData()
     body.append('avatar', avatar)
     return request<MediaItem>('/profile/avatar', { method: 'POST', body })
   },
-  updateMood: (body: { emoji: string; label: string; note: string }) => jsonRequest('/moods/today', 'PUT', body),
+  updateMood: (body: { emoji: string; label: string; note: string; version?: Mood['version'] }) => jsonRequest<Mood>('/moods/today', 'PUT', body),
   monthlyReport: (month: string) => request<MonthlyReport>(`/reports/monthly?month=${encodeURIComponent(month)}`),
   memories: (query = '') => request<SpringPage<Memory>>(`/memories${query ? `?${query}` : ''}`),
   memoryTags: () => request<MemoryTag[]>('/memories/tags'),
+  memory: (id: Memory['id']) => request<Memory>(`/memories/${id}`),
   memoryAlbum: (query = '') => request<SpringPage<AlbumItem>>(`/memories/album${query ? `?${query}` : ''}`),
   randomMemory: (excludeId?: Memory['id']) => request<Memory>(`/memories/random${excludeId === undefined ? '' : `?excludeId=${encodeURIComponent(excludeId)}`}`),
   createMemory: (data: MemoryInput, files: File[]) => {
@@ -40,7 +45,12 @@ export const api = {
     files.forEach((file) => body.append('files', file))
     return request<Memory>('/memories', { method: 'POST', body })
   },
-  updateMemory: (id: Memory['id'], data: MemoryInput) => jsonRequest<Memory>(`/memories/${id}`, 'PUT', data),
+  updateMemory: (id: Memory['id'], data: MemoryUpdateInput, files: File[] = []) => {
+    const body = new FormData()
+    body.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
+    files.forEach((file) => body.append('files', file))
+    return request<Memory>(`/memories/${id}`, { method: 'PUT', body })
+  },
   addMemoryMedia: (id: Memory['id'], files: File[]) => {
     const body = new FormData()
     files.forEach((file) => body.append('files', file))
@@ -50,8 +60,8 @@ export const api = {
     request<Memory>(`/memories/${memoryId}/media/${mediaId}`, { method: 'DELETE' }),
   deleteMemory: (id: Memory['id']) => request<void>(`/memories/${id}`, { method: 'DELETE' }),
   diaries: (authorId?: number | string) => request<Diary[]>(`/diaries${authorId !== undefined ? `?authorId=${encodeURIComponent(authorId)}` : ''}`),
-  createDiary: (body: Omit<Diary, 'id' | 'authorId' | 'authorNickname' | 'createdAt' | 'updatedAt'>) => jsonRequest<Diary>('/diaries', 'POST', body),
-  updateDiary: (id: Diary['id'], body: Omit<Diary, 'id' | 'authorId' | 'authorNickname' | 'createdAt' | 'updatedAt'>) => jsonRequest<Diary>(`/diaries/${id}`, 'PUT', body),
+  createDiary: (body: Omit<Diary, 'id' | 'authorId' | 'authorNickname' | 'createdAt' | 'updatedAt' | 'version'>) => jsonRequest<Diary>('/diaries', 'POST', body),
+  updateDiary: (id: Diary['id'], body: Omit<Diary, 'id' | 'authorId' | 'authorNickname' | 'createdAt' | 'updatedAt' | 'version'> & { version: number | string }) => jsonRequest<Diary>(`/diaries/${id}`, 'PUT', body),
   deleteDiary: (id: Diary['id']) => request<void>(`/diaries/${id}`, { method: 'DELETE' }),
   messages: (page = 0, size = 50) => request<SpringPage<Letter>>(`/messages?page=${page}&size=${size}`),
   createMessage: (content: string, deliverAt?: string) =>
@@ -59,23 +69,24 @@ export const api = {
   readMessage: (id: Letter['id']) => request<Letter>(`/messages/${id}/read`, { method: 'PATCH' }),
   deleteMessage: (id: Letter['id']) => request<void>(`/messages/${id}`, { method: 'DELETE' }),
   anniversaries: () => request<Anniversary[]>('/anniversaries'),
-  createAnniversary: (body: Omit<Anniversary, 'id' | 'daysUntil'>) => jsonRequest<Anniversary>('/anniversaries', 'POST', body),
-  updateAnniversary: (id: Anniversary['id'], body: Omit<Anniversary, 'id' | 'daysUntil'>) => jsonRequest<Anniversary>(`/anniversaries/${id}`, 'PUT', body),
+  createAnniversary: (body: Omit<Anniversary, 'id' | 'daysUntil' | 'version'>) => jsonRequest<Anniversary>('/anniversaries', 'POST', body),
+  updateAnniversary: (id: Anniversary['id'], body: Omit<Anniversary, 'id' | 'daysUntil' | 'version'> & { version: number | string }) => jsonRequest<Anniversary>(`/anniversaries/${id}`, 'PUT', body),
   deleteAnniversary: (id: Anniversary['id']) => request<void>(`/anniversaries/${id}`, { method: 'DELETE' }),
   wishes: () => request<Wish[]>('/wishes'),
   createWish: (body: WishInput) => jsonRequest<Wish>('/wishes', 'POST', body),
-  updateWish: (id: Wish['id'], body: WishInput) => jsonRequest<Wish>(`/wishes/${id}`, 'PUT', body),
+  updateWish: (id: Wish['id'], body: WishUpdateInput) => jsonRequest<Wish>(`/wishes/${id}`, 'PUT', body),
   completeWish: (id: Wish['id']) => request<Wish>(`/wishes/${id}/complete`, { method: 'PATCH' }),
   reopenWish: (id: Wish['id']) => request<Wish>(`/wishes/${id}/reopen`, { method: 'PATCH' }),
   deleteWish: (id: Wish['id']) => request<void>(`/wishes/${id}`, { method: 'DELETE' }),
   calendar: (from: string, to: string) => request<CalendarEntry[]>(`/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   createCalendarEvent: (body: CalendarEventInput) => jsonRequest<CalendarEntry>('/calendar/events', 'POST', body),
-  updateCalendarEvent: (id: CalendarEntry['id'], body: CalendarEventInput) => jsonRequest<CalendarEntry>(`/calendar/events/${id}`, 'PUT', body),
+  updateCalendarEvent: (id: CalendarEntry['id'], body: CalendarEventUpdateInput) => jsonRequest<CalendarEntry>(`/calendar/events/${id}`, 'PUT', body),
   deleteCalendarEvent: (id: CalendarEntry['id']) => request<void>(`/calendar/events/${id}`, { method: 'DELETE' }),
   trash: () => request<TrashItem[]>('/trash'),
   restoreTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}/restore`, { method: 'POST' }),
   purgeTrash: (item: TrashItem) => request<void>(`/trash/${item.type}/${item.id}`, { method: 'DELETE' }),
   emptyTrash: () => request<void>('/trash', { method: 'DELETE' }),
+  mediaIntegrity: () => request<MediaIntegrity>('/data/media-integrity'),
   prepareExport: () => jsonRequest<ExportPreparation>('/data/export/prepare', 'POST', {}),
   exportData: async () => {
     const prepared = await jsonRequest<ExportPreparation>('/data/export/prepare', 'POST', {})

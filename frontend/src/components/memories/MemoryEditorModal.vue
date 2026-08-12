@@ -3,12 +3,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { onBeforeRouteLeave } from 'vue-router'
 import { Camera, FileAudio, FileVideo, Images, MapPin, Tags, Trash2, UploadCloud, X } from 'lucide-vue-next'
 import { api } from '../../api'
-import type { MemoryInput } from '../../api'
+import type { MemoryInput, MemoryUpdateInput } from '../../api'
 import { ApiError, errorMessage } from '../../api/client'
 import { useToast } from '../../composables/toast'
 import type { MediaItem, Memory, MemoryTag } from '../../types'
 import { toBeijingOffsetDateTime, toLocalDateTimeInput } from '../../utils'
 import { memoryMediaType, memoryMediaUrl } from '../../utils/memoryMedia'
+import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../../utils/editConflict'
+import { authState } from '../../stores/auth'
 import {
   areMemorySnapshotsEqual,
   createMemoryDraft,
@@ -30,6 +32,7 @@ const emit = defineEmits<{
 }>()
 const { show } = useToast()
 const currentMemory = ref<Memory | null>(props.memory)
+const conflict = ref(false)
 const saving = ref(false)
 const deletingMediaId = ref<number | string | null>(null)
 const fieldErrors = ref<Record<string, string>>({})
@@ -52,7 +55,7 @@ type ConfirmationState =
 
 const editing = computed(() => currentMemory.value !== null)
 const busy = computed(() => saving.value || deletingMediaId.value !== null)
-const draftStorageKey = memoryDraftKey(props.memory?.id)
+const draftStorageKey = memoryDraftKey(authState.user?.id, props.memory?.id)
 const initialEventAt = props.memory?.eventAt ? toLocalDateTimeInput(props.memory.eventAt) : toLocalDateTimeInput()
 const initialEventTimeKnown = props.memory?.eventTimeKnown !== false
 const eventDate = ref(initialEventAt.slice(0, 10))
@@ -111,8 +114,15 @@ function chooseFiles(event: Event) {
   const files = Array.from((event.target as HTMLInputElement).files || [])
   const allowed = files.filter((file) => /^(image|video|audio)\//.test(file.type))
   if (allowed.length !== files.length) show('已忽略不支持的文件，只能上传图片、视频和音频。', 'info')
-  const remaining = Math.max(0, 20 - (currentMemory.value?.media.length || 0) - selectedFiles.value.length - draftMediaMetadata.value.length)
-  selectedFiles.value.push(...allowed.slice(0, remaining))
+  // 草稿里的媒体只是恢复提示，不是服务器上的真实媒体，不能占用 20 个名额。
+  const remaining = Math.max(0, 20 - (currentMemory.value?.media.length || 0) - selectedFiles.value.length)
+  const picked = allowed.slice(0, remaining)
+  selectedFiles.value.push(...picked)
+  if (picked.length) {
+    draftMediaMetadata.value = draftMediaMetadata.value.filter((metadata) =>
+      !picked.some((file) => file.name === metadata.name && file.size === metadata.size && file.type === metadata.type))
+    scheduleDraftSave()
+  }
   if (allowed.length > remaining) show('每段回忆最多保存 20 个媒体文件。', 'info')
   if (fileInput.value) fileInput.value.value = ''
 }
@@ -151,6 +161,11 @@ function clearDraft() {
   removeDraftStorage()
   draftCandidate.value = null
   draftMediaMetadata.value = []
+}
+
+function clearDraftMediaMetadata() {
+  draftMediaMetadata.value = []
+  scheduleDraftSave()
 }
 
 function readDraft() {
@@ -251,6 +266,12 @@ function discardChanges() {
 }
 
 function requestClose(source: CloseRequestSource = 'button'): Promise<boolean> {
+  if (authState.forcedLogoutReason) {
+    clearDraftSaveTimer()
+    saveDraft()
+    resolveRouteDecisions(true)
+    return Promise.resolve(true)
+  }
   if (busy.value) return Promise.resolve(false)
   if (confirmation.value) {
     if (source === 'route' && confirmation.value.kind === 'discard') return waitForRouteDecision()
@@ -292,8 +313,8 @@ async function save() {
   form.tags.splice(0, form.tags.length, ...payload.tags)
   try {
     if (currentMemory.value) {
-      let updated = await api.updateMemory(currentMemory.value.id, payload)
-      if (selectedFiles.value.length) updated = await api.addMemoryMedia(updated.id, selectedFiles.value)
+      const update: MemoryUpdateInput = { ...payload, version: currentMemory.value.version! }
+      const updated = await api.updateMemory(currentMemory.value.id, update, selectedFiles.value)
       currentMemory.value = updated
       selectedFiles.value = []
       draftMediaMetadata.value = []
@@ -311,10 +332,32 @@ async function save() {
     }
     emit('saved')
   } catch (cause) {
+    if (isStaleUpdate(cause)) {
+      conflict.value = true
+      show(STALE_UPDATE_MESSAGE, 'error')
+      return
+    }
     fieldErrors.value = cause instanceof ApiError ? cause.fieldErrors || {} : {}
     show(errorMessage(cause), 'error')
   } finally {
     saving.value = false
+  }
+}
+
+async function loadLatest() {
+  if (!currentMemory.value) return
+  try {
+    const latest = await api.memory(currentMemory.value.id)
+    currentMemory.value = latest
+    form.title = latest.title
+    form.description = latest.description || ''
+    setEventAt(latest.eventAt, latest.eventTimeKnown)
+    form.location = latest.location || ''
+    form.tags.splice(0, form.tags.length, ...(latest.tags || []))
+    conflict.value = false
+    show('已加载最新内容，请确认后再保存。', 'info')
+  } catch (cause) {
+    show(errorMessage(cause), 'error')
   }
 }
 
@@ -395,6 +438,10 @@ onBeforeUnmount(() => {
   >
     <div class="memory-editor-shell">
       <div class="memory-editor-underlay" :inert="Boolean(confirmation)">
+        <div v-if="conflict" class="conflict-panel" role="alert">
+          <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
+          <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
+        </div>
         <section v-if="draftCandidate" class="memory-draft-recovery" role="status" aria-live="polite">
           <div>
             <strong>发现未完成草稿</strong>
@@ -405,7 +452,7 @@ onBeforeUnmount(() => {
             <button class="button ghost small" type="button" @click="ignoreDraft">忽略</button>
           </div>
         </section>
-        <p v-if="draftMediaMetadata.length" class="memory-draft-media-note" role="status">草稿中的媒体文件未被浏览器保留，媒体需要重新选择。</p>
+        <p v-if="draftMediaMetadata.length" class="memory-draft-media-note" role="status">草稿中的媒体文件未被浏览器保留，媒体需要重新选择。<button class="text-button" type="button" @click="clearDraftMediaMetadata">清除媒体提示</button></p>
 
         <form class="stack-form" :inert="Boolean(draftCandidate)" @submit.prevent="save">
           <div class="form-two">

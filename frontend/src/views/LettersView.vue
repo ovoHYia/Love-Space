@@ -12,10 +12,16 @@ import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import type { Letter, UserProfile } from '../types'
 import { formatDate, formatDateTime, sameId, toBeijingOffsetDateTime, toLocalDateTimeInput } from '../utils'
+import { createRequestGeneration } from '../utils/latestRequest'
+import { mergeLetterPage } from '../utils/lettersPagination'
 
 const { show } = useToast()
 const letters = ref<Letter[]>([])
+const currentPage = ref(0)
+const totalElements = ref(0)
+const totalPages = ref(0)
 const loading = ref(true)
+const loadingMore = ref(false)
 const saving = ref(false)
 const error = ref('')
 const composerOpen = ref(false)
@@ -24,30 +30,51 @@ const deliveryMode = ref<'now' | 'scheduled'>('now')
 const deliverAt = ref('')
 const minimumDelivery = ref('')
 const now = ref(Date.now())
+const messageRequests = createRequestGeneration()
 let clockTimer: number | undefined
 
 const sortedLetters = computed(() => [...letters.value].sort((a, b) =>
   new Date(b.deliverAt || b.createdAt).getTime() - new Date(a.deliverAt || a.createdAt).getTime()))
+const hasMore = computed(() => totalPages.value > 0 && currentPage.value < totalPages.value - 1)
 
 onMounted(() => {
-  load()
+  void load()
   clockTimer = window.setInterval(() => { now.value = Date.now() }, 30000)
 })
 useResourceSync(['messages'], load)
 onBeforeUnmount(() => {
+  messageRequests.cancel()
   if (clockTimer !== undefined) window.clearInterval(clockTimer)
 })
 
-async function load() {
-  loading.value = true
-  error.value = ''
+async function load(reset = true) {
+  if (!reset && (loadingMore.value || !hasMore.value)) return
+  const request = messageRequests.begin()
+  if (reset) {
+    loading.value = true
+    error.value = ''
+  } else {
+    loadingMore.value = true
+  }
+  const targetPage = reset ? 0 : currentPage.value + 1
   try {
-    const page = await api.messages()
-    letters.value = page.content ?? []
+    const page = await api.messages(targetPage)
+    if (!request.isLatest()) return
+    const merged = mergeLetterPage(letters.value, { ...page, content: page.content ?? [] }, reset)
+    letters.value = merged.letters
+    currentPage.value = merged.page
+    totalElements.value = merged.totalElements
+    totalPages.value = merged.totalPages
+    return true
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
-    loading.value = false
+    if (request.isLatest()) {
+      loading.value = false
+      loadingMore.value = false
+    }
   }
 }
 
@@ -58,6 +85,12 @@ function mine(letter: Letter) { return sameId(letter.authorId, authState.user?.i
 function unread(letter: Letter) { return !mine(letter) && !letter.readAt }
 function pending(letter: Letter) {
   return Boolean(letter.scheduled && letter.deliverAt && new Date(letter.deliverAt).getTime() > now.value)
+}
+
+function cancelMessageLoads() {
+  messageRequests.cancel()
+  loading.value = false
+  loadingMore.value = false
 }
 
 function openComposer() {
@@ -73,16 +106,19 @@ function openComposer() {
 
 async function openLetter(letter: Letter) {
   if (!unread(letter)) return
+  cancelMessageLoads()
   try {
     const opened = await api.readMessage(letter.id)
-    letter.content = opened.content
-    letter.readAt = new Date().toISOString()
+    letters.value = letters.value.map(value => String(value.id) === String(letter.id)
+      ? { ...value, content: opened.content, readAt: opened.readAt || new Date().toISOString(), version: opened.version }
+      : value)
   } catch (cause) {
     show(errorMessage(cause), 'error')
   }
 }
 
 async function send() {
+  cancelMessageLoads()
   saving.value = true
   try {
     const scheduled = deliveryMode.value === 'scheduled'
@@ -100,9 +136,12 @@ async function send() {
 
 async function remove(letter: Letter) {
   if (!window.confirm('确定将这封信笺移入回收站吗？')) return
+  cancelMessageLoads()
   try {
     await api.deleteMessage(letter.id)
-    letters.value = letters.value.filter((item) => item.id !== letter.id)
+    totalElements.value = Math.max(0, totalElements.value - 1)
+    letters.value = letters.value.filter((item) => !sameId(item.id, letter.id))
+    if (!letters.value.length && totalElements.value > 0) await load()
     show('这封信笺已移入回收站。', 'success')
   } catch (cause) {
     show(errorMessage(cause), 'error')
@@ -119,12 +158,12 @@ async function remove(letter: Letter) {
 
     <section class="mailbox-summary">
       <div class="mailbox-icon"><MailHeart :size="25" /></div>
-      <div><strong>{{ authState.user?.nickname }} 与 {{ authState.partner?.nickname || '心上人' }} 的小信箱</strong><p>共有 {{ letters.length }} 封信，其中 {{ letters.filter(unread).length }} 封还没拆开，{{ letters.filter(pending).length }} 封等待送达。</p></div>
+      <div><strong>{{ authState.user?.nickname }} 与 {{ authState.partner?.nickname || '心上人' }} 的小信箱</strong><p>共有 {{ totalElements }} 封信，其中 {{ letters.filter(unread).length }} 封还没拆开，{{ letters.filter(pending).length }} 封等待送达。</p></div>
       <span class="postmark">LOVE<br />POST</span>
     </section>
 
     <LoadingState v-if="loading" label="正在打开信箱…" />
-    <div v-else-if="error" class="error-panel" role="alert"><p>{{ error }}</p><button class="button secondary" type="button" @click="load"><RefreshCw :size="17" />重新加载</button></div>
+    <div v-else-if="error" class="error-panel" role="alert"><p>{{ error }}</p><button class="button secondary" type="button" @click="load()"><RefreshCw :size="17" />重新加载</button></div>
     <EmptyState v-else-if="!letters.length" title="信箱里还没有信" description="写一句平时不好意思当面说的话，让它慢慢抵达。"><button class="button primary small" type="button" @click="openComposer"><PenLine :size="17" />写第一封信</button></EmptyState>
     <div v-else class="letter-grid">
       <article v-for="(letter, index) in sortedLetters" :key="letter.id" class="letter-card" :class="{ incoming: !mine(letter), unread: unread(letter), capsule: pending(letter), rose: index % 3 === 1, sage: index % 3 === 2 }">
@@ -135,6 +174,9 @@ async function remove(letter: Letter) {
         </div>
         <footer><span>{{ pending(letter) ? `将于 ${formatDateTime(letter.deliverAt) } 送达` : formatDateTime(letter.createdAt) }}</span><button v-if="mine(letter)" class="icon-button danger" type="button" aria-label="删除这封信" @click="remove(letter)"><Trash2 :size="16" /></button><span v-else-if="letter.readAt">于 {{ formatDate(letter.readAt, { month: 'short', day: 'numeric' }) }} 拆阅</span></footer>
       </article>
+    </div>
+    <div v-if="!loading && !error && letters.length && hasMore" class="load-more-row">
+      <button class="button secondary" type="button" :disabled="loadingMore" @click="load(false)"><span v-if="loadingMore" class="button-spinner"></span><RefreshCw v-else :size="17" />{{ loadingMore ? '正在加载…' : '加载更多信笺' }}</button>
     </div>
   </div>
 
@@ -154,6 +196,7 @@ async function remove(letter: Letter) {
 
 <style scoped>
 .delivery-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.load-more-row { display: flex; justify-content: center; padding: 8px 0 4px; }
 .delivery-options > button { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); color: var(--ink); cursor: pointer; text-align: left; }
 .delivery-options > button.selected { border-color: var(--rose); background: var(--rose-pale); color: var(--rose-dark); box-shadow: 0 0 0 2px rgba(224, 85, 104, .08); }
 .delivery-options span { display: flex; flex-direction: column; gap: 2px; }

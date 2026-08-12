@@ -8,7 +8,7 @@ import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
-import type { TrashItem } from '../types'
+import type { MediaIntegrity, TrashItem } from '../types'
 import { formatDateTime } from '../utils'
 import { createRequestGeneration } from '../utils/latestRequest'
 
@@ -19,6 +19,9 @@ const exporting = ref(false)
 const emptying = ref(false)
 const workingKey = ref('')
 const error = ref('')
+const integrity = ref<MediaIntegrity | null>(null)
+const integrityLoading = ref(false)
+const integrityError = ref('')
 const trashRequests = createRequestGeneration()
 
 const typeLabels: Record<TrashItem['type'], string> = {
@@ -31,7 +34,10 @@ const typeLabels: Record<TrashItem['type'], string> = {
 }
 const countText = computed(() => items.value.length ? `${items.value.length} 项待处理` : '回收站为空')
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  void checkIntegrity()
+})
 useResourceSync(['trash', 'memories', 'diaries', 'messages', 'anniversaries', 'wishes', 'calendar'], load)
 
 async function load() {
@@ -42,9 +48,11 @@ async function load() {
     const nextItems = await api.trash()
     if (!request.isLatest()) return
     items.value = nextItems
+    return true
   } catch (cause) {
     if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
     if (request.isLatest()) loading.value = false
   }
@@ -54,11 +62,24 @@ async function exportData() {
   exporting.value = true
   try {
     await api.exportData()
-    show('数据压缩包已准备好，浏览器正在直接下载。', 'success')
+    show('下载已开始，请在浏览器下载列表中确认。', 'success')
   } catch (cause) {
     show(errorMessage(cause), 'error')
   } finally {
     exporting.value = false
+  }
+}
+
+async function checkIntegrity() {
+  if (integrityLoading.value) return
+  integrityLoading.value = true
+  integrityError.value = ''
+  try {
+    integrity.value = await api.mediaIntegrity()
+  } catch (cause) {
+    integrityError.value = errorMessage(cause)
+  } finally {
+    integrityLoading.value = false
   }
 }
 
@@ -70,6 +91,8 @@ async function restore(item: TrashItem) {
   workingKey.value = key(item)
   try {
     await api.restoreTrash(item)
+    trashRequests.cancel()
+    loading.value = false
     items.value = items.value.filter(value => key(value) !== key(item))
     show(`“${item.title}”已经恢复。`, 'success')
   } catch (cause) {
@@ -84,6 +107,8 @@ async function purge(item: TrashItem) {
   workingKey.value = key(item)
   try {
     await api.purgeTrash(item)
+    trashRequests.cancel()
+    loading.value = false
     items.value = items.value.filter(value => key(value) !== key(item))
     show('内容已永久删除。', 'success')
   } catch (cause) {
@@ -98,6 +123,8 @@ async function emptyTrash() {
   emptying.value = true
   try {
     await api.emptyTrash()
+    trashRequests.cancel()
+    loading.value = false
     items.value = []
     show('回收站已经清空。', 'success')
   } catch (cause) {
@@ -133,6 +160,22 @@ async function emptyTrash() {
       </button>
     </section>
 
+    <section class="card integrity-card">
+      <div class="section-heading">
+        <div><p class="eyebrow">MEDIA HEALTH</p><h2>媒体完整性</h2><span>检查文件大小、哈希和上传目录中的孤儿文件</span></div>
+        <button class="button secondary small" type="button" :disabled="integrityLoading" @click="checkIntegrity"><span v-if="integrityLoading" class="button-spinner"></span>{{ integrityLoading ? '检查中…' : '重新检查' }}</button>
+      </div>
+      <LoadingState v-if="integrityLoading && !integrity" label="正在检查媒体文件…" />
+      <div v-else-if="integrityError" class="error-panel" role="alert"><p>{{ integrityError }}</p><button class="button secondary" type="button" @click="checkIntegrity">重试</button></div>
+      <div v-else-if="integrity" class="integrity-summary">
+        <p :class="{ 'integrity-ok': !integrity.missingFiles && !integrity.sizeMismatches && !integrity.hashMismatches && !integrity.quarantineFailures }">
+          {{ !integrity.missingFiles && !integrity.sizeMismatches && !integrity.hashMismatches && !integrity.quarantineFailures ? '未发现异常' : '发现需要确认的问题' }} · {{ formatDateTime(integrity.checkedAt) }}
+        </p>
+        <div class="integrity-counts"><span>记录 {{ integrity.scannedRecords }}</span><span>正常 {{ integrity.healthyRecords }}</span><span>缺失 {{ integrity.missingFiles }}</span><span>大小不符 {{ integrity.sizeMismatches }}</span><span>哈希不符 {{ integrity.hashMismatches }}</span><span>孤儿 {{ integrity.orphanFiles }}</span><span>已隔离 {{ integrity.quarantinedFiles }}</span></div>
+        <ul v-if="integrity.details.length" class="integrity-details"><li v-for="detail in integrity.details" :key="detail">{{ detail }}</li></ul>
+      </div>
+    </section>
+
     <section class="trash-section">
       <div class="section-heading">
         <div><p class="eyebrow">RECYCLE BIN</p><h2>回收站</h2><span>{{ countText }}</span></div>
@@ -166,6 +209,12 @@ async function emptyTrash() {
 .feature-icon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 17px; background: var(--rose-pale); color: var(--rose); }
 .export-card h2 { margin: 2px 0 5px; font-size: 23px; }
 .export-card > div > p:not(.eyebrow) { max-width: 660px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.integrity-card { padding: 24px; }
+.integrity-summary > p { margin: 15px 0 10px; color: var(--rose); font-weight: 800; font-size: 13px; }
+.integrity-summary > p.integrity-ok { color: #668063; }
+.integrity-counts { display: flex; flex-wrap: wrap; gap: 7px; }
+.integrity-counts span { padding: 6px 9px; border-radius: 9px; background: var(--paper); color: var(--muted); font-size: 11px; }
+.integrity-details { margin: 12px 0 0; padding-left: 19px; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .privacy-note { display: flex; align-items: center; gap: 6px; margin-top: 9px; color: #668063; font-size: 10px; }
 .trash-section { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255,253,251,.72); }
 .section-heading > div > span { display: inline-block; margin-top: 4px; color: var(--muted); font-size: 10px; }

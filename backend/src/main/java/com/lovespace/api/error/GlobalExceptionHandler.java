@@ -92,7 +92,8 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> concurrency(Exception ex) {
         log.warn("Concurrent update rejected: {}", ex.getClass().getSimpleName());
         return ResponseEntity.status(409)
-                .body(ApiError.of(409, "STALE_DATA", "数据已被其他请求更新，请刷新后重试"));
+                .body(ApiError.of(409, "STALE_UPDATE",
+                        "对方或另一台设备已修改此内容，请加载最新版本后重新确认。"));
     }
 
     @ExceptionHandler(TransactionSystemException.class)

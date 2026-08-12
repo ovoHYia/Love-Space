@@ -41,15 +41,16 @@ const viewOptions = [
 
 onMounted(() => { void Promise.all([loadTimeline(), loadTags()]) })
 useResourceSync(['memories', 'media'], async () => {
-  await Promise.all([loadCurrentView(), loadTags()])
+  const results = await Promise.all([loadCurrentView(), loadTags()])
+  return results.every(result => result !== false)
 })
 watch(activeView, () => { void loadCurrentView() })
 watch(() => filters.tag, () => { void loadCurrentView() })
 
 async function loadCurrentView() {
   const view = activeView.value
-  if (view === 'timeline') await loadTimeline()
-  if (view === 'album') await loadAlbum()
+  if (view === 'timeline') return loadTimeline()
+  if (view === 'album') return loadAlbum()
 }
 
 async function loadTimeline() {
@@ -61,9 +62,11 @@ async function loadTimeline() {
     if (!request.isLatest()) return
     memories.value = payload.content
     applyPage(payload)
+    return true
   } catch (cause) {
     if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
     if (request.isLatest()) loading.value = false
   }
@@ -82,9 +85,11 @@ async function loadAlbum(targetPage = 0, append = false) {
     if (!request.isLatest()) return
     albumItems.value = append ? [...albumItems.value, ...payload.content] : payload.content
     applyPage(payload)
+    return true
   } catch (cause) {
     if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
     if (request.isLatest()) {
       loading.value = false
@@ -97,9 +102,15 @@ async function loadTags() {
   const request = tagRequests.begin()
   try {
     const tags = await api.memoryTags()
-    if (request.isLatest()) availableTags.value = tags
+    if (request.isLatest()) {
+      availableTags.value = tags
+      return true
+    }
   } catch {
-    if (request.isLatest()) availableTags.value = []
+    if (request.isLatest()) {
+      availableTags.value = []
+      return false
+    }
   }
 }
 
@@ -153,14 +164,16 @@ function closeEditor() {
 
 async function editorSaved() {
   closeEditor()
+  viewRequests.cancel()
+  tagRequests.cancel()
   await Promise.all([loadCurrentView(), loadTags()])
 }
 
 function replaceMemory(updated: Memory) {
+  viewRequests.cancel()
   editing.value = updated
   memories.value = replaceIn(memories.value, updated)
   if (galleryMemory.value?.id === updated.id) galleryMemory.value = updated
-  if (activeView.value === 'album') void loadAlbum()
 }
 
 function replaceIn(values: Memory[], updated: Memory) {
@@ -171,6 +184,8 @@ async function removeMemory(memory: Memory) {
   if (!window.confirm(`确定将“${memory.title}”和其中的媒体移入回收站吗？`)) return
   try {
     await api.deleteMemory(memory.id)
+    viewRequests.cancel()
+    tagRequests.cancel()
     await Promise.all([loadCurrentView(), loadTags()])
     show('这段回忆已移入回收站。', 'success')
   } catch (cause) {

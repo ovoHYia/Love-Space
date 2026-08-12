@@ -12,6 +12,8 @@ import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import type { Diary, UserProfile } from '../types'
 import { dateDay, formatDate, sameId, todayInput } from '../utils'
+import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
+import { createRequestGeneration } from '../utils/latestRequest'
 
 const { show } = useToast()
 const diaries = ref<Diary[]>([])
@@ -22,6 +24,8 @@ const filter = ref<'all' | 'mine' | 'partner'>('all')
 const search = ref('')
 const modalOpen = ref(false)
 const editing = ref<Diary | null>(null)
+const conflict = ref(false)
+const diaryRequests = createRequestGeneration()
 const expanded = ref(new Set<string>())
 const form = reactive({ title: '', content: '', diaryDate: todayInput(), mood: '温柔' })
 const moodOptions = ['开心', '温柔', '想念', '平静', '感动', '有点累', '需要抱抱']
@@ -34,29 +38,37 @@ const filtered = computed(() => diaries.value.filter((diary) => {
   return !q || `${diary.title} ${diary.content}`.toLowerCase().includes(q)
 }))
 
-onMounted(load)
+onMounted(() => { void load() })
 useResourceSync(['diaries'], load)
 
 async function load() {
+  const request = diaryRequests.begin()
   loading.value = true
   error.value = ''
   try {
-    diaries.value = await api.diaries()
+    const nextDiaries = await api.diaries()
+    if (!request.isLatest()) return
+    diaries.value = nextDiaries
+    return true
   } catch (cause) {
+    if (!request.isLatest()) return
     error.value = errorMessage(cause)
+    return false
   } finally {
-    loading.value = false
+    if (request.isLatest()) loading.value = false
   }
 }
 
 function openCreate() {
   editing.value = null
+  conflict.value = false
   Object.assign(form, { title: '', content: '', diaryDate: todayInput(), mood: '温柔' })
   modalOpen.value = true
 }
 
 function openEdit(diary: Diary) {
   editing.value = diary
+  conflict.value = false
   Object.assign(form, { title: diary.title, content: diary.content, diaryDate: diary.diaryDate.slice(0, 10), mood: diary.mood || '温柔' })
   modalOpen.value = true
 }
@@ -71,15 +83,21 @@ async function save() {
   try {
     const payload = { ...form, title: form.title.trim(), content: form.content.trim() }
     if (editing.value) {
-      await api.updateDiary(editing.value.id, payload)
+      await api.updateDiary(editing.value.id, { ...payload, version: editing.value.version! })
       show('日记已经重新誊写好。', 'success')
     } else {
       await api.createDiary(payload)
       show('今天这一页，已经好好收进日记本。', 'success')
     }
     modalOpen.value = false
+    diaryRequests.cancel()
     await load()
   } catch (cause) {
+    if (isStaleUpdate(cause)) {
+      conflict.value = true
+      show(STALE_UPDATE_MESSAGE, 'error')
+      return
+    }
     show(errorMessage(cause), 'error')
   } finally {
     saving.value = false
@@ -90,8 +108,34 @@ async function remove(diary: Diary) {
   if (!window.confirm(`确定将“${diary.title}”移入回收站吗？`)) return
   try {
     await api.deleteDiary(diary.id)
+    diaryRequests.cancel()
+    loading.value = false
     diaries.value = diaries.value.filter((item) => item.id !== diary.id)
     show('这篇日记已移入回收站。', 'success')
+  } catch (cause) {
+    show(errorMessage(cause), 'error')
+  }
+}
+
+async function loadLatest() {
+  if (!editing.value) return
+  try {
+    await load()
+    if (error.value) return
+    const latest = diaries.value.find(item => String(item.id) === String(editing.value?.id))
+    if (!latest) {
+      show('这篇日记已经不存在，请关闭编辑框后重新加载。', 'info')
+      return
+    }
+    editing.value = latest
+    Object.assign(form, {
+      title: latest.title,
+      content: latest.content,
+      diaryDate: latest.diaryDate.slice(0, 10),
+      mood: latest.mood || '温柔',
+    })
+    conflict.value = false
+    show('已加载最新内容，请确认后再保存。', 'info')
   } catch (cause) {
     show(errorMessage(cause), 'error')
   }
@@ -141,6 +185,10 @@ function toggle(id: Diary['id']) {
   </div>
 
   <BaseModal v-if="modalOpen" :title="editing ? '重新誊写这一页' : '写下今天'" description="对方也会看到这篇日记。" wide @close="modalOpen = false">
+    <div v-if="conflict" class="conflict-panel" role="alert">
+      <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
+      <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
+    </div>
     <form class="stack-form diary-form" @submit.prevent="save">
       <div class="form-two">
         <label class="field"><span>日期</span><input v-model="form.diaryDate" required type="date" /></label>

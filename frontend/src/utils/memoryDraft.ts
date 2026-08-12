@@ -1,5 +1,7 @@
 export const MEMORY_DRAFT_VERSION = 1 as const
 export const MEMORY_DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+export const MEMORY_DRAFT_KEY_PREFIX = 'love-space:memory-draft'
+// 仅为识别旧版本遗留数据保留，当前代码不会再读取这个未隔离的键。
 export const NEW_MEMORY_DRAFT_KEY = 'love-space:memory-draft:new'
 
 export interface MemoryFileSnapshot {
@@ -85,10 +87,26 @@ export function areMemorySnapshotsEqual(left: MemoryEditorSnapshot, right: Memor
     === memorySnapshotKey(createMemoryEditorSnapshot(right, right.tagInput, right.newFiles))
 }
 
-export function memoryDraftKey(memoryId?: number | string | null) {
+export function memoryDraftKey(userId: number | string | null | undefined, memoryId?: number | string | null) {
+  const owner = String(userId ?? 'anonymous')
   return memoryId === undefined || memoryId === null
-    ? NEW_MEMORY_DRAFT_KEY
-    : `love-space:memory-draft:edit:${String(memoryId)}`
+    ? `${MEMORY_DRAFT_KEY_PREFIX}:${owner}:new`
+    : `${MEMORY_DRAFT_KEY_PREFIX}:${owner}:edit:${String(memoryId)}`
+}
+
+export function clearMemoryDraftsForUser(userId: number | string | null | undefined) {
+  if (userId === undefined || userId === null || typeof window === 'undefined') return
+  const prefix = `${MEMORY_DRAFT_KEY_PREFIX}:${String(userId)}:`
+  try {
+    const keys: string[] = []
+    for (let index = 0; index < window.sessionStorage.length; index += 1) {
+      const key = window.sessionStorage.key(index)
+      if (key?.startsWith(prefix)) keys.push(key)
+    }
+    keys.forEach((key) => window.sessionStorage.removeItem(key))
+  } catch {
+    // sessionStorage 受限时安全降级，不阻断退出流程。
+  }
 }
 
 export function createMemoryDraft(

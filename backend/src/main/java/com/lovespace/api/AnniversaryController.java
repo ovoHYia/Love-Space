@@ -23,7 +23,7 @@ public class AnniversaryController {
     }
     @PutMapping("/{id}")
     public AnniversaryView update(Authentication auth, @PathVariable @Positive Long id,
-                                  @Valid @RequestBody AnniversaryRequest input) {
+                                  @Valid @RequestBody AnniversaryUpdateRequest input) {
         return anniversaries.update(auth, id, input);
     }
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)

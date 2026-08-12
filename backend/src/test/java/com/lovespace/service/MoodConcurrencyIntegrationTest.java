@@ -1,9 +1,10 @@
 package com.lovespace.service;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lovespace.api.dto.ApiDtos.MoodRequest;
+import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.Couple;
 import com.lovespace.domain.Mood;
 import com.lovespace.domain.User;
@@ -16,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -70,15 +72,27 @@ class MoodConcurrencyIntegrationTest {
     }
 
     @Test
-    void concurrentFirstWritesForOneUserSerializeWithoutConflict() throws Exception {
+    void concurrentFirstWritesForOneUserDoNotSilentlyOverwrite() throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CyclicBarrier start = new CyclicBarrier(2);
         try {
             Future<?> first = executor.submit(() -> writeMood(start, "开心"));
             Future<?> second = executor.submit(() -> writeMood(start, "期待"));
 
-            assertDoesNotThrow(() -> first.get(10, TimeUnit.SECONDS));
-            assertDoesNotThrow(() -> second.get(10, TimeUnit.SECONDS));
+            int successes = 0;
+            int staleFailures = 0;
+            for (Future<?> attempt : new Future<?>[]{first, second}) {
+                try {
+                    attempt.get(10, TimeUnit.SECONDS);
+                    successes++;
+                } catch (ExecutionException ex) {
+                    assertTrue(ex.getCause() instanceof ApiException);
+                    assertEquals("STALE_UPDATE", ((ApiException) ex.getCause()).getCode());
+                    staleFailures++;
+                }
+            }
+            assertEquals(1, successes);
+            assertEquals(1, staleFailures);
 
             Mood result = moods.findByUserIdAndMoodDate(userId, LocalDate.now(ZONE)).orElseThrow();
             assertEquals(userId, result.getUserId());
@@ -91,7 +105,7 @@ class MoodConcurrencyIntegrationTest {
     private void writeMood(CyclicBarrier start, String label) {
         await(start);
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
-                accounts.setTodayMood(authentication(), new MoodRequest("😊", label, null)));
+                accounts.setTodayMood(authentication(), new MoodRequest("😊", label, null, null)));
     }
 
     private Authentication authentication() {

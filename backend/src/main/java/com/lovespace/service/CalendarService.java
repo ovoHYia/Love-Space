@@ -2,6 +2,7 @@ package com.lovespace.service;
 
 import com.lovespace.api.dto.ApiDtos.CalendarEntryView;
 import com.lovespace.api.dto.ApiDtos.CalendarEventRequest;
+import com.lovespace.api.dto.ApiDtos.CalendarEventUpdateRequest;
 import com.lovespace.api.error.ApiException;
 import com.lovespace.domain.*;
 import com.lovespace.repository.*;
@@ -25,11 +26,12 @@ public class CalendarService {
     private final LetterMessageRepository messages;
     private final UserRepository users;
     private final CurrentUserService current;
+    private final OptimisticUpdateGuard versions;
 
     public CalendarService(CalendarEventRepository events, AnniversaryRepository anniversaries,
                            MemoryRepository memories, DiaryRepository diaries, WishRepository wishes,
                            LetterMessageRepository messages, UserRepository users,
-                           CurrentUserService current) {
+                           CurrentUserService current, OptimisticUpdateGuard versions) {
         this.events = events;
         this.anniversaries = anniversaries;
         this.memories = memories;
@@ -38,6 +40,7 @@ public class CalendarService {
         this.messages = messages;
         this.users = users;
         this.current = current;
+        this.versions = versions;
     }
 
     @Transactional(readOnly = true)
@@ -54,29 +57,30 @@ public class CalendarService {
         events.findActiveInRange(coupleId, start, end).forEach(item -> result.add(entry(
                 "CUSTOM", item.getId(), item.getTitle(), item.getDescription(), item.getStartAt(),
                 item.getEndAt(), item.isAllDay(), item.getCategory(), item.getLocation(), true,
-                item.getCreatedBy(), names)));
+                item.getCreatedBy(), names, item.getVersion())));
         anniversaries.findByCoupleIdAndDeletedAtIsNullOrderByEventDateAsc(coupleId).forEach(item ->
                 occurrences(item, from, to).forEach(date -> result.add(entry(
                         "ANNIVERSARY", item.getId(), item.getTitle(), item.getNote(), date.atStartOfDay(),
-                        null, true, item.getType(), null, false, item.getCreatedBy(), names))));
+                        null, true, item.getType(), null, false, item.getCreatedBy(), names, item.getVersion()))));
         memories.findByCoupleIdAndDeletedAtIsNullAndEventAtGreaterThanEqualAndEventAtLessThanOrderByEventAt(
                 coupleId, start, end).forEach(item -> result.add(entry(
                         "MEMORY", item.getId(), item.getTitle(), item.getDescription(), item.getEventAt(),
-                        null, !item.isEventTimeKnown(), "MEMORY", item.getLocation(), false, item.getAuthorId(), names)));
+                        null, !item.isEventTimeKnown(), "MEMORY", item.getLocation(), false, item.getAuthorId(), names,
+                        item.getVersion())));
         diaries.findByCoupleIdAndDeletedAtIsNullAndDiaryDateBetweenOrderByDiaryDate(coupleId, from, to)
                 .forEach(item -> result.add(entry(
                         "DIARY", item.getId(), item.getTitle(), item.getMood(), item.getDiaryDate().atStartOfDay(),
-                        null, true, "DIARY", null, false, item.getAuthorId(), names)));
+                        null, true, "DIARY", null, false, item.getAuthorId(), names, item.getVersion())));
         wishes.findByCoupleIdAndDeletedAtIsNullAndTargetDateBetweenOrderByTargetDate(coupleId, from, to)
                 .forEach(item -> result.add(entry(
                         "WISH", item.getId(), item.getTitle(), item.getDescription(), item.getTargetDate().atStartOfDay(),
-                        null, true, item.getCategory(), null, false, item.getCreatedBy(), names)));
+                        null, true, item.getCategory(), null, false, item.getCreatedBy(), names, item.getVersion())));
         messages.findAllVisibleByCoupleAndUser(coupleId, user.getId(), BeijingTime.now()).stream()
                 .filter(LetterMessage::isScheduled)
                 .filter(item -> !item.getDeliverAt().isBefore(start) && item.getDeliverAt().isBefore(end))
                 .forEach(item -> result.add(entry(
                         "LETTER", item.getId(), "定时信笺", null, item.getDeliverAt(), null, false,
-                        "LETTER", null, false, item.getAuthorId(), names)));
+                        "LETTER", null, false, item.getAuthorId(), names, item.getVersion())));
 
         return result.stream()
                 .sorted(Comparator.comparing(CalendarEntryView::startAt)
@@ -92,16 +96,17 @@ public class CalendarService {
         value.setCoupleId(user.getCouple().getId());
         value.setCreatedBy(user.getId());
         apply(value, input);
-        CalendarEvent saved = events.save(value);
+        CalendarEvent saved = events.saveAndFlush(value);
         return customView(saved, user.getNickname());
     }
 
     @Transactional
-    public CalendarEntryView update(Authentication auth, Long id, CalendarEventRequest input) {
+    public CalendarEntryView update(Authentication auth, Long id, CalendarEventUpdateRequest input) {
         User user = current.user(auth);
         CalendarEvent value = find(user, id);
+        versions.requireFresh(input.version(), value.getVersion());
         apply(value, input);
-        CalendarEvent saved = events.save(value);
+        CalendarEvent saved = events.saveAndFlush(value);
         String creator = users.findById(saved.getCreatedBy()).map(User::getNickname).orElse("已注销用户");
         return customView(saved, creator);
     }
@@ -120,16 +125,28 @@ public class CalendarService {
     }
 
     private void apply(CalendarEvent value, CalendarEventRequest input) {
-        if (input.endAt() != null && !input.endAt().isAfter(input.startAt())) {
+        apply(value, input.title(), input.description(), input.startAt(), input.endAt(),
+                input.allDay(), input.category(), input.location());
+    }
+
+    private void apply(CalendarEvent value, CalendarEventUpdateRequest input) {
+        apply(value, input.title(), input.description(), input.startAt(), input.endAt(),
+                input.allDay(), input.category(), input.location());
+    }
+
+    private void apply(CalendarEvent value, String title, String description,
+                       OffsetDateTime startAt, OffsetDateTime endAt, boolean allDay,
+                       String category, String location) {
+        if (endAt != null && !endAt.isAfter(startAt)) {
             throw ApiException.badRequest("结束时间必须晚于开始时间");
         }
-        value.setTitle(input.title().trim());
-        value.setDescription(AccountService.trimToNull(input.description()));
-        value.setStartAt(BeijingTime.toLocal(input.startAt()));
-        value.setEndAt(BeijingTime.toLocal(input.endAt()));
-        value.setAllDay(input.allDay());
-        value.setCategory(input.category());
-        value.setLocation(AccountService.trimToNull(input.location()));
+        value.setTitle(title.trim());
+        value.setDescription(AccountService.trimToNull(description));
+        value.setStartAt(BeijingTime.toLocal(startAt));
+        value.setEndAt(BeijingTime.toLocal(endAt));
+        value.setAllDay(allDay);
+        value.setCategory(category);
+        value.setLocation(AccountService.trimToNull(location));
     }
 
     private void validateRange(LocalDate from, LocalDate to) {
@@ -158,16 +175,16 @@ public class CalendarService {
         return new CalendarEntryView("CUSTOM", value.getId(), value.getTitle(), value.getDescription(),
                 BeijingTime.toOffset(value.getStartAt()), BeijingTime.toOffset(value.getEndAt()),
                 value.isAllDay(), value.getCategory(),
-                value.getLocation(), true, value.getCreatedBy(), creator);
+                value.getLocation(), true, value.getCreatedBy(), creator, value.getVersion());
     }
 
     private CalendarEntryView entry(String sourceType, Long id, String title, String description,
                                     LocalDateTime startAt, LocalDateTime endAt, boolean allDay,
                                     String category, String location, boolean editable,
-                                    Long createdBy, Map<Long, String> names) {
+                                    Long createdBy, Map<Long, String> names, Long version) {
         return new CalendarEntryView(sourceType, id, title, description,
                 BeijingTime.toOffset(startAt), BeijingTime.toOffset(endAt), allDay,
                 category, location, editable, createdBy,
-                names.getOrDefault(createdBy, "已注销用户"));
+                names.getOrDefault(createdBy, "已注销用户"), version);
     }
 }

@@ -52,12 +52,21 @@ async function openItem(item: AppNotification) {
   }
   open.value = false
   if (item.referenceType === 'ANNIVERSARY' && route.name !== 'anniversaries') {
-    router.push({ name: 'anniversaries' })
+    await router.push({ name: 'anniversaries' })
   } else if (item.referenceType === 'MESSAGE' && route.name !== 'letters') {
-    router.push({ name: 'letters' })
+    await router.push({ name: 'letters' })
+    refreshLettersPage()
+  } else if (item.referenceType === 'MESSAGE') {
+    refreshLettersPage()
   } else if (item.referenceType === 'WISH' && route.name !== 'wishes') {
-    router.push({ name: 'wishes' })
+    await router.push({ name: 'wishes' })
   }
+}
+
+function refreshLettersPage() {
+  window.dispatchEvent(new CustomEvent('love-space:sync', {
+    detail: { action: 'NOTIFICATION_CLICK', resource: 'messages', actorId: 0, occurredAt: new Date().toISOString() },
+  }))
 }
 
 async function readAll() {

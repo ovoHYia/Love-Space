@@ -9,16 +9,16 @@ Love Space 是一个面向两个人的私密共享空间，用来记录和管理
 - 日历、纪念日、月报和愿望清单
 - 回忆、相册、标签和媒体上传
 - 日记、信笺和通知中心
-- 双人游戏中心、默契问答和你画我猜
+- 双人游戏中心、默契问答、你画我猜、回忆猜猜看和真心话卡牌
 - 个人资料、头像、密码修改与数据导出
-- 回收站和数据恢复
+- 回收站和数据恢复、媒体完整性扫描
 - CSRF 防护、会话认证、账号/密码恢复限流
 - 上传文件大小、空间配额和磁盘剩余空间保护
 
 ## 技术栈
 
 - 前端：Vue 3、TypeScript、Vite、Vue Router
-- 后端：Java 17、Spring Boot、Spring Security、Spring Data JPA、Flyway
+- 后端：Java 17、Spring Boot 4、Spring Security、Spring Data JPA、Flyway
 - 数据库：MySQL 8（测试使用 H2）
 - 部署：Spring Boot 单 JAR，可由 Nginx、Caddy 等 HTTPS 反向代理暴露
 
@@ -179,11 +179,14 @@ npm audit --audit-level=high --registry=https://registry.npmjs.org/
 Pop-Location
 ```
 
-仓库中的 `.github/workflows/verify.yml` 会在提交和拉取请求上执行前端测试、构建、依赖审计，
-`mvn -f backend/pom.xml clean verify -Psecurity-scan`，检查 JAR 内的
-`BOOT-INF/classes/static/index.html` 和静态资源，并使用真实 MySQL 8.4 验证业务流程和全部
-Flyway 迁移。前端 CI 步骤不会加载后端数据库和令牌变量。
-需要在本机验证真实 MySQL 时，可执行下面的构建命令。`-MySqlTests` 会自动使用本机
+后端依赖漏洞扫描使用 Maven 的 `security-scan` profile（OWASP dependency-check，CVSS 达到 7
+会导致构建失败）：
+
+```powershell
+mvn -f backend/pom.xml clean verify -Psecurity-scan
+```
+
+本机验证真实 MySQL 时，可执行下面的构建命令。`-MySqlTests` 会自动使用本机
 `love_space_test` 数据库和 `root` 用户，并复用本地 `.env` 中的 `DB_PASSWORD`，因此不需要再次输入密码；
 请先确保该本机测试数据库已经创建，构建脚本不会把应用数据库自动改成测试数据库。
 如果测试库密码与应用数据库密码不同，可在未提交的 `.env` 中单独配置 `MYSQL_TEST_PASSWORD`；该配置优先级更高。

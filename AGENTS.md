@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Love Space is a two-part application. `frontend/` contains the Vue 3 and TypeScript single-page app: pages live in `src/views/`, shared UI in `src/components/`, API calls in `src/api/`, and client state in `src/stores/`. Static assets belong in `frontend/public/`. `backend/` is a Java 17 Spring Boot service organized by layer: REST controllers in `api/`, business logic in `service/`, persistence entities in `domain/`, Spring Data repositories in `repository/`, and cross-cutting configuration, security, and time helpers in `config/`, `security/`, and `time/`. Database migrations are ordered Flyway SQL files under `backend/src/main/resources/db/migration/`. Root `scripts/` holds PowerShell workflows. Local uploads, logs, release staging, and generated artifacts live under `data/`, `work/`, `outputs/`, `frontend/dist/`, or `backend/target/`; these paths must not be committed.
+Love Space is a two-part application. `frontend/` contains the Vue 3 and TypeScript single-page app: pages live in `src/views/`, shared UI in `src/components/`, API calls in `src/api/`, and client state in `src/stores/`. Static assets belong in `frontend/public/`. `backend/` is a Java 17 Spring Boot 4 service organized by layer: REST controllers in `api/`, business logic in `service/`, persistence entities in `domain/`, Spring Data repositories in `repository/`, and cross-cutting configuration, security, and time helpers in `config/`, `security/`, and `time/`. Database migrations are ordered Flyway SQL files under `backend/src/main/resources/db/migration/`. Root `scripts/` holds PowerShell workflows. Local uploads, logs, release staging, and generated artifacts live under `data/`, `work/`, `outputs/`, `frontend/dist/`, or `backend/target/`; these paths must not be committed.
 
 ## Build, Test, and Development Commands
 
@@ -20,7 +20,7 @@ Use 2-space indentation in Vue, TypeScript, JSON, and CSS; retain the existing 4
 
 ## Testing Guidelines
 
-Add or update tests for backend behavior under `backend/src/test/java/com/lovespace/`. Use descriptive `*Test.java` names and exercise HTTP-facing behavior where practical. Include a Flyway migration for every schema change; migrations must be sequentially named, e.g. `V18__add_feature.sql`. Frontend unit tests use Vitest; run `npm test` and `npm run build` after UI changes.
+Add or update tests for backend behavior under `backend/src/test/java/com/lovespace/`. Use descriptive `*Test.java` names and exercise HTTP-facing behavior where practical. Include a Flyway migration for every schema change; migrations must be sequentially named after the latest existing one, e.g. `V20__add_feature.sql`. Frontend unit tests use Vitest; run `npm test` and `npm run build` after UI changes.
 Real MySQL tests must target a local database whose name ends with `_test`; do not point them at a production database.
 
 ## Commit & Pull Request Guidelines

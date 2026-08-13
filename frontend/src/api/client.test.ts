@@ -53,6 +53,32 @@ describe('streaming downloads', () => {
     await expect(api.exportData()).rejects.toMatchObject({ code: 'EXPORT_PREPARE_FAILED' })
     expect(click).not.toHaveBeenCalled()
   })
+
+  it('starts the download after a successful HEAD precheck', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const responses = [
+      response('{"token":"token"}'),
+      response('{"downloadUrl":"/data/export/abc","filename":"export.zip","expiresAt":"2030-01-01T00:00:00+08:00"}'),
+      response('', 200, ''),
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(responses.shift())))
+
+    await expect(api.exportData()).resolves.toMatchObject({ downloadUrl: '/data/export/abc' })
+    expect(click).toHaveBeenCalledOnce()
+  })
+
+  it('does not start a download when the HEAD precheck fails', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const responses = [
+      response('{"token":"token"}'),
+      response('{"downloadUrl":"/data/export/abc","filename":"export.zip","expiresAt":"2030-01-01T00:00:00+08:00"}'),
+      response('', 500, ''),
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(responses.shift())))
+
+    await expect(api.exportData()).rejects.toMatchObject({ status: 500, code: 'HTTP_500' })
+    expect(click).not.toHaveBeenCalled()
+  })
 })
 
 describe('per-tab client identity', () => {

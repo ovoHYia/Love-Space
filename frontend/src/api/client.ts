@@ -210,6 +210,22 @@ export function startDownload(path: string) {
   anchor.remove()
 }
 
+// <a> 直连下载是流式的（大文件不进内存），但失败时浏览器只会静默下载一个错误响应。
+// 先用 HEAD 预检，失败时抛 ApiError 让调用方给出提示；HEAD 无响应体，只能按状态码给文案。
+export async function verifyDownload(path: string) {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, { method: 'HEAD', credentials: 'include' })
+  } catch {
+    throw new ApiError(CONNECTION_ERROR_MESSAGE, 0, 'NETWORK_ERROR')
+  }
+  if (response.ok) return
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('love-space-unauthenticated', { detail: { code: 'UNAUTHORIZED' } }))
+  }
+  throw new ApiError('导出文件暂时不可用，请稍后重试。', response.status, `HTTP_${response.status}`)
+}
+
 export function mediaUrl(id?: number | string | null, directUrl?: string | null) {
   if (directUrl) return directUrl
   return id === undefined || id === null ? '' : `${API_BASE}/media/${id}`

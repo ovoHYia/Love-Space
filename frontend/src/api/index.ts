@@ -1,4 +1,4 @@
-import { jsonRequest, request, startDownload } from './client'
+import { jsonRequest, request, startDownload, verifyDownload } from './client'
 import type { AlbumItem, Anniversary, AppNotification, AuthPayload, CalendarEntry, CalendarEventInput, CalendarEventUpdateInput, CoupleSummary, DashboardPayload, Diary, ExportPreparation, GameSession, GameStroke, GameType, Letter, MediaIntegrity, MediaItem, Memory, MemoryTag, MonthlyReport, Mood, NotificationList, NotificationPreferences, SpringPage, TrashItem, UserProfile, Wish, WishInput, WishUpdateInput } from '../types'
 
 export interface MemoryInput {
@@ -90,6 +90,7 @@ export const api = {
   prepareExport: () => jsonRequest<ExportPreparation>('/data/export/prepare', 'POST', {}),
   exportData: async () => {
     const prepared = await jsonRequest<ExportPreparation>('/data/export/prepare', 'POST', {})
+    await verifyDownload(prepared.downloadUrl)
     startDownload(prepared.downloadUrl)
     return prepared
   },

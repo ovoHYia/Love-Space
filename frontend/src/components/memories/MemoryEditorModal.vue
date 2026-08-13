@@ -141,6 +141,16 @@ function addTag(value = tagInput.value) {
   tagInput.value = ''
 }
 
+// 中文输入法组合期间 keydown 的 key 是 'Process'，全角逗号是 '，'；
+// 统一在这里判断，避免组合中误触发、且支持中英文两种逗号。
+function handleTagKeydown(event: KeyboardEvent) {
+  if (event.isComposing) return
+  if (event.key === 'Enter' || event.key === ',' || event.key === '，') {
+    event.preventDefault()
+    addTag()
+  }
+}
+
 function clearDraftSaveTimer() {
   if (draftSaveTimer !== null) {
     window.clearTimeout(draftSaveTimer)
@@ -463,7 +473,7 @@ onBeforeUnmount(() => {
           <label class="field"><span>地点名称（可选）</span><span class="input-with-icon"><MapPin :size="17" /><input id="memory-location" v-model="form.location" maxlength="200" placeholder="例如：厦门 · 环岛路" :aria-invalid="Boolean(fieldErrors.location)" :aria-describedby="fieldErrors.location ? 'memory-location-error' : undefined" /></span><small v-if="fieldErrors.location" id="memory-location-error" class="field-error">{{ fieldErrors.location }}</small></label>
           <label class="field"><span>想记住的话（可选）</span><textarea id="memory-description" v-model="form.description" maxlength="10000" rows="4" placeholder="那天发生了什么？当时是什么心情？" :aria-invalid="Boolean(fieldErrors.description)" :aria-describedby="fieldErrors.description ? 'memory-description-error' : undefined"></textarea><small v-if="fieldErrors.description" id="memory-description-error" class="field-error">{{ fieldErrors.description }}</small><small>{{ form.description.length }}/10000</small></label>
           <div class="tag-editor">
-            <label class="field"><span>回忆标签（最多 12 个）</span><div class="tag-input"><Tags :size="17" /><input id="memory-tags" v-model="tagInput" maxlength="30" placeholder="旅行、约会、美食…" :aria-invalid="Boolean(fieldErrors.tags)" :aria-describedby="fieldErrors.tags ? 'memory-tags-error' : undefined" @keydown.enter.prevent="addTag()" @keydown.,.prevent="addTag()" /><button type="button" @click="addTag()">添加</button></div><small v-if="fieldErrors.tags" id="memory-tags-error" class="field-error">{{ fieldErrors.tags }}</small></label>
+            <label class="field"><span>回忆标签（最多 12 个）</span><div class="tag-input"><Tags :size="17" /><input id="memory-tags" v-model="tagInput" maxlength="30" placeholder="旅行、约会、美食…" :aria-invalid="Boolean(fieldErrors.tags)" :aria-describedby="fieldErrors.tags ? 'memory-tags-error' : undefined" @keydown="handleTagKeydown" /><button type="button" @click="addTag()">添加</button></div><small v-if="fieldErrors.tags" id="memory-tags-error" class="field-error">{{ fieldErrors.tags }}</small></label>
             <div v-if="form.tags.length" class="tag-row editable"><button v-for="(tag, index) in form.tags" :key="tag" type="button" @click="form.tags.splice(index, 1)"># {{ tag }} <X :size="12" /></button></div>
             <div v-if="availableTags.length" class="known-tags"><span>常用：</span><button v-for="tag in availableTags.slice(0, 8)" :key="tag.name" type="button" @click="addTag(tag.name)">{{ tag.name }}</button></div>
           </div>

@@ -5,17 +5,19 @@ import SetupView from '../views/SetupView.vue'
 import LoginView from '../views/LoginView.vue'
 import AppShell from '../components/AppShell.vue'
 import DashboardView from '../views/DashboardView.vue'
-import MemoriesView from '../views/MemoriesView.vue'
-import DiariesView from '../views/DiariesView.vue'
-import LettersView from '../views/LettersView.vue'
-import AnniversariesView from '../views/AnniversariesView.vue'
-import WishesView from '../views/WishesView.vue'
-import ProfileView from '../views/ProfileView.vue'
-import DataManagementView from '../views/DataManagementView.vue'
-import CalendarView from '../views/CalendarView.vue'
-import ReportsView from '../views/ReportsView.vue'
-import NotificationsView from '../views/NotificationsView.vue'
-import GamesView from '../views/GamesView.vue'
+
+// 非首屏视图懒加载：首屏只需 Setup/Login/AppShell/Dashboard，其余按路由分包。
+const MemoriesView = () => import('../views/MemoriesView.vue')
+const DiariesView = () => import('../views/DiariesView.vue')
+const LettersView = () => import('../views/LettersView.vue')
+const AnniversariesView = () => import('../views/AnniversariesView.vue')
+const WishesView = () => import('../views/WishesView.vue')
+const ProfileView = () => import('../views/ProfileView.vue')
+const DataManagementView = () => import('../views/DataManagementView.vue')
+const CalendarView = () => import('../views/CalendarView.vue')
+const ReportsView = () => import('../views/ReportsView.vue')
+const NotificationsView = () => import('../views/NotificationsView.vue')
+const GamesView = () => import('../views/GamesView.vue')
 
 const router = createRouter({
   history: createWebHashHistory(),

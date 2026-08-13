@@ -6,6 +6,7 @@ self.addEventListener('install', (event) => {
     const cache = await caches.open(CACHE)
     await cache.addAll(APP_SHELL)
     const root = await fetch('/')
+    if (!root.ok) throw new Error(`install: fetch / failed with ${root.status}`)
     const html = await root.clone().text()
     const assets = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map((match) => match[1])
     await cache.put('/', root)
@@ -30,6 +31,8 @@ self.addEventListener('fetch', (event) => {
 
   if (url.origin === self.location.origin && /\.(?:js|css|png|jpg|jpeg|webp|woff2?)$/i.test(url.pathname)) {
     event.respondWith(caches.match(request).then((cached) => cached || fetch(request).then((response) => {
+      // 只缓存成功响应，避免把 404/500 持久化进 cache-first 缓存。
+      if (!response.ok) return response
       const copy = response.clone()
       caches.open(CACHE).then((cache) => cache.put(request, copy))
       return response

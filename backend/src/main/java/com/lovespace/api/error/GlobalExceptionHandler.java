@@ -15,6 +15,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -102,6 +103,15 @@ public class GlobalExceptionHandler {
             return concurrency(ex);
         }
         return unknown(ex);
+    }
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    ResponseEntity<Void> asyncClientDisconnected(AsyncRequestNotUsableException ex) {
+        // A client (typically an SSE stream) disconnected before the async response could be
+        // written. Nothing can be sent back, so skip error logging and avoid writing a body
+        // that would fail against the already-selected text/event-stream content type.
+        log.debug("Client disconnected before an async response could be written", ex);
+        return ResponseEntity.noContent().build();
     }
 
     @ExceptionHandler(Exception.class)

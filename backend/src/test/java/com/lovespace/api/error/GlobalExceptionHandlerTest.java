@@ -2,12 +2,14 @@ package com.lovespace.api.error;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.io.IOException;
 import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.TransactionSystemException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 class GlobalExceptionHandlerTest {
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
@@ -36,5 +38,13 @@ class GlobalExceptionHandlerTest {
                 new DataIntegrityViolationException("database unavailable"));
         assertEquals(500, integrityFailure.getStatusCode().value());
         assertEquals("INTERNAL_ERROR", integrityFailure.getBody().code());
+    }
+
+    @Test
+    void clientDisconnectsDuringAsyncStreamingAreSwallowedWithoutBody() {
+        ResponseEntity<Void> response = handler.asyncClientDisconnected(
+                new AsyncRequestNotUsableException("client disconnected", new IOException("Broken pipe")));
+        assertEquals(204, response.getStatusCode().value());
+        assertEquals(null, response.getBody());
     }
 }

@@ -58,7 +58,21 @@ if ($isProduction -and $listenAddress -notin @("127.0.0.1", "::1", "localhost"))
 }
 Write-Host "Starting the Love Space single JAR..." -ForegroundColor Cyan
 if ($listenAddress -eq "0.0.0.0") {
-    Write-Host "LAN mode is enabled. Open http://YOUR-PC-LAN-IP:$port on your phone." -ForegroundColor Yellow
+    Write-Host "LAN mode is enabled. Open one of these URLs on your phone:" -ForegroundColor Yellow
+    $lanAddresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.IPAddress -ne "127.0.0.1" -and
+            $_.IPAddress -notlike "169.254.*" -and
+            $_.InterfaceAlias -notmatch 'Loopback|vEthernet|WSL|VMware|VirtualBox'
+        })
+    if ($lanAddresses.Count -gt 0) {
+        foreach ($lanAddress in $lanAddresses) {
+            Write-Host ("  http://{0}:{1}  ({2})" -f $lanAddress.IPAddress, $port, $lanAddress.InterfaceAlias)
+        }
+    }
+    else {
+        Write-Host "  http://YOUR-PC-LAN-IP:$port (no LAN IPv4 address was detected)"
+    }
     Write-Host "Use this only on a trusted private network and allow TCP $port only."
 }
 else {

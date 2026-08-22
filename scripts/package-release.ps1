@@ -1,8 +1,14 @@
+[CmdletBinding()]
 param(
     [string]$Version = "Love-Space-v1.0-fixed"
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "common.ps1")
+if ($Version -notmatch '^[A-Za-z0-9._-]+$') {
+    throw "-Version 只能包含字母、数字、点、下划线和连字符，当前值：$Version"
+}
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $releaseJar = Join-Path $projectRoot "outputs\Love-Space-v1.0.jar"
 $outputZip = Join-Path $projectRoot ("outputs\{0}.zip" -f $Version)
@@ -40,6 +46,7 @@ try {
     $releaseTarget = Join-Path $packageRoot "backend\target"
     New-Item -ItemType Directory -Path $releaseTarget -Force | Out-Null
     Copy-Item -LiteralPath $releaseJar -Destination (Join-Path $releaseTarget "love-space-backend-1.0.0.jar") -Force
+    Assert-JarContainsStaticFrontend -JarPath (Join-Path $packageRoot "backend\target\love-space-backend-1.0.0.jar")
 
     $forbidden = Get-ChildItem -LiteralPath $packageRoot -Recurse -Force -File |
         Where-Object {

@@ -17,6 +17,10 @@ if ($isProduction -and $Lan) {
     throw "生产环境禁止使用 -Lan；请保持 Spring Boot 仅监听回环地址，并通过 HTTPS 反向代理提供服务。"
 }
 
+if (-not $isProduction) {
+    Write-Host "警告：未启用 prod profile，生产安全校验不会生效；仅用于本地或可信局域网。" -ForegroundColor Yellow
+}
+
 if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) {
     throw "Cannot find $jar. Run: powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1"
 }
@@ -52,6 +56,9 @@ elseif ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("SERV
 [System.IO.Directory]::CreateDirectory((Join-Path $root "data\uploads")) | Out-Null
 
 $port = Get-EnvValue -Name "SERVER_PORT" -Default "8080"
+if ($port -notmatch '^\d{1,5}$') {
+    throw "SERVER_PORT 必须是数字端口，当前值：$port"
+}
 $listenAddress = Get-EnvValue -Name "SERVER_ADDRESS" -Default "127.0.0.1"
 if ($isProduction -and $listenAddress -notin @("127.0.0.1", "::1", "localhost")) {
     throw "生产环境 SERVER_ADDRESS 必须是回环地址，当前值：$listenAddress"

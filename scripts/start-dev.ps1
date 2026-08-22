@@ -118,6 +118,11 @@ foreach ($log in @($backendOut, $backendErr, $frontendOut, $frontendErr)) {
 $frontendHost = Get-EnvValue -Name "FRONTEND_HOST" -Default "127.0.0.1"
 $frontendPort = Get-EnvValue -Name "FRONTEND_PORT" -Default "5173"
 $backendPort = Get-EnvValue -Name "SERVER_PORT" -Default "8080"
+foreach ($portValue in @($frontendPort, $backendPort)) {
+    if ($portValue -notmatch '^\d{1,5}$') {
+        throw "FRONTEND_PORT/SERVER_PORT 必须是数字端口，当前值：$portValue"
+    }
+}
 
 $backend = $null
 $frontend = $null

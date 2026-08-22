@@ -10,7 +10,8 @@ function Get-ProjectRoot {
 function Import-ProjectEnv {
     param(
         [string]$Path = (Join-Path (Get-ProjectRoot) ".env"),
-        [switch]$Optional
+        [switch]$Optional,
+        [string]$IncludePattern
     )
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -42,6 +43,10 @@ function Import-ProjectEnv {
             throw "Invalid variable name in .env: $name"
         }
 
+        if ($IncludePattern -and $name -notmatch $IncludePattern) {
+            continue
+        }
+
         if ($value.Length -ge 2) {
             $first = $value[0]
             $last = $value[$value.Length - 1]
@@ -52,6 +57,10 @@ function Import-ProjectEnv {
 
         [Environment]::SetEnvironmentVariable($name, $value, "Process")
         [void]$script:ImportedProjectEnvNames.Add($name)
+    }
+
+    if ($IncludePattern) {
+        return
     }
 
     # Accept names used by early local snapshots while keeping the public
@@ -93,9 +102,11 @@ function Import-ProjectEnv {
             $hasAllLegacyValues = $legacyDatabaseNames | Where-Object {
                 [string]::IsNullOrWhiteSpace($legacyDatabaseValues[$_])
             } | Measure-Object | Select-Object -ExpandProperty Count
+            $legacyPort = 0
+            $legacyPortValid = [int]::TryParse($legacyDatabaseValues["DB_PORT"], [ref]$legacyPort)
             if ($hasAllLegacyValues -ne 0 -or
                 $legacyDatabaseValues["DB_HOST"] -ne $database.Host -or
-                [int]$legacyDatabaseValues["DB_PORT"] -ne $database.Port -or
+                (-not $legacyPortValid -or $legacyPort -ne $database.Port) -or
                 $legacyDatabaseValues["DB_NAME"] -ne $database.Name) {
                 throw "DB_URL conflicts with legacy DB_HOST/DB_PORT/DB_NAME values. Keep DB_URL and remove the legacy fields."
             }
@@ -265,6 +276,46 @@ function Assert-NodeVersion {
         throw "Node.js ^20.19.0 or >=22.12.0 is required by Vite. Current version: $versionText"
     }
     Write-Host "Node.js $versionText detected." -ForegroundColor DarkGray
+}
+
+function Assert-JavaVersion {
+    param([Parameter(Mandatory = $true)][string]$Java)
+
+    $previousErrorPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $versionOutput = & $Java -version 2>&1
+    $versionExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorPreference
+    if ($versionExitCode -ne 0) {
+        throw "无法执行 Java：退出码 $versionExitCode"
+    }
+    $versionText = ($versionOutput | Select-Object -First 1) -join ""
+    if ($versionText -notmatch 'version "(?<major>\d+)') {
+        throw "Cannot identify the Java version: $versionText"
+    }
+    if ([int]$Matches.major -lt 17) {
+        throw "JDK 17 or newer is required. Current version: $versionText"
+    }
+}
+
+function Assert-MavenVersion {
+    param([Parameter(Mandatory = $true)][string]$Maven)
+
+    $previousErrorPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $versionOutput = & $Maven --version 2>&1
+    $versionExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorPreference
+    if ($versionExitCode -ne 0) {
+        throw "无法执行 Maven：退出码 $versionExitCode"
+    }
+    $versionText = ($versionOutput | Select-Object -First 1) -join ""
+    if ($versionText -notmatch 'Apache Maven (?<major>\d+)\.(?<minor>\d+)') {
+        throw "Cannot identify the Maven version: $versionText"
+    }
+    if ([int]$Matches.major -lt 3 -or ([int]$Matches.major -eq 3 -and [int]$Matches.minor -lt 9)) {
+        throw "Maven 3.9 or newer is required. Current version: $versionText"
+    }
 }
 
 function Assert-JarContainsStaticFrontend {

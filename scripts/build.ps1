@@ -31,11 +31,15 @@ if ($null -eq $maven) { throw "Cannot find Maven. Install Maven 3.9+ and add its
 if ($null -eq $npm) { throw "Cannot find npm. Install Node.js ^20.19.0 or >=22.12.0." }
 if ($null -eq $node) { throw "Cannot find Node.js. Install Node.js ^20.19.0 or >=22.12.0." }
 Assert-NodeVersion -Node $node
+Assert-JavaVersion -Java $java
+Assert-MavenVersion -Maven $maven
 
 if (Test-Path -LiteralPath $frontendDist) {
     Write-Host "Removing previous frontend/dist before the production build..." -ForegroundColor DarkGray
     Remove-Item -LiteralPath $frontendDist -Recurse -Force
 }
+
+Import-ProjectEnv -Path (Join-Path $root ".env") -Optional -IncludePattern '^VITE_'
 
 Push-Location $frontendDir
 try {

@@ -3,6 +3,7 @@ import { api } from '../api'
 import { ApiError } from '../api/client'
 import { resetCsrfToken } from '../api/client'
 import { resetNotifications } from './notifications'
+import { clearMemoryDraftsForUser } from '../utils/memoryDraft'
 import type { AuthPayload, UserProfile } from '../types'
 
 interface AuthState {
@@ -88,6 +89,8 @@ export async function bootstrapAuth(force = false) {
 }
 
 export function clearAuth(reason: string | null = null) {
+  // 会话失效/被改密等强制登出场景也要清掉本地私密草稿
+  clearMemoryDraftsForUser(authState.user?.id)
   authState.authenticated = false
   authState.user = null
   authState.partner = null

@@ -158,7 +158,7 @@ async function remove(letter: Letter) {
 
     <section class="mailbox-summary">
       <div class="mailbox-icon"><MailHeart :size="25" /></div>
-      <div><strong>{{ authState.user?.nickname }} 与 {{ authState.partner?.nickname || '心上人' }} 的小信箱</strong><p>共有 {{ totalElements }} 封信，其中 {{ letters.filter(unread).length }} 封还没拆开，{{ letters.filter(pending).length }} 封等待送达。</p></div>
+      <div><strong>{{ authState.user?.nickname }} 与 {{ authState.partner?.nickname || '心上人' }} 的小信箱</strong><p>共有 {{ totalElements }} 封信，当前页中 {{ letters.filter(unread).length }} 封还没拆开，{{ letters.filter(pending).length }} 封等待送达。</p></div>
       <span class="postmark">LOVE<br />POST</span>
     </section>
 

@@ -185,7 +185,9 @@ function visualUrl(media?: MediaItem) {
         <div class="person"><BaseAvatar :user="user" size="lg" /><span>{{ user?.nickname || '我' }}</span></div>
         <button class="heart-seal" type="button" aria-label="送出一颗爱心" @click="burst">
           <Heart :size="25" fill="currentColor" />
-          <span v-for="n in 5" v-if="heartBurst" :key="`${heartBurst}-${n}`" class="burst-heart" :style="{ '--i': n }">♥</span>
+          <template v-if="heartBurst">
+            <span v-for="n in 5" :key="`${heartBurst}-${n}`" class="burst-heart" :style="{ '--i': n }">♥</span>
+          </template>
         </button>
         <div class="person"><BaseAvatar :user="partner" size="lg" /><span>{{ partner?.nickname || '心上人' }}</span></div>
       </div>

@@ -12,6 +12,7 @@ import BaseModal from '../components/BaseModal.vue'
 import { formatDate } from '../utils'
 import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
 import { clearMemoryDraftsForUser } from '../utils/memoryDraft'
+import { validateUploadFile } from '../utils/memoryMedia'
 import { useResourceSync } from '../composables/resourceSync'
 import { createRequestGeneration } from '../utils/latestRequest'
 
@@ -135,8 +136,9 @@ async function saveSpaceName() {
 async function uploadAvatar(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (!file) return
-  if (!file.type.startsWith('image/')) {
-    show('头像请选择图片文件。', 'error')
+  const problem = validateUploadFile(file, true)
+  if (problem) {
+    show(problem, 'error')
     return
   }
   uploading.value = true

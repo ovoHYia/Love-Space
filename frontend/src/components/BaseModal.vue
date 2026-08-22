@@ -1,3 +1,8 @@
+<script lang="ts">
+// 模块级引用计数：多个弹窗并存时，先关闭的不能提前解除背景 inert
+let activeModalCount = 0
+</script>
+
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
@@ -55,8 +60,11 @@ async function activate() {
   if (modalActive) return
   modalActive = true
   previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  document.body.classList.add('modal-open')
-  document.querySelector('#app')?.setAttribute('inert', '')
+  activeModalCount += 1
+  if (activeModalCount === 1) {
+    document.body.classList.add('modal-open')
+    document.querySelector('#app')?.setAttribute('inert', '')
+  }
   window.addEventListener('keydown', onKey)
   await nextTick()
   focusable()[0]?.focus()
@@ -97,8 +105,11 @@ function closeModal() {
 function deactivate() {
   if (!modalActive) return
   modalActive = false
-  document.body.classList.remove('modal-open')
-  document.querySelector('#app')?.removeAttribute('inert')
+  activeModalCount = Math.max(0, activeModalCount - 1)
+  if (activeModalCount === 0) {
+    document.body.classList.remove('modal-open')
+    document.querySelector('#app')?.removeAttribute('inert')
+  }
   window.removeEventListener('keydown', onKey)
   if (previousFocus?.isConnected) previousFocus.focus()
   previousFocus = null

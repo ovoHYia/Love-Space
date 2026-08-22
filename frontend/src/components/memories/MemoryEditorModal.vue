@@ -8,7 +8,7 @@ import { ApiError, errorMessage } from '../../api/client'
 import { useToast } from '../../composables/toast'
 import type { MediaItem, Memory, MemoryTag } from '../../types'
 import { toBeijingOffsetDateTime, toLocalDateTimeInput } from '../../utils'
-import { memoryMediaType, memoryMediaUrl } from '../../utils/memoryMedia'
+import { memoryMediaType, memoryMediaUrl, validateUploadFile } from '../../utils/memoryMedia'
 import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../../utils/editConflict'
 import { authState } from '../../stores/auth'
 import {
@@ -112,8 +112,12 @@ const draftUpdatedLabel = computed(() => draftCandidate.value
 
 function chooseFiles(event: Event) {
   const files = Array.from((event.target as HTMLInputElement).files || [])
-  const allowed = files.filter((file) => /^(image|video|audio)\//.test(file.type))
-  if (allowed.length !== files.length) show('已忽略不支持的文件，只能上传图片、视频和音频。', 'info')
+  const allowed: File[] = []
+  for (const file of files) {
+    const problem = validateUploadFile(file)
+    if (problem) show(problem, 'info')
+    else allowed.push(file)
+  }
   // 草稿里的媒体只是恢复提示，不是服务器上的真实媒体，不能占用 20 个名额。
   const remaining = Math.max(0, 20 - (currentMemory.value?.media.length || 0) - selectedFiles.value.length)
   const picked = allowed.slice(0, remaining)

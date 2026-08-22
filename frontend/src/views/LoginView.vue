@@ -34,7 +34,8 @@ async function login() {
   try {
     applyAuth(await api.login(username.value.trim(), password.value))
     show('欢迎回来，今天也要好好相爱。', 'success')
-    const target = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/') ? route.query.redirect : '/'
+    const rawRedirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    const target = /^\/(?!\/|\\)/.test(rawRedirect) ? rawRedirect : '/'
     await router.replace(target)
   } catch (cause) {
     const connectionFailure = cause instanceof ApiError && (cause.code === 'NETWORK_ERROR' || cause.code === 'CSRF_INIT_FAILED')

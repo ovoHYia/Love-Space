@@ -14,8 +14,10 @@ let resyncGeneration = 0
 function handleResyncComplete(event: Event) {
   const detail = (event as CustomEvent<{ generation?: number; ok?: boolean }>).detail
   if (!detail || detail.generation !== resyncGeneration) return
-  realtimeState.connected = detail.ok === true
-  realtimeState.connecting = !detail.ok
+  // resync 瞬时失败但 SSE 流本身健康时，不应把连接状态误标为断开
+  const streamHealthy = stream?.readyState === EventSource.OPEN
+  realtimeState.connected = detail.ok === true || streamHealthy
+  realtimeState.connecting = !realtimeState.connected
 }
 
 export function startRealtimeSync() {
@@ -36,6 +38,8 @@ export function startRealtimeSync() {
     try {
       const detail = JSON.parse((event as MessageEvent).data) as SyncEvent
       realtimeState.lastEventAt = detail.occurredAt
+      realtimeState.connected = true
+      realtimeState.connecting = false
       window.dispatchEvent(new CustomEvent<SyncEvent>('love-space:sync', { detail }))
     } catch {
       // Keep the stream alive if a malformed event is ever received.

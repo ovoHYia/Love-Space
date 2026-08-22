@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 import { api } from '../api'
@@ -16,10 +16,24 @@ import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
 
 const router = useRouter()
 const { show } = useToast()
-const today = todayInput()
-const [todayYear, todayMonth] = today.split('-').map(Number)
-const month = ref(new Date(todayYear, todayMonth - 1, 1))
-const selectedDate = ref(today)
+const today = ref(todayInput())
+const month = ref(monthOfToday())
+const selectedDate = ref(today.value)
+let todayRefreshTimer: number | undefined
+
+function monthOfToday() {
+  const [year, monthValue] = today.value.split('-').map(Number)
+  return new Date(year, monthValue - 1, 1)
+}
+
+// 页面常驻跨过午夜后，"今天"的高亮与默认选中需要刷新
+function refreshToday() {
+  const current = todayInput()
+  if (current === today.value) return
+  const previous = today.value
+  today.value = current
+  if (selectedDate.value === previous) selectedDate.value = current
+}
 const entries = ref<CalendarEntry[]>([])
 const loading = ref(true)
 const error = ref('')
@@ -52,7 +66,7 @@ const categories: { value: CalendarEventInput['category']; label: string }[] = [
 const form = reactive({
   title: '',
   description: '',
-  date: today,
+  date: today.value,
   time: '',
   endDate: '',
   endTime: '',
@@ -72,7 +86,7 @@ const gridDays = computed(() => {
       key: dateKey(value),
       day: value.getDate(),
       current: value.getMonth() === month.value.getMonth(),
-      today: dateKey(value) === today,
+      today: dateKey(value) === today.value,
     }
   })
 })
@@ -94,7 +108,11 @@ const entriesByDate = computed(() => {
 })
 const selectedEntries = computed(() => entriesByDate.value.get(selectedDate.value) || [])
 
-onMounted(load)
+onMounted(() => {
+  todayRefreshTimer = window.setInterval(refreshToday, 60_000)
+  load()
+})
+onBeforeUnmount(() => window.clearInterval(todayRefreshTimer))
 useResourceSync(['calendar', 'anniversaries', 'wishes', 'memories', 'diaries', 'messages'], load)
 
 function dateKey(value: Date) {
@@ -135,8 +153,8 @@ async function changeMonth(offset: number) {
 }
 
 async function goToday() {
-  month.value = new Date(todayYear, todayMonth - 1, 1)
-  selectedDate.value = today
+  month.value = monthOfToday()
+  selectedDate.value = today.value
   await load()
 }
 

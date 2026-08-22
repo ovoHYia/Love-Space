@@ -27,22 +27,29 @@ public class ProductionDatabaseSecurityValidator {
     private static final Set<String> TLS_SSL_MODES = Set.of(
             "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY");
     private final String jdbcUrl;
+    private final String dbPassword;
 
-    public ProductionDatabaseSecurityValidator(@Value("${spring.datasource.url}") String jdbcUrl) {
+    public ProductionDatabaseSecurityValidator(@Value("${spring.datasource.url}") String jdbcUrl,
+                                               @Value("${spring.datasource.password:}") String dbPassword) {
         this.jdbcUrl = jdbcUrl;
+        this.dbPassword = dbPassword;
     }
 
     @PostConstruct
     void validate() {
-        validateJdbcUrlSecurity(jdbcUrl);
+        validateJdbcUrlSecurity(jdbcUrl, dbPassword);
     }
 
-    static void validateJdbcUrlSecurity(String value) {
+    static void validateJdbcUrlSecurity(String value, String password) {
         if (value == null || value.isBlank()
                 || !value.regionMatches(true, 0, "jdbc:mysql://", 0, "jdbc:mysql://".length())) {
             // Tests may deliberately replace the production MySQL datasource with H2. The
             // real production application.yml always resolves this property to MySQL.
             return;
+        }
+        if (password == null || password.isBlank()) {
+            throw new IllegalStateException(
+                    "Production DB_PASSWORD must not be empty; running MySQL without a password is not allowed");
         }
 
         Matcher matcher = MYSQL_URL.matcher(value);

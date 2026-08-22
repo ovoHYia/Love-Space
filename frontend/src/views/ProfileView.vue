@@ -9,6 +9,7 @@ import { applyAuth, authState, clearAuth } from '../stores/auth'
 import BaseAvatar from '../components/BaseAvatar.vue'
 import LoadingState from '../components/LoadingState.vue'
 import BaseModal from '../components/BaseModal.vue'
+import ConflictPanel from '../components/ConflictPanel.vue'
 import { formatDate } from '../utils'
 import { isStaleUpdate, STALE_UPDATE_MESSAGE } from '../utils/editConflict'
 import { clearMemoryDraftsForUser } from '../utils/memoryDraft'
@@ -228,7 +229,7 @@ async function changePassword() {
             <div><strong>更换头像</strong><p>选择一张清晰的方形图片效果最好。</p></div>
           </div>
           <form class="stack-form compact-form" @submit.prevent="saveProfile">
-            <div v-if="profileConflict" class="conflict-panel" role="alert"><p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p><button class="button secondary small" type="button" @click="loadLatestProfile">加载最新内容</button></div>
+            <ConflictPanel v-if="profileConflict" @reload="loadLatestProfile" />
             <label class="field"><span>昵称</span><input id="profile-nickname" v-model="nickname" required maxlength="20" autocomplete="nickname" :aria-invalid="Boolean(profileFieldErrors.nickname)" :aria-describedby="profileFieldErrors.nickname ? 'profile-nickname-error' : undefined" /><small v-if="profileFieldErrors.nickname" id="profile-nickname-error" class="field-error">{{ profileFieldErrors.nickname }}</small></label>
             <label class="field"><span>登录账号</span><input :value="authState.user?.username || '已设置'" disabled /><small>为了安全，登录账号不能在这里修改。</small></label>
             <button class="button primary" type="submit" :disabled="saving || nickname.trim() === authState.user?.nickname"><span v-if="saving" class="button-spinner"></span><Save v-else :size="17" />{{ saving ? '正在保存…' : '保存资料' }}</button>
@@ -239,7 +240,7 @@ async function changePassword() {
         <section class="card settings-card">
           <div class="section-heading"><div><p class="eyebrow">OUR SPACE</p><h2>空间信息</h2></div><Heart :size="21" /></div>
           <form class="space-name-editor" @submit.prevent="saveSpaceName">
-            <div v-if="spaceConflict" class="conflict-panel" role="alert"><p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p><button class="button secondary small" type="button" @click="loadLatestProfile">加载最新内容</button></div>
+            <ConflictPanel v-if="spaceConflict" @reload="loadLatestProfile" />
             <label class="field"><span>空间名称</span><input id="space-name" v-model="spaceName" required maxlength="100" autocomplete="off" :aria-invalid="Boolean(spaceFieldErrors.spaceName)" :aria-describedby="spaceFieldErrors.spaceName ? 'space-name-error' : undefined" /><small v-if="spaceFieldErrors.spaceName" id="space-name-error" class="field-error">{{ spaceFieldErrors.spaceName }}</small></label>
             <button class="button primary" type="submit" :disabled="spaceSaving || !spaceName.trim() || spaceName.trim() === authState.spaceName"><span v-if="spaceSaving" class="button-spinner"></span><Save v-else :size="17" />{{ spaceSaving ? '正在保存…' : '保存空间名称' }}</button>
           </form>

@@ -5,6 +5,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Pencil, Plus, 
 import { api } from '../api'
 import { ApiError, errorMessage } from '../api/client'
 import BaseModal from '../components/BaseModal.vue'
+import ConflictPanel from '../components/ConflictPanel.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
@@ -376,10 +377,7 @@ function openSource(item: CalendarEntry) {
   </div>
 
   <BaseModal v-if="modalOpen" :title="editing ? '编辑共享日程' : '添加共享日程'" description="日程会同时出现在你们两个人的日历中。" @close="modalOpen = false">
-    <div v-if="conflict" class="conflict-panel" role="alert">
-      <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
-      <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
-    </div>
+    <ConflictPanel v-if="conflict" @reload="loadLatest" />
     <form class="stack-form" @submit.prevent="save">
       <label class="field"><span>日程名称</span><input id="calendar-title" v-model="form.title" required maxlength="120" placeholder="例如：一起去看展" :aria-invalid="Boolean(fieldErrors.title)" :aria-describedby="fieldErrors.title ? 'calendar-title-error' : undefined" /><small v-if="fieldErrors.title" id="calendar-title-error" class="field-error">{{ fieldErrors.title }}</small></label>
       <div class="form-two">

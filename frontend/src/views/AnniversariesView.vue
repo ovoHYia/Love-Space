@@ -6,6 +6,7 @@ import { errorMessage } from '../api/client'
 import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
 import BaseModal from '../components/BaseModal.vue'
+import ConflictPanel from '../components/ConflictPanel.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import type { Anniversary } from '../types'
@@ -175,10 +176,7 @@ async function remove(item: Anniversary) {
   </div>
 
   <BaseModal v-if="modalOpen" :title="editing ? '编辑重要日子' : '记住一个重要日子'" description="设置后会在首页显示最近的倒计时。" @close="modalOpen = false">
-    <div v-if="conflict" class="conflict-panel" role="alert">
-      <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
-      <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
-    </div>
+    <ConflictPanel v-if="conflict" @reload="loadLatest" />
     <form class="stack-form" @submit.prevent="save">
       <label class="field"><span>日子名称</span><input v-model="form.title" required maxlength="80" placeholder="例如：我们在一起的纪念日" /></label>
       <div class="form-two"><label class="field"><span>日期</span><input v-model="form.eventDate" required type="date" /></label><label class="field"><span>类型</span><select v-model="form.type"><option v-for="type in types" :key="type.value" :value="type.value">{{ type.label }}</option></select></label></div>

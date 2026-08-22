@@ -8,6 +8,7 @@ import { useResourceSync } from '../composables/resourceSync'
 import { authState } from '../stores/auth'
 import BaseAvatar from '../components/BaseAvatar.vue'
 import BaseModal from '../components/BaseModal.vue'
+import ConflictPanel from '../components/ConflictPanel.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import type { Diary, UserProfile } from '../types'
@@ -185,10 +186,7 @@ function toggle(id: Diary['id']) {
   </div>
 
   <BaseModal v-if="modalOpen" :title="editing ? '重新誊写这一页' : '写下今天'" description="对方也会看到这篇日记。" wide @close="modalOpen = false">
-    <div v-if="conflict" class="conflict-panel" role="alert">
-      <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
-      <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
-    </div>
+    <ConflictPanel v-if="conflict" @reload="loadLatest" />
     <form class="stack-form diary-form" @submit.prevent="save">
       <div class="form-two">
         <label class="field"><span>日期</span><input v-model="form.diaryDate" required type="date" /></label>

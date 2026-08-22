@@ -8,6 +8,7 @@ import BaseAvatar from '../components/BaseAvatar.vue'
 import LoadingState from '../components/LoadingState.vue'
 import EmptyState from '../components/EmptyState.vue'
 import BaseModal from '../components/BaseModal.vue'
+import ConflictPanel from '../components/ConflictPanel.vue'
 import { authState } from '../stores/auth'
 import { useToast } from '../composables/toast'
 import { useResourceSync } from '../composables/resourceSync'
@@ -252,7 +253,7 @@ function visualUrl(media?: MediaItem) {
 
   <BaseModal v-if="moodOpen" title="今天是什么心情？" description="每天一条，随时可以更新。" @close="moodOpen = false">
     <form class="stack-form" @submit.prevent="saveMood">
-      <div v-if="moodConflict" class="conflict-panel" role="alert"><p>{{ STALE_UPDATE_MESSAGE }}</p><button class="button secondary small" type="button" @click="loadLatestMood">加载最新内容</button></div>
+      <ConflictPanel v-if="moodConflict" @reload="loadLatestMood" />
       <div class="mood-choice-grid" role="radiogroup" aria-label="选择心情">
         <button v-for="choice in moodChoices" :key="choice.label" type="button" role="radio" :aria-checked="moodForm.label === choice.label" :class="{ selected: moodForm.label === choice.label }" @click="moodForm.emoji = choice.emoji; moodForm.label = choice.label"><span>{{ choice.emoji }}</span>{{ choice.label }}</button>
       </div>

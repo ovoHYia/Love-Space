@@ -7,6 +7,7 @@ import {
 } from 'lucide-vue-next'
 import { api } from '../api'
 import { errorMessage } from '../api/client'
+import ConflictPanel from '../components/ConflictPanel.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
@@ -388,7 +389,7 @@ function typeMeta(item: AppNotification) {
         <p class="preferences-intro">关闭某类提醒后，只影响之后新产生的通知，不会删除已有记录。</p>
         <LoadingState v-if="preferencesLoading" label="正在读取偏好…" />
         <form v-else @submit.prevent="savePreferences">
-          <div v-if="preferencesConflict" class="conflict-panel" role="alert"><p>{{ STALE_UPDATE_MESSAGE }}</p><button class="button secondary small" type="button" @click="loadLatestPreferences">加载最新内容</button></div>
+          <ConflictPanel v-if="preferencesConflict" @reload="loadLatestPreferences" />
           <label class="preference-option">
             <span class="preference-icon anniversary"><CalendarHeart :size="18" /></span>
             <span><strong>纪念日提醒</strong><small>在设定的提前天数内提醒</small></span>

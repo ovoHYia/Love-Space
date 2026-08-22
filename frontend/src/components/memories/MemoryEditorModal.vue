@@ -23,6 +23,7 @@ import {
   type MemoryFileSnapshot,
 } from '../../utils/memoryDraft'
 import BaseModal from '../BaseModal.vue'
+import ConflictPanel from '../ConflictPanel.vue'
 
 const props = defineProps<{ memory: Memory | null; availableTags: MemoryTag[] }>()
 const emit = defineEmits<{
@@ -452,10 +453,7 @@ onBeforeUnmount(() => {
   >
     <div class="memory-editor-shell">
       <div class="memory-editor-underlay" :inert="Boolean(confirmation)">
-        <div v-if="conflict" class="conflict-panel" role="alert">
-          <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
-          <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
-        </div>
+        <ConflictPanel v-if="conflict" @reload="loadLatest" />
         <section v-if="draftCandidate" class="memory-draft-recovery" role="status" aria-live="polite">
           <div>
             <strong>发现未完成草稿</strong>

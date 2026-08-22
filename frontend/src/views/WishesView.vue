@@ -7,6 +7,7 @@ import {
 import { api } from '../api'
 import { errorMessage } from '../api/client'
 import BaseModal from '../components/BaseModal.vue'
+import ConflictPanel from '../components/ConflictPanel.vue'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
 import { useToast } from '../composables/toast'
@@ -243,10 +244,7 @@ async function remove(item: Wish) {
   </div>
 
   <BaseModal v-if="modalOpen" :title="editing ? '编辑共同愿望' : '许下一个共同愿望'" description="两个人都可以补充、完成或重新开启。" @close="modalOpen = false">
-    <div v-if="conflict" class="conflict-panel" role="alert">
-      <p>对方或另一台设备已修改此内容，请加载最新版本后重新确认。</p>
-      <button class="button secondary small" type="button" @click="loadLatest">加载最新内容</button>
-    </div>
+    <ConflictPanel v-if="conflict" @reload="loadLatest" />
     <form class="stack-form" @submit.prevent="save">
       <label class="field"><span>愿望名称</span><input v-model="form.title" required maxlength="120" autofocus placeholder="例如：一起去看一次极光" /></label>
       <label class="field"><span>愿望分类</span><select v-model="form.category"><option v-for="item in categories" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>

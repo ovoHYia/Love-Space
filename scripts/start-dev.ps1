@@ -110,8 +110,14 @@ $backendErr = Join-Path $logsDir "backend.err.log"
 $frontendOut = Join-Path $logsDir "frontend.out.log"
 $frontendErr = Join-Path $logsDir "frontend.err.log"
 foreach ($log in @($backendOut, $backendErr, $frontendOut, $frontendErr)) {
-    if (Test-Path -LiteralPath $log) {
-        Remove-Item -LiteralPath $log -Force
+    if (-not (Test-Path -LiteralPath $log)) { continue }
+    try {
+        # Rotate instead of deleting so an orphan process holding the handle
+        # cannot turn log cleanup into a cryptic Remove-Item failure.
+        Move-Item -LiteralPath $log -Destination "$log.prev" -Force
+    }
+    catch {
+        Write-Host "警告：无法轮转日志 $log（可能仍被旧进程占用），本次运行将继续追加。" -ForegroundColor Yellow
     }
 }
 
@@ -124,15 +130,36 @@ foreach ($portValue in @($frontendPort, $backendPort)) {
     }
 }
 
+function Test-PortInUse {
+    param([int]$Port)
+    $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    return $listeners.Count -gt 0
+}
+
+# Fail early when a previous run (or another app) still holds the ports;
+# otherwise the new processes die immediately with confusing errors.
+foreach ($portCheck in @(@($frontendPort, "前端"), @($backendPort, "后端"))) {
+    if (Test-PortInUse -Port ([int]$portCheck[0])) {
+        throw "端口 $($portCheck[0]) 已被占用（$($portCheck[1])）。请先停止占用该端口的进程（如旧的 start-dev 会话），再重新运行。"
+    }
+}
+
 $backend = $null
 $frontend = $null
 
 function Stop-ProcessTree {
-    param([System.Diagnostics.Process]$Process)
+    param(
+        [System.Diagnostics.Process]$Process,
+        [int]$TimeoutSeconds = 10
+    )
     if ($null -eq $Process) { return }
     try {
         $Process.Refresh()
-        if (-not $Process.HasExited) {
+        if ($Process.HasExited) { return }
+        # Try a graceful stop first so the JVM can run its shutdown hooks;
+        # only force kill after the timeout expires.
+        & taskkill.exe /PID $Process.Id /T 2>$null | Out-Null
+        if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
             & taskkill.exe /PID $Process.Id /T /F 2>$null | Out-Null
         }
     }

@@ -21,9 +21,16 @@ let csrfRefreshPromise: Promise<string> | null = null
 let csrfController: AbortController | null = null
 let csrfGeneration = 0
 function createClientId() {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `client_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  // 回退也必须是高熵的：RealtimeSyncService 按 (couple, clientId) 顶替连接，
+  // 可猜测的 Date.now()+Math.random() 回退会让伴侣能猜中并顶号。
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(16))
+    return 'client_' + Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
+  }
+  return `client_${Date.now()}_${Math.random().toString(36).slice(2)}`
 }
 
 // 只保存在当前 JS 模块生命周期内；sessionStorage 会被复制标签页继承，不能用作连接身份。

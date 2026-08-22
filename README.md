@@ -19,7 +19,7 @@ Love Space 是一个面向两个人的私密共享空间，用来记录和管理
 
 - 前端：Vue 3、TypeScript、Vite、Vue Router
 - 后端：Java 17、Spring Boot 4、Spring Security、Spring Data JPA、Flyway
-- 数据库：MySQL 8（测试使用 H2）
+- 数据库：MySQL 8（默认测试使用 H2，可选真实 MySQL 测试）
 - 部署：Spring Boot 单 JAR，可由 Nginx、Caddy 等 HTTPS 反向代理暴露
 
 ## 目录结构
@@ -49,6 +49,8 @@ outputs/        构建和发布产物（不提交）
 
 ### 1. 获取代码并创建配置
 
+代码托管在 Gitee（`https://gitee.com/huang-yi0506/love-space.git`），也可能迁移回 GitHub（`https://github.com/ovoHYia/Love-Space.git`），获取代码前以仓库实际地址为准。
+
 在项目根目录执行：
 
 ```powershell
@@ -64,7 +66,7 @@ SETUP_TOKEN=生成至少 32 个 UTF-8 字节的高熵随机字符串
 SETUP_ENABLED=true
 ```
 
-`.env` 只保存在本机，不要提交到 GitHub。初始化口令和密码恢复口令不要复用。
+`.env` 只保存在本机，不要提交到远程仓库。初始化口令和密码恢复口令不要复用。
 
 ### 2. 初始化数据库
 
@@ -243,7 +245,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start.ps1
 
 ## 重要配置
 
-所有配置都在根目录 `.env` 中维护，完整模板见 [.env.example](.env.example)。常用配置包括：
+应用配置在根目录 `.env` 中维护，完整模板见 [.env.example](.env.example)。常用配置包括：
 
 - `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`：数据库连接
 - `DB_SSL_CA`：可选的 MySQL CLI CA 文件路径；远程数据库仍须在 `DB_URL` 中显式启用 TLS

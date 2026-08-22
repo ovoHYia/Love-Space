@@ -25,4 +25,4 @@ Vue、TypeScript、JSON、CSS 使用 2 空格缩进；Java、XML 保持现有的
 
 ## 提交与 Pull Request 指南
 
-本仓库已有提交历史。提交主题使用简体中文的 Conventional Commit 祈使句风格，例如 `feat: 添加纪念日提醒`，并保持单次提交聚焦。Pull Request 应说明用户可见的变更，注明对数据库或配置的影响，关联相关 issue；UI 变更需附截图。绝不提交 `.env`、上传文件、日志、构建或发布产物、凭据；新增必需配置项时，同步更新对应的 `.env.example` 模板。
+本仓库已有提交历史。提交主题使用简体中文的 Conventional Commit 祈使句风格，例如 `feat: 添加纪念日提醒`，并保持单次提交聚焦。Pull Request 应说明用户可见的变更，注明对数据库或配置的影响，关联相关 issue；UI 变更需附截图。绝不提交 `.env`、上传文件、日志、构建或发布产物、凭据；新增必需配置项时，同步更新对应的 `.env.example` 模板。远程 `origin` 随托管平台切换：当前为 Gitee `https://gitee.com/huang-yi0506/love-space.git`，原 GitHub 地址为 `https://github.com/ovoHYia/Love-Space.git`。执行推送、拉取等远程操作前，先用 `git remote get-url origin` 确认当前托管平台；Gitee 与 GitHub 均适用（GitHub 操作经 `gh` CLI，访问需走代理）。未经用户明确要求，不要主动推送或发起 Pull Request。

@@ -1,6 +1,7 @@
 package com.lovespace.service;
 
 import com.lovespace.api.error.ApiException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
@@ -28,6 +29,7 @@ public class PasswordResetAttemptService {
     private final Duration window;
     private final Duration lock;
     private final Duration evictAfter;
+    private final Clock clock;
     private final ConcurrentHashMap<String, Attempt> ipAttempts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Attempt> identityAttempts = new ConcurrentHashMap<>();
     private final Object capacityLock = new Object();
@@ -54,16 +56,23 @@ public class PasswordResetAttemptService {
 
     PasswordResetAttemptService(int maxAttemptsPerIp, int maxFailuresPerIdentity, int maxTrackedEntries,
                                 Duration window, Duration lock, Duration evictAfter) {
+        this(maxAttemptsPerIp, maxFailuresPerIdentity, maxTrackedEntries, window, lock, evictAfter,
+                Clock.systemUTC());
+    }
+
+    PasswordResetAttemptService(int maxAttemptsPerIp, int maxFailuresPerIdentity, int maxTrackedEntries,
+                                Duration window, Duration lock, Duration evictAfter, Clock clock) {
         this.maxAttemptsPerIp = requirePositive(maxAttemptsPerIp, "max-attempts-per-ip");
         this.maxFailuresPerIdentity = requirePositive(maxFailuresPerIdentity, "max-failures-per-identity");
         this.maxTrackedEntries = requirePositive(maxTrackedEntries, "max-tracked-entries");
         this.window = requirePositive(window, "window");
         this.lock = requirePositive(lock, "lock");
         this.evictAfter = requirePositive(evictAfter, "evict-after");
+        this.clock = clock;
     }
 
     public void requireAllowed(String username, String address) {
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         String normalizedAddress = normalizeAddress(address);
         if (isLocked(ipAttempts.get(normalizedAddress), now)
                 || isLocked(identityAttempts.get(identityKey(username, normalizedAddress)), now)) {
@@ -77,7 +86,7 @@ public class PasswordResetAttemptService {
     }
 
     public void failed(String username, String address) {
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         String normalizedAddress = normalizeAddress(address);
         boolean identityLocked = recordAttempt(
                 identityAttempts, identityKey(username, normalizedAddress), maxFailuresPerIdentity, now);
@@ -97,7 +106,7 @@ public class PasswordResetAttemptService {
     @Scheduled(fixedRate = 600_000)
     public void evictExpired() {
         synchronized (capacityLock) {
-            Instant now = Instant.now();
+            Instant now = clock.instant();
             Instant cutoff = now.minus(evictAfter);
             evictExpired(ipAttempts, cutoff, now);
             evictExpired(identityAttempts, cutoff, now);

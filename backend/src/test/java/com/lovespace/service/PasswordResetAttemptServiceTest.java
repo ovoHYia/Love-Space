@@ -5,7 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.lovespace.api.error.ApiException;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -49,15 +53,42 @@ class PasswordResetAttemptServiceTest {
     }
 
     @Test
-    void expiredEntriesAreEvictedAndDoNotConsumeCapacity() throws Exception {
+    void expiredEntriesAreEvictedAndDoNotConsumeCapacity() {
+        AdjustableClock clock = new AdjustableClock();
         PasswordResetAttemptService service = new PasswordResetAttemptService(
-                20, 20, 1, Duration.ofMinutes(15), Duration.ofMinutes(15), Duration.ofMillis(1));
+                20, 20, 1, Duration.ofMinutes(15), Duration.ofMinutes(15), Duration.ofMillis(1), clock);
 
         service.requireAllowed("alice", "203.0.113.22");
-        Thread.sleep(10);
+        assertThrows(ApiException.class,
+                () -> service.requireAllowed("bob", "203.0.113.23"));
+
+        clock.advance(Duration.ofMillis(2));
         service.evictExpired();
 
         assertDoesNotThrow(() -> service.requireAllowed("bob", "203.0.113.23"));
+    }
+
+    private static final class AdjustableClock extends Clock {
+        private Instant now = Instant.parse("2026-01-01T00:00:00Z");
+
+        private void advance(Duration amount) {
+            now = now.plus(amount);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
     }
 
     private int successful(Future<Boolean> result) {

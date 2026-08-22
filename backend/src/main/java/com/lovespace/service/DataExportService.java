@@ -7,6 +7,7 @@ import com.lovespace.security.CurrentUserService;
 import com.lovespace.time.BeijingTime;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -26,7 +27,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -49,12 +52,15 @@ public class DataExportService {
     private final GameSessionRepository gameSessions;
     private final MediaStorageService storage;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactions;
     private final Path exportDirectory;
     private final long snapshotTtlMinutes;
     private final long minFreeBytes;
     private final int maxPendingSnapshots;
     private final Map<String, ExportSnapshot> prepared = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<Long, String> preparedByUser = new HashMap<>();
+    // Paths currently being streamed to a client; cleanup must not delete them mid-download.
+    private final Set<Path> streaming = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.ScheduledExecutorService cleanupExecutor =
             java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread thread = new Thread(r, "love-space-export-cleanup");
@@ -70,6 +76,7 @@ public class DataExportService {
                              GameSessionRepository gameSessions,
                              MediaStorageService storage,
                              ObjectMapper objectMapper,
+                             PlatformTransactionManager transactionManager,
                              @Value("${app.data-export.dir:./data/exports}") String exportDirectory,
                              @Value("${app.data-export.ttl-minutes:10}") long snapshotTtlMinutes,
                              @Value("${app.data-export.min-free-bytes:67108864}") long minFreeBytes,
@@ -89,6 +96,8 @@ public class DataExportService {
         this.gameSessions = gameSessions;
         this.storage = storage;
         this.objectMapper = objectMapper;
+        this.transactions = new TransactionTemplate(transactionManager);
+        this.transactions.setReadOnly(true);
         this.exportDirectory = Path.of(exportDirectory).toAbsolutePath().normalize();
         if (snapshotTtlMinutes <= 0) throw new IllegalArgumentException("app.data-export.ttl-minutes must be positive");
         if (minFreeBytes < 0) throw new IllegalArgumentException("app.data-export.min-free-bytes must not be negative");
@@ -118,8 +127,55 @@ public class DataExportService {
         synchronized (this) { preparedByUser.clear(); }
     }
 
-    @Transactional(readOnly = true)
     public ExportSnapshot prepare(Authentication auth) {
+        // 只把数据快照（纯读）放进短事务；zip 文件 I/O 在事务外执行，
+        // 避免耗时较长的导出长时间占用数据库连接（参照 MediaIntegrityService 的重构手法）
+        ExportData data = transactions.execute(status -> collectExportData(auth));
+        LocalDateTime now = data.generatedAt();
+        List<Media> visibleMedia = data.visibleMedia();
+        Map<String, Object> export = data.payload();
+
+        Path snapshot = null;
+        try {
+            Files.createDirectories(exportDirectory);
+            byte[] jsonBytes = objectMapper.writeValueAsBytes(export);
+            long mediaBytes = 0;
+            for (Media item : visibleMedia) {
+                mediaBytes = Math.addExact(mediaBytes, storage.verifiedFileSize(item));
+            }
+            ensureDiskCapacity(Math.addExact(Math.addExact(jsonBytes.length, mediaBytes), ZIP_OVERHEAD_BYTES));
+            snapshot = Files.createTempFile(exportDirectory, ".love-space-export-", ".zip");
+            try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(snapshot, StandardOpenOption.TRUNCATE_EXISTING))) {
+                zip.putNextEntry(new ZipEntry("love-space-data.json"));
+                zip.write(jsonBytes);
+                zip.closeEntry();
+                for (Media item : visibleMedia) {
+                    zip.putNextEntry(new ZipEntry(archivePath(item)));
+                    try (InputStream input = storage.openForExport(item)) {
+                        input.transferTo(zip);
+                    } catch (NoSuchFileException | java.io.FileNotFoundException ex) {
+                        throw missingMedia(item);
+                    } catch (IOException ex) {
+                        throw ApiException.conflict("导出读取媒体文件失败，请稍后重试。媒体 ID：" + item.getId());
+                    }
+                    zip.closeEntry();
+                }
+                zip.finish();
+            }
+            String filename = "love-space-export-" + now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".zip";
+            return new ExportSnapshot(snapshot, data.userId(), data.coupleId(), filename,
+                    Instant.now().plusSeconds(snapshotTtlMinutes * 60));
+        } catch (ApiException ex) {
+            deleteSnapshotFile(snapshot);
+            throw ex;
+        } catch (IOException ex) {
+            deleteSnapshotFile(snapshot);
+            throw new ApiException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
+                    "EXPORT_PREPARE_FAILED", "生成数据导出文件失败，请稍后重试");
+        }
+    }
+
+    private ExportData collectExportData(Authentication auth) {
         User user = current.user(auth);
         Long userId = user.getId();
         Long coupleId = user.getCouple().getId();
@@ -272,45 +328,7 @@ public class DataExportService {
                 "createdAt", moment(item.getCreatedAt()),
                 "updatedAt", moment(item.getUpdatedAt()),
                 "finishedAt", moment(item.getFinishedAt()))).toList());
-
-        Path snapshot = null;
-        try {
-            Files.createDirectories(exportDirectory);
-            byte[] jsonBytes = objectMapper.writeValueAsBytes(export);
-            long mediaBytes = 0;
-            for (Media item : visibleMedia) {
-                mediaBytes = Math.addExact(mediaBytes, storage.verifiedFileSize(item));
-            }
-            ensureDiskCapacity(Math.addExact(Math.addExact(jsonBytes.length, mediaBytes), ZIP_OVERHEAD_BYTES));
-            snapshot = Files.createTempFile(exportDirectory, ".love-space-export-", ".zip");
-            try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(snapshot, StandardOpenOption.TRUNCATE_EXISTING))) {
-                zip.putNextEntry(new ZipEntry("love-space-data.json"));
-                zip.write(jsonBytes);
-                zip.closeEntry();
-                for (Media item : visibleMedia) {
-                    zip.putNextEntry(new ZipEntry(archivePath(item)));
-                    try (InputStream input = storage.openForExport(item)) {
-                        input.transferTo(zip);
-                    } catch (NoSuchFileException | java.io.FileNotFoundException ex) {
-                        throw missingMedia(item);
-                    } catch (IOException ex) {
-                        throw ApiException.conflict("导出读取媒体文件失败，请稍后重试。媒体 ID：" + item.getId());
-                    }
-                    zip.closeEntry();
-                }
-                zip.finish();
-            }
-            String filename = "love-space-export-" + now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".zip";
-            return new ExportSnapshot(snapshot, userId, coupleId, filename,
-                    Instant.now().plusSeconds(snapshotTtlMinutes * 60));
-        } catch (ApiException ex) {
-            deleteSnapshotFile(snapshot);
-            throw ex;
-        } catch (IOException ex) {
-            deleteSnapshotFile(snapshot);
-            throw new ApiException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
-                    "EXPORT_PREPARE_FAILED", "生成数据导出文件失败，请稍后重试");
-        }
+        return new ExportData(userId, coupleId, export, visibleMedia, now);
     }
 
     private void ensureDiskCapacity(long estimatedBytes) throws IOException {
@@ -366,7 +384,21 @@ public class DataExportService {
     }
 
     public InputStream openSnapshot(ExportSnapshot snapshot) throws IOException {
-        return Files.newInputStream(snapshot.path(), StandardOpenOption.READ);
+        InputStream input = Files.newInputStream(snapshot.path(), StandardOpenOption.READ);
+        // Exempt the snapshot from TTL cleanup while it is being streamed; a slow
+        // download must not lose its file to cleanupExpired mid-transfer.
+        Path path = snapshot.path();
+        streaming.add(path);
+        return new FilterInputStream(input) {
+            @Override
+            public void close() throws IOException {
+                try {
+                    super.close();
+                } finally {
+                    streaming.remove(path);
+                }
+            }
+        };
     }
 
     public void deleteSnapshot(ExportSnapshot snapshot) {
@@ -396,6 +428,7 @@ public class DataExportService {
         Instant cutoff = now.minusSeconds(snapshotTtlMinutes * 60);
         try (var paths = Files.list(exportDirectory)) {
             for (Path path : paths.filter(Files::isRegularFile)
+                    .filter(value -> !streaming.contains(value))
                     .filter(value -> value.getFileName().toString().startsWith(".love-space-export-")
                             && value.getFileName().toString().endsWith(".zip"))
                     .toList()) {
@@ -417,6 +450,7 @@ public class DataExportService {
 
     boolean deleteSnapshotFile(Path path) {
         if (path == null) return true;
+        streaming.remove(path);
         try {
             Files.deleteIfExists(path);
             return true;
@@ -450,6 +484,9 @@ public class DataExportService {
         for (int i = 0; i < values.length; i += 2) result.put((String) values[i], values[i + 1]);
         return result;
     }
+
+    private record ExportData(Long userId, Long coupleId, Map<String, Object> payload,
+                              List<Media> visibleMedia, LocalDateTime generatedAt) {}
 
     public record ExportSnapshot(Path path, Long userId, Long coupleId, String filename,
                                  Instant expiresAt, String token) {

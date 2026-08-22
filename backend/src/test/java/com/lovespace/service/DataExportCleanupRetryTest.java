@@ -17,6 +17,7 @@ import com.lovespace.repository.NotificationRepository;
 import com.lovespace.repository.UserRepository;
 import com.lovespace.repository.WishRepository;
 import com.lovespace.security.CurrentUserService;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -24,6 +25,7 @@ import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.ObjectMapper;
 
 class DataExportCleanupRetryTest {
@@ -55,6 +57,24 @@ class DataExportCleanupRetryTest {
         }
     }
 
+    @Test
+    void streamingSnapshotIsExemptFromTtlCleanupUntilClosed() throws Exception {
+        Path stale = staleSnapshot();
+        DataExportService service = service(false);
+        try {
+            DataExportService.ExportSnapshot snapshot = new DataExportService.ExportSnapshot(
+                    stale, 1L, 1L, "export.zip", Instant.now().plusSeconds(600));
+            try (InputStream ignored = service.openSnapshot(snapshot)) {
+                service.cleanupExpired();
+                assertTrue(Files.exists(stale), "snapshot must survive cleanup while streaming");
+            }
+            service.cleanupExpired();
+            assertFalse(Files.exists(stale), "snapshot is cleaned after the stream closes");
+        } finally {
+            service.stopCleanup();
+        }
+    }
+
     private Path staleSnapshot() throws Exception {
         Files.createDirectories(exportDir);
         Path stale = exportDir.resolve(".love-space-export-stale.zip");
@@ -71,7 +91,8 @@ class DataExportCleanupRetryTest {
                 mock(LetterMessageRepository.class), mock(AnniversaryRepository.class), mock(WishRepository.class),
                 mock(CalendarEventRepository.class), mock(NotificationRepository.class),
                 mock(NotificationPreferenceRepository.class), mock(GameSessionRepository.class),
-                mock(MediaStorageService.class), mock(ObjectMapper.class), exportDir.toString(), 10, 0, 2) {
+                mock(MediaStorageService.class), mock(ObjectMapper.class),
+                mock(PlatformTransactionManager.class), exportDir.toString(), 10, 0, 2) {
             @Override boolean deleteSnapshotFile(Path path) {
                 return shouldFail.compareAndSet(true, false) ? false : super.deleteSnapshotFile(path);
             }

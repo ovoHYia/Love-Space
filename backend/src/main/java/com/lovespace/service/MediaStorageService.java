@@ -51,6 +51,11 @@ public class MediaStorageService {
     private final CurrentUserService current;
     private final ViewMapper views;
     private final MediaFileSystem fileSystem;
+    // 近期通过全文哈希校验的媒体；大小校验仍是每次执行的快速路径，
+    // 命中缓存时跳过昂贵的全文 SHA-256 重算（缓存带 TTL，兼顾性能与完整性底线）
+    private final Map<String, HashVerification> verifiedHashes = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long HASH_VERIFICATION_TTL_MILLIS = java.util.concurrent.TimeUnit.MINUTES.toMillis(15);
+    private static final int MAX_CACHED_HASH_VERIFICATIONS = 10_000;
 
     public MediaStorageService(@Value("${app.upload-dir:./data/uploads}") String uploadDir,
                                @Value("${app.media-max-bytes:52428800}") long maxBytes,
@@ -231,13 +236,31 @@ public class MediaStorageService {
                     "媒体文件大小与记录不一致，无法继续读取。媒体 ID：" + value.getId());
         }
         if (value.getSha256() != null && !value.getSha256().isBlank()) {
-            String actualHash = sha256(path);
-            if (!MessageDigest.isEqual(value.getSha256().getBytes(StandardCharsets.US_ASCII),
-                    actualHash.getBytes(StandardCharsets.US_ASCII))) {
-                throw new ApiException(HttpStatus.CONFLICT, "MEDIA_HASH_MISMATCH",
-                        "媒体文件完整性校验失败，无法继续读取。媒体 ID：" + value.getId());
+            if (!isRecentlyVerified(value.getStoredName(), value.getSha256())) {
+                String actualHash = sha256(path);
+                if (!MessageDigest.isEqual(value.getSha256().getBytes(StandardCharsets.US_ASCII),
+                        actualHash.getBytes(StandardCharsets.US_ASCII))) {
+                    throw new ApiException(HttpStatus.CONFLICT, "MEDIA_HASH_MISMATCH",
+                            "媒体文件完整性校验失败，无法继续读取。媒体 ID：" + value.getId());
+                }
+                rememberVerified(value.getStoredName(), value.getSha256());
             }
         }
+    }
+
+    private boolean isRecentlyVerified(String storedName, String expectedSha256) {
+        HashVerification cached = verifiedHashes.get(storedName);
+        return cached != null && cached.sha256().equals(expectedSha256)
+                && cached.verifiedAt() + HASH_VERIFICATION_TTL_MILLIS > System.currentTimeMillis();
+    }
+
+    private void rememberVerified(String storedName, String sha256) {
+        if (verifiedHashes.size() >= MAX_CACHED_HASH_VERIFICATIONS) {
+            long now = System.currentTimeMillis();
+            verifiedHashes.entrySet().removeIf(entry ->
+                    entry.getValue().verifiedAt() + HASH_VERIFICATION_TTL_MILLIS <= now);
+        }
+        verifiedHashes.put(storedName, new HashVerification(sha256, System.currentTimeMillis()));
     }
 
     public void deletePhysicalAfterCommit(Media value) {
@@ -409,6 +432,8 @@ public class MediaStorageService {
         }
         return result;
     }
+
+    private record HashVerification(String sha256, long verifiedAt) {}
 
     public record MediaDownload(Media media, Resource resource) {}
 }

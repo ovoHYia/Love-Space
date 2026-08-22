@@ -75,6 +75,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\setup-db.ps1
 ```
 
 脚本会根据 `.env` 创建数据库并设置 `utf8mb4`。应用启动时会自动执行 Flyway 数据库迁移。
+手工创建数据库时必须使用 `utf8mb4` 字符集与 `utf8mb4_unicode_ci` 排序规则，与脚本保持一致。
 
 ### 3. 启动开发环境
 
@@ -94,8 +95,9 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1
 pwsh -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -SkipInstall
 ```
 
-`start-dev.ps1` 会记录 `package-lock.json` 的哈希；锁文件缺失、变化或没有成功安装记录时，
-即使传入 `-SkipInstall` 也会拒绝启动并要求执行 `npm ci`。生产环境运行已经打包的单 JAR 不需要 Node.js，
+`start-dev.ps1` 会记录 `package-lock.json` 的哈希；依赖目录缺失或锁文件与安装戳不一致时，
+即使传入 `-SkipInstall` 也会拒绝启动。锁文件存在时使用 `npm ci` 安装；若仓库缺少锁文件，
+则回退 `npm install` 且不写入安装戳。生产环境运行已经打包的单 JAR 不需要 Node.js，
 Node.js 只用于前端开发和构建。
 
 ### 4. 首次初始化空间
@@ -214,6 +216,8 @@ CORS_ALLOWED_ORIGINS=https://你的域名
 ```
 
 生产配置会强制校验：回环地址绑定、安全 Cookie、HTTPS CORS 来源、转发头处理和数据库 TLS 模式。
+反向代理必须覆写（而非追加或透传）`X-Forwarded-For`，否则客户端可伪造来源 IP，
+绕过登录、初始化和密码恢复的按 IP 限流。
 
 ### 2. 构建并启动
 

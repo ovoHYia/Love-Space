@@ -11,13 +11,32 @@ export const realtimeState = reactive({
 let stream: EventSource | null = null
 let resyncGeneration = 0
 
+export interface ResyncDetail {
+  generation?: number
+  ok?: boolean
+}
+
+/**
+ * resync 完成后的连接状态判定（纯函数，便于单测）：
+ * 世代不匹配的回调直接忽略；resync 瞬时失败但 SSE 流本身健康时，
+ * 不应把连接状态误标为断开。
+ */
+export function resolveResyncOutcome(
+  detail: ResyncDetail | null | undefined,
+  expectedGeneration: number,
+  streamOpen: boolean,
+): { connected: boolean; connecting: boolean } | null {
+  if (!detail || detail.generation !== expectedGeneration) return null
+  const connected = detail.ok === true || streamOpen
+  return { connected, connecting: !connected }
+}
+
 function handleResyncComplete(event: Event) {
-  const detail = (event as CustomEvent<{ generation?: number; ok?: boolean }>).detail
-  if (!detail || detail.generation !== resyncGeneration) return
-  // resync 瞬时失败但 SSE 流本身健康时，不应把连接状态误标为断开
-  const streamHealthy = stream?.readyState === EventSource.OPEN
-  realtimeState.connected = detail.ok === true || streamHealthy
-  realtimeState.connecting = !realtimeState.connected
+  const detail = (event as CustomEvent<ResyncDetail>).detail
+  const outcome = resolveResyncOutcome(detail, resyncGeneration, stream?.readyState === EventSource.OPEN)
+  if (!outcome) return
+  realtimeState.connected = outcome.connected
+  realtimeState.connecting = outcome.connecting
 }
 
 export function startRealtimeSync() {

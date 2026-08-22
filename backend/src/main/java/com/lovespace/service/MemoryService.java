@@ -106,9 +106,10 @@ public class MemoryService {
                 .stream().collect(Collectors.toMap(Memory::getId, value -> value));
         List<AlbumItemView> content = visualMedia.stream().map(item -> {
             Memory memory = memoryById.get(item.getMemoryId());
+            if (memory == null) return null;
             return new AlbumItemView(views.media(item), memory.getId(), memory.getTitle(),
                     BeijingTime.toOffset(memory.getEventAt()), memory.getLocation(), List.copyOf(memory.getTags()));
-        }).toList();
+        }).filter(Objects::nonNull).toList();
         return pageResponse(page, size, total, content);
     }
 

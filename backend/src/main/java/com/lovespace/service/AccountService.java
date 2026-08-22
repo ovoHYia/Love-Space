@@ -77,10 +77,14 @@ public class AccountService {
     }
     @Transactional
     public void resetPassword(String username, String newPassword) {
-        User user = users.findByUsernameIgnoreCaseForUpdate(username.trim())
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_RESET_FAILED", "账号或恢复口令不正确"));
+        User user = users.findByUsernameIgnoreCaseForUpdate(username.trim()).orElse(null);
         if (newPassword.getBytes(StandardCharsets.UTF_8).length > 72) {
             throw ApiException.badRequest("新密码的 UTF-8 长度不能超过 72 字节");
+        }
+        if (user == null) {
+            // 做一次假哈希，与用户存在路径的耗时拉平，避免时序枚举用户名
+            encoder.encode(newPassword);
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_RESET_FAILED", "账号或恢复口令不正确");
         }
         user.setPasswordHash(encoder.encode(newPassword));
         user.setPasswordVersion(user.getPasswordVersion() + 1);

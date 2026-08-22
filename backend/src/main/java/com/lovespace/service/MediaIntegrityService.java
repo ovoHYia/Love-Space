@@ -16,7 +16,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class MediaIntegrityService {
@@ -26,12 +27,15 @@ public class MediaIntegrityService {
     private final MediaRepository media;
     private final MediaStorageService storage;
     private final Path quarantineDirectory;
+    private final TransactionTemplate transactions;
     private final ReentrantLock scanLock = new ReentrantLock();
 
     public MediaIntegrityService(MediaRepository media, MediaStorageService storage,
+                                 PlatformTransactionManager transactionManager,
                                  @Value("${app.media-quarantine-dir:./data/media-quarantine}") String quarantineDirectory) {
         this.media = media;
         this.storage = storage;
+        this.transactions = new TransactionTemplate(transactionManager);
         this.quarantineDirectory = Path.of(quarantineDirectory).toAbsolutePath().normalize();
     }
 
@@ -40,7 +44,6 @@ public class MediaIntegrityService {
         Files.createDirectories(quarantineDirectory);
     }
 
-    @Transactional
     public MediaIntegrityView scan() {
         if (!scanLock.tryLock()) {
             throw new com.lovespace.api.error.ApiException(
@@ -55,8 +58,10 @@ public class MediaIntegrityService {
     }
 
     private MediaIntegrityView scanLocked() {
-        List<Media> records = media.findAll(Sort.by(Sort.Direction.ASC, "id"));
+        // 只把两次短数据库操作放进事务；全盘哈希与文件扫描在事务外执行，避免长时间占用连接
+        List<Media> records = transactions.execute(status -> media.findAll(Sort.by(Sort.Direction.ASC, "id")));
         Set<String> referencedNames = records.stream().map(Media::getStoredName).collect(Collectors.toSet());
+        Map<Long, String> backfilledHashes = new LinkedHashMap<>();
         List<String> details = new ArrayList<>();
         int healthy = 0;
         int backfilled = 0;
@@ -87,7 +92,7 @@ public class MediaIntegrityService {
                 }
                 String actualHash = MediaStorageService.sha256(path);
                 if (value.getSha256() == null || value.getSha256().isBlank()) {
-                    value.setSha256(actualHash);
+                    backfilledHashes.put(value.getId(), actualHash);
                     backfilled++;
                     healthy++;
                     continue;
@@ -137,6 +142,11 @@ public class MediaIntegrityService {
             quarantineFailures++;
             log.warn("Could not scan media directory {}", storage.storageRoot(), ex);
             addDetail(details, "无法扫描上传目录");
+        }
+
+        if (!backfilledHashes.isEmpty()) {
+            transactions.executeWithoutResult(status ->
+                    backfilledHashes.forEach((id, hash) -> media.backfillSha256(id, hash)));
         }
 
         OffsetDateTime checkedAt = BeijingTime.toOffset(BeijingTime.now());

@@ -69,6 +69,8 @@ public class LoginAttemptService {
     }
 
     public void succeeded(String username, String address) {
+        // 本项目只有两位用户且常共享同一家庭 IP：成功后清空 IP 桶是防止自锁的刻意设计；
+        // 身份桶仍单独清理，暴力破解保护由身份级失败计数承担。
         String normalizedAddress = normalizeAddress(address);
         ipAttempts.remove(normalizedAddress);
         identityAttempts.remove(identityKey(username, normalizedAddress));

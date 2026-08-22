@@ -2,6 +2,7 @@ package com.lovespace.repository;
 import com.lovespace.domain.Media;
 import java.util.*;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 public interface MediaRepository extends JpaRepository<Media, Long>, MediaAlbumRepository {
@@ -23,4 +24,7 @@ public interface MediaRepository extends JpaRepository<Media, Long>, MediaAlbumR
     List<Media> findByCoupleIdOrderById(Long coupleId);
     @Query("select coalesce(sum(m.byteSize), 0) from Media m where m.coupleId = :coupleId")
     long totalBytesByCoupleId(@Param("coupleId") Long coupleId);
+    @Modifying(clearAutomatically = true)
+    @Query("update Media m set m.sha256 = :hash where m.id = :id")
+    int backfillSha256(@Param("id") Long id, @Param("hash") String hash);
 }

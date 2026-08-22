@@ -76,7 +76,8 @@ public class AuthController {
         String normalizedUsername = username.trim();
         String remoteAddress = request.getRemoteAddr();
         if (!USERNAME_PATTERN.matcher(normalizedUsername).matches()
-                || password.isEmpty() || password.length() > 72) {
+                || password.isEmpty()
+                || password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) {
             throw invalidCredentials();
         }
         loginAttempts.requireAllowed(normalizedUsername, remoteAddress);

@@ -79,6 +79,9 @@ public class TrashService {
         RecoverableContent value = find(user, type, id);
         value.restore();
         save(type, value);
+        if (!exists(type, id)) {
+            throw ApiException.conflict("该内容已被彻底删除，无法恢复");
+        }
     }
 
     @Transactional
@@ -125,14 +128,26 @@ public class TrashService {
 
     private void save(String type, RecoverableContent value) {
         switch (type) {
-            case MEMORY -> memories.save((Memory) value);
-            case DIARY -> diaries.save((Diary) value);
-            case MESSAGE -> messages.save((LetterMessage) value);
-            case ANNIVERSARY -> anniversaries.save((Anniversary) value);
-            case WISH -> wishes.save((Wish) value);
-            case CALENDAR_EVENT -> calendarEvents.save((CalendarEvent) value);
+            case MEMORY -> memories.saveAndFlush((Memory) value);
+            case DIARY -> diaries.saveAndFlush((Diary) value);
+            case MESSAGE -> messages.saveAndFlush((LetterMessage) value);
+            case ANNIVERSARY -> anniversaries.saveAndFlush((Anniversary) value);
+            case WISH -> wishes.saveAndFlush((Wish) value);
+            case CALENDAR_EVENT -> calendarEvents.saveAndFlush((CalendarEvent) value);
             default -> throw ApiException.badRequest("不支持的回收内容类型");
         }
+    }
+
+    private boolean exists(String type, Long id) {
+        return switch (type) {
+            case MEMORY -> memories.existsById(id);
+            case DIARY -> diaries.existsById(id);
+            case MESSAGE -> messages.existsById(id);
+            case ANNIVERSARY -> anniversaries.existsById(id);
+            case WISH -> wishes.existsById(id);
+            case CALENDAR_EVENT -> calendarEvents.existsById(id);
+            default -> throw ApiException.badRequest("不支持的回收内容类型");
+        };
     }
 
     private void purge(String type, RecoverableContent value) {

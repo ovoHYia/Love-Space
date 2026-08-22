@@ -5,12 +5,19 @@ import com.lovespace.api.error.ApiException;
 import com.lovespace.service.DataExportService;
 import com.lovespace.service.DataExportService.ExportSnapshot;
 import com.lovespace.time.BeijingTime;
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.security.core.Authentication;
@@ -25,15 +32,29 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 @RequestMapping("/api/data")
 public class DataExportController {
     private static final MediaType ZIP = MediaType.parseMediaType("application/zip");
+    private static final Logger log = LoggerFactory.getLogger(DataExportController.class);
+    private static final long WATCHDOG_MINUTES = 15;
 
     private final DataExportService exports;
     private final Semaphore exportSlots;
+    // 兜底：容器异常路径未执行流式体时，防止导出槽位永久泄漏
+    private final ScheduledExecutorService slotWatchdog =
+            Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "love-space-export-watchdog");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     public DataExportController(DataExportService exports,
                                 @Value("${app.data-export.max-concurrent:1}") int maxConcurrent) {
         this.exports = exports;
         if (maxConcurrent <= 0) throw new IllegalArgumentException("app.data-export.max-concurrent must be positive");
         this.exportSlots = new Semaphore(maxConcurrent, true);
+    }
+
+    @PreDestroy
+    void stopWatchdog() {
+        slotWatchdog.shutdownNow();
     }
 
     @GetMapping(value = "/export", produces = "application/zip")
@@ -100,12 +121,26 @@ public class DataExportController {
             throw ex;
         }
         final InputStream input = opened;
+        AtomicBoolean released = new AtomicBoolean(false);
+        var watchdog = slotWatchdog.schedule(() -> {
+            if (released.compareAndSet(false, true)) {
+                log.warn("Export stream of {} did not finish in time; releasing its slot.", snapshot.filename());
+                try {
+                    input.close();
+                } catch (IOException ignored) { }
+                exports.deleteSnapshot(snapshot);
+                exportSlots.release();
+            }
+        }, WATCHDOG_MINUTES, TimeUnit.MINUTES);
         StreamingResponseBody body = output -> {
             try (input) {
                 input.transferTo(output);
             } finally {
-                exports.deleteSnapshot(snapshot);
-                exportSlots.release();
+                watchdog.cancel(false);
+                if (released.compareAndSet(false, true)) {
+                    exports.deleteSnapshot(snapshot);
+                    exportSlots.release();
+                }
             }
         };
         return ResponseEntity.ok()

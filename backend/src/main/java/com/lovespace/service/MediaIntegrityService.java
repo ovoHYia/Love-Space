@@ -7,6 +7,7 @@ import com.lovespace.time.BeijingTime;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.nio.file.*;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
@@ -28,15 +29,22 @@ public class MediaIntegrityService {
     private final MediaStorageService storage;
     private final Path quarantineDirectory;
     private final TransactionTemplate transactions;
+    private final long scanCooldownSeconds;
     private final ReentrantLock scanLock = new ReentrantLock();
+    private volatile Instant lastScanCompletedAt = Instant.EPOCH;
 
     public MediaIntegrityService(MediaRepository media, MediaStorageService storage,
                                  PlatformTransactionManager transactionManager,
-                                 @Value("${app.media-quarantine-dir:./data/media-quarantine}") String quarantineDirectory) {
+                                 @Value("${app.media-quarantine-dir:./data/media-quarantine}") String quarantineDirectory,
+                                 @Value("${app.media-integrity.scan-cooldown-seconds:60}") long scanCooldownSeconds) {
         this.media = media;
         this.storage = storage;
         this.transactions = new TransactionTemplate(transactionManager);
         this.quarantineDirectory = Path.of(quarantineDirectory).toAbsolutePath().normalize();
+        if (scanCooldownSeconds < 0) {
+            throw new IllegalArgumentException("app.media-integrity.scan-cooldown-seconds must not be negative");
+        }
+        this.scanCooldownSeconds = scanCooldownSeconds;
     }
 
     @PostConstruct
@@ -51,7 +59,18 @@ public class MediaIntegrityService {
                     "MEDIA_INTEGRITY_BUSY", "完整性检查正在进行，请稍后重试");
         }
         try {
-            return scanLocked();
+            // 扫描是重 I/O 操作，加冷却窗口防止被频繁触发；设为 0 可禁用（测试使用）
+            if (scanCooldownSeconds > 0) {
+                Instant now = Instant.now();
+                if (lastScanCompletedAt.plusSeconds(scanCooldownSeconds).isAfter(now)) {
+                    throw new com.lovespace.api.error.ApiException(
+                            org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
+                            "MEDIA_INTEGRITY_COOLDOWN", "完整性检查刚执行过，请稍后重试");
+                }
+            }
+            MediaIntegrityView result = scanLocked();
+            lastScanCompletedAt = Instant.now();
+            return result;
         } finally {
             scanLock.unlock();
         }

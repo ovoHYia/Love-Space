@@ -20,6 +20,8 @@ app:
     max-pending: 2
   cors-allowed-origins: http://localhost:5173
   media-max-bytes: 1048576
+  media-integrity:
+    scan-cooldown-seconds: 0
   security:
     password-reset:
       max-attempts-per-ip: 5

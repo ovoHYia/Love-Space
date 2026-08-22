@@ -60,7 +60,8 @@ if ($port -notmatch '^\d{1,5}$') {
     throw "SERVER_PORT 必须是数字端口，当前值：$port"
 }
 $listenAddress = Get-EnvValue -Name "SERVER_ADDRESS" -Default "127.0.0.1"
-if ($isProduction -and $listenAddress -notin @("127.0.0.1", "::1", "localhost")) {
+# 与 ProductionDatabaseSecurityValidator#isLoopback 保持同一口径（名称大小写不敏感 + DNS 解析）。
+if ($isProduction -and -not (Test-LoopbackDatabaseHost -HostName $listenAddress)) {
     throw "生产环境 SERVER_ADDRESS 必须是回环地址，当前值：$listenAddress"
 }
 Write-Host "Starting the Love Space single JAR..." -ForegroundColor Cyan

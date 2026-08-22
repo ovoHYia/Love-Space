@@ -162,10 +162,21 @@ function ConvertFrom-DatabaseUrl {
 function Test-LoopbackDatabaseHost {
     param([Parameter(Mandatory = $true)][string]$HostName)
 
+    # Keep this in sync with ProductionDatabaseSecurityValidator#isLoopback:
+    # case-insensitive localhost names, IP literals, then DNS resolution.
+    # PowerShell's -in/-eq are case-insensitive by default, matching the Java side.
     if ($HostName -in @("localhost", "localhost.localdomain")) { return $true }
     $address = $null
     if ([System.Net.IPAddress]::TryParse($HostName, [ref]$address)) {
         return [System.Net.IPAddress]::IsLoopback($address)
+    }
+    try {
+        foreach ($resolved in [System.Net.Dns]::GetHostAddresses($HostName)) {
+            if ([System.Net.IPAddress]::IsLoopback($resolved)) { return $true }
+        }
+    }
+    catch {
+        # Unresolvable hostnames are treated as remote, matching the Java validator.
     }
     return $false
 }
